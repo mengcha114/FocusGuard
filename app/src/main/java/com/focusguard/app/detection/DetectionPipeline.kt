@@ -221,7 +221,8 @@ class DetectionPipeline(
                 baseUrl = settings.apiBaseUrl,
                 apiKey = currentApiKey,
                 modelName = settings.modelName,
-                whitelist = settings.whitelist
+                whitelist = settings.whitelist,
+                customPrompt = settings.aiCustomPrompt
             )
             tokenBudget.recordCall()
 

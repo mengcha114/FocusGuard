@@ -24,8 +24,7 @@ fun HomeScreen(
     serviceRunning: Boolean,
     onStartGuard: () -> Unit,
     onStopGuard: () -> Unit,
-    onTestDetection: () -> Unit,
-    onStartLock: () -> Unit
+    onTestDetection: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val logStore = remember { LogStore(context) }
@@ -173,50 +172,6 @@ fun HomeScreen(
                     Icon(Icons.Default.Search, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("测试识别", fontSize = 16.sp)
-                }
-            }
-        }
-
-        // Timer lock button
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF263238)
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = Color(0xFFFFD93D)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "定时锁机",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "设置锁机时长，防止沉迷",
-                                fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.6f)
-                            )
-                        }
-                    }
-                    TextButton(onClick = onStartLock) {
-                        Text("进入", color = Color(0xFF7C4DFF))
-                    }
                 }
             }
         }

@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
             com.focusguard.app.service.MonitorService.startService(
                 this, result.resultCode, result.data!!
             )
+            serviceRunning = true
         } else {
             Toast.makeText(this, "屏幕录制权限被拒绝", Toast.LENGTH_SHORT).show()
         }
@@ -65,15 +66,19 @@ class MainActivity : ComponentActivity() {
     /** 权限界面刷新计数，自增即触发 Compose 重新查询权限状态。 */
     private var permissionRefreshTick by mutableIntStateOf(0)
 
+    /** 守护服务运行状态（供 Compose 实时刷新按钮样式）。 */
+    private var serviceRunning by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appSettings = AppSettings(this)
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        serviceRunning = com.focusguard.app.service.MonitorService.isRunning ||
+            appSettings.serviceRunning
 
         setContent {
             FocusGuardTheme {
                 val navController = rememberNavController()
-                var serviceRunning by remember { mutableStateOf(appSettings.serviceRunning) }
                 // permissionRefreshTick 变化时重新计算 allGranted
                 val refreshTick = permissionRefreshTick
                 var showPermissionSetup by remember(refreshTick) {
@@ -102,8 +107,8 @@ class MainActivity : ComponentActivity() {
                                     onClick = { navController.navigate("apps") }
                                 )
                                 NavigationBarItem(
-                                    icon = { Icon(Icons.Default.Timer, contentDescription = null) },
-                                    label = { Text("番茄钟") },
+                                    icon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                    label = { Text("锁机") },
                                     selected = false,
                                     onClick = { navController.navigate("timer_lock") }
                                 )
@@ -132,8 +137,7 @@ class MainActivity : ComponentActivity() {
                                     serviceRunning = serviceRunning,
                                     onStartGuard = { startGuard() },
                                     onStopGuard = { stopGuard() },
-                                    onTestDetection = { testDetection() },
-                                    onStartLock = { navController.navigate("timer_lock") }
+                                    onTestDetection = { testDetection() }
                                 )
                             }
                             composable("apps") {
@@ -227,6 +231,7 @@ class MainActivity : ComponentActivity() {
 
     private fun stopGuard() {
         appSettings.serviceRunning = false
+        serviceRunning = false
         com.focusguard.app.service.MonitorService.stopService(this)
     }
 

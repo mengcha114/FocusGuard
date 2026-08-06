@@ -59,7 +59,7 @@ class ChallengeGenerator {
                 put("model", modelName)
                 put("messages", messages)
                 put("max_tokens", 500)
-                put("temperature", 0.9)
+                // 不传 temperature：Kimi 等模型的 temperature 是固定值，传了会 400
             }
 
             val request = Request.Builder()

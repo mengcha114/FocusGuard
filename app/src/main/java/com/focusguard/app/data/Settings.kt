@@ -12,6 +12,7 @@ class Settings(context: Context) {
         private const val KEY_API_BASE_URL = "api_base_url"
         private const val KEY_API_KEY = "api_key"
         private const val KEY_MODEL_NAME = "model_name"
+        private const val KEY_AI_CUSTOM_PROMPT = "ai_custom_prompt"
         
         // Detection settings
         private const val KEY_INTERVAL_MINUTES = "interval_minutes"
@@ -57,7 +58,7 @@ class Settings(context: Context) {
     
     // API settings
     var apiBaseUrl: String
-        get() = prefs.getString(KEY_API_BASE_URL, "https://api.openai.com/v1") ?: "https://api.openai.com/v1"
+        get() = prefs.getString(KEY_API_BASE_URL, "https://api.moonshot.cn/v1") ?: "https://api.moonshot.cn/v1"
         set(value) = prefs.edit().putString(KEY_API_BASE_URL, value).apply()
     
     var apiKey: String
@@ -65,8 +66,19 @@ class Settings(context: Context) {
         set(value) = prefs.edit().putString(KEY_API_KEY, value).apply()
     
     var modelName: String
-        get() = prefs.getString(KEY_MODEL_NAME, "gpt-4o-mini") ?: "gpt-4o-mini"
+        get() = prefs.getString(KEY_MODEL_NAME, "moonshot-v1-8k-vision-preview") ?: "moonshot-v1-8k-vision-preview"
         set(value) = prefs.edit().putString(KEY_MODEL_NAME, value).apply()
+
+    /**
+     * 自定义 AI 提示词（附加到系统提示词末尾）。
+     *
+     * 默认场景：检测到娱乐行为时仅给出分类结果。
+     * 用户可自定义为角色扮演式提醒（如"检测到你在打游戏，用妈妈的口吻说两句"），
+     * 让提醒更有情绪价值。
+     */
+    var aiCustomPrompt: String
+        get() = prefs.getString(KEY_AI_CUSTOM_PROMPT, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_AI_CUSTOM_PROMPT, value).apply()
     
     // Detection settings
     var intervalMinutes: Int

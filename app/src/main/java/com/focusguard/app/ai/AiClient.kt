@@ -17,7 +17,9 @@ data class AiResult(
     val confidence: Float = 0f,
     val reason: String = "",
     /** 服务端返回的真实 token 用量，取不到时为 0。 */
-    val totalTokens: Int = 0
+    val totalTokens: Int = 0,
+    /** 内部标记：该结果是否需要去掉 detail 参数后重试。 */
+    var retryable: Boolean = false
 )
 
 /**
@@ -48,18 +50,46 @@ class AiClient {
         baseUrl: String,
         apiKey: String,
         modelName: String,
-        whitelist: String
+        whitelist: String,
+        customPrompt: String = ""
     ): AiResult = withContext(Dispatchers.IO) {
-        try {
-            val base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+        val base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
 
+        // 先按完整参数请求（含 detail:low 节省图像 token）
+        val result = postRequest(
+            baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt, withDetail = true
+        )
+        // 部分兼容 API 不接受 detail 字段，会返回 400。
+        // 此时去掉 detail 重试一次，避免用户卡在"请求参数错误"。
+        if (result.retryable) {
+            Log.w(TAG, "API 拒绝 detail 参数（400），降级重试")
+            return@withContext postRequest(
+                baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt, withDetail = false
+            )
+        }
+        result
+    }
+
+    /** 单次请求。返回 [AiResult] 且 retryable=true 表示需要降级重试。 */
+    private fun postRequest(
+        baseUrl: String,
+        apiKey: String,
+        modelName: String,
+        base64Image: String,
+        whitelist: String,
+        customPrompt: String,
+        withDetail: Boolean
+    ): AiResult {
+        return try {
             val userContent = JSONArray().apply {
                 put(JSONObject().apply {
                     put("type", "image_url")
                     put("image_url", JSONObject().apply {
                         put("url", "data:image/jpeg;base64,$base64Image")
-                        // 低分辨率档位，显著降低图像 token 消耗
-                        put("detail", "low")
+                        if (withDetail) {
+                            // 低分辨率档位，显著降低图像 token 消耗
+                            put("detail", "low")
+                        }
                     })
                 })
             }
@@ -67,7 +97,7 @@ class AiClient {
             val messages = JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
-                    put("content", buildSystemPrompt(whitelist))
+                    put("content", buildSystemPrompt(whitelist, customPrompt))
                 })
                 put(JSONObject().apply {
                     put("role", "user")
@@ -79,7 +109,9 @@ class AiClient {
                 put("model", modelName)
                 put("messages", messages)
                 put("max_tokens", MAX_OUTPUT_TOKENS)
-                put("temperature", 0)
+                // 不传 temperature：OpenAI 系默认即可；
+                // Kimi K2.x/K3 的 temperature 是固定值（1.0/0.6），
+                // 传了任何其他值都会直接返回 400 invalid_request_error
             }
 
             val request = Request.Builder()
@@ -92,36 +124,69 @@ class AiClient {
             client.newCall(request).execute().use { response ->
                 val responseBody = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "接口返回 ${response.code}")
-                    return@withContext AiResult(
+                    Log.e(TAG, "接口返回 ${response.code}: $responseBody")
+                    val serverMsg = extractErrorMessage(responseBody)
+                    // 400 时先假设是 detail 参数不被支持，去掉后重试一次；
+                    // 若仍失败则把服务端原始错误透出给用户
+                    val retryable = response.code == 400
+                    AiResult(
                         classification = "NEUTRAL",
-                        reason = "API 错误 ${response.code}"
-                    )
+                        reason = if (serverMsg.isBlank()) {
+                            "API 错误 ${response.code}"
+                        } else {
+                            "API 错误 ${response.code}：$serverMsg"
+                        },
+                        totalTokens = 0
+                    ).also { it.retryable = retryable }
+                } else {
+                    parseResponse(responseBody).also { it.retryable = false }
                 }
-                parseResponse(responseBody)
             }
         } catch (e: Exception) {
             Log.e(TAG, "视觉识别失败", e)
-            AiResult(classification = "NEUTRAL", reason = "请求失败：${e.message}")
+            AiResult(classification = "NEUTRAL", reason = "请求失败：${e.message}").also {
+                it.retryable = false
+            }
+        }
+    }
+
+    /**
+     * 从 OpenAI 兼容错误响应里提取可读的错误信息。
+     * 优先返回 error.message，附带 error.type 便于用户按错误码排查。
+     */
+    private fun extractErrorMessage(body: String): String {
+        if (body.isBlank()) return ""
+        return try {
+            val json = JSONObject(body)
+            val err = json.optJSONObject("error")
+            val type = err?.optString("type")?.takeIf { it.isNotBlank() }
+            val message = err?.optString("message")?.takeIf { it.isNotBlank() }
+            when {
+                message == null -> ""
+                type == null || message.contains(type) -> message
+                else -> "$message（类型：$type）"
+            }
+        } catch (e: Exception) {
+            body.take(150)
         }
     }
 
     /**
      * 极简系统提示词。
      *
-     * 刻意压缩到 200 字以内：这段文字每次调用都要重新发送，
+     * 刻意压缩：这段文字每次调用都要重新发送，
      * 冗长的说明会持续产生输入 token 费用。
-     * 只保留分类定义和最容易出错的边界规则。
      */
-    private fun buildSystemPrompt(whitelist: String): String {
+    private fun buildSystemPrompt(whitelist: String, customPrompt: String): String {
         val extra = if (whitelist.isNotBlank()) "\n白名单（视为学习）：$whitelist" else ""
+        val custom = if (customPrompt.isNotBlank()) "\n\n用户额外要求：$customPrompt" else ""
         return """判断手机截图中用户在做什么，输出 JSON。
 
 STUDY_WORK：学习、工作、编程、阅读文档、网课、教程、办公
 ENTERTAINMENT：游戏、娱乐短视频、直播、漫画、社交闲逛、购物
 NEUTRAL：锁屏、桌面、设置、通话、导航
 
-重要：视频/社交类应用要看具体内容。技术教程、网课、知识科普算 STUDY_WORK，不要因为是视频应用就判娱乐。$extra
+重要：视频/社交类应用要看具体内容。技术教程、网课、知识科普算 STUDY_WORK，不要因为是视频应用就判娱乐。$extra$custom
 
 仅输出：{"c":"分类","p":0.0-1.0,"r":"理由20字内"}"""
     }

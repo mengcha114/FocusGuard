@@ -28,6 +28,7 @@ fun SettingsScreen(onSave: () -> Unit) {
     var apiBaseUrl by remember { mutableStateOf(settings.apiBaseUrl) }
     var apiKey by remember { mutableStateOf(settings.apiKey) }
     var modelName by remember { mutableStateOf(settings.modelName) }
+    var aiCustomPrompt by remember { mutableStateOf(settings.aiCustomPrompt) }
     var intervalMinutes by remember { mutableStateOf(settings.intervalMinutes.toString()) }
     var confidenceThreshold by remember { mutableStateOf(settings.confidenceThreshold) }
     var consecutiveViolations by remember { mutableStateOf(settings.consecutiveViolations.toString()) }
@@ -58,7 +59,7 @@ fun SettingsScreen(onSave: () -> Unit) {
             OutlinedTextField(
                 value = apiBaseUrl, onValueChange = { apiBaseUrl = it },
                 label = { Text("API 地址") },
-                placeholder = { Text("https://api.openai.com/v1") },
+                placeholder = { Text("https://api.moonshot.cn/v1") },
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
             )
             Spacer(Modifier.height(8.dp))
@@ -70,8 +71,60 @@ fun SettingsScreen(onSave: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = modelName, onValueChange = { modelName = it },
-                label = { Text("模型名称") }, placeholder = { Text("gpt-4o-mini") },
+                label = { Text("模型名称") },
+                placeholder = { Text("moonshot-v1-8k-vision-preview") },
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+
+            // ── Kimi 一键填充 ──────────────────────────────
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2332))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        "Kimi 视觉模型推荐配置",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF8AB4F8)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "API 地址：https://api.moonshot.cn/v1\n" +
+                            "可用模型：kimi-k3 / moonshot-v1-8k-vision-preview / moonshot-v1-32k-vision-preview / kimi-k2.6 / kimi-k2.7-code\n" +
+                            "注意：Kimi 的 temperature 为固定值，应用已适配（不传该参数）",
+                        fontSize = 11.sp,
+                        lineHeight = 17.sp,
+                        color = Color.White.copy(alpha = 0.65f)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    TextButton(
+                        onClick = {
+                            apiBaseUrl = "https://api.moonshot.cn/v1"
+                            modelName = "moonshot-v1-8k-vision-preview"
+                        },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("一键填入 Kimi 配置", color = Color(0xFF8AB4F8), fontSize = 13.sp)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = aiCustomPrompt, onValueChange = { aiCustomPrompt = it },
+                label = { Text("AI 提醒风格（可选）") },
+                placeholder = { Text("例如：检测到玩游戏时，用妈妈的口吻调侃我两句，给我点情绪价值") },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                minLines = 3
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "附加到 AI 检测提示词末尾，可让提醒更有趣、更有温度",
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.45f)
             )
         }
 
@@ -220,6 +273,7 @@ fun SettingsScreen(onSave: () -> Unit) {
                 settings.apiBaseUrl = apiBaseUrl
                 settings.apiKey = apiKey
                 settings.modelName = modelName
+                settings.aiCustomPrompt = aiCustomPrompt
                 settings.intervalMinutes = intervalMinutes.toIntOrNull() ?: 3
                 settings.confidenceThreshold = confidenceThreshold
                 settings.consecutiveViolations = consecutiveViolations.toIntOrNull() ?: 2
