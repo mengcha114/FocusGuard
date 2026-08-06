@@ -6,9 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,6 +18,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
@@ -27,19 +27,20 @@ import com.focusguard.app.detection.AppCategoryStore
 import com.focusguard.app.detection.AppClassifier
 import com.focusguard.app.detection.AppInventory
 import com.focusguard.app.detection.InstalledApp
+import com.focusguard.app.usage.AppUsageRule
+import com.focusguard.app.usage.UsageRuleStore
 import kotlinx.coroutines.launch
 
 /**
  * 应用管控页。
  *
- * 列出设备上实际安装的可启动应用（带图标与名称），
- * 支持搜索、分类筛选，点击应用可手动指定其分类（覆盖自动识别）。
+ * 点击任意应用直接进入编辑弹窗，一个弹窗里完成全部设置：
+ * - 应用类型（自动识别 / 游戏 / 学习办公 / 视频 / 短视频 / 社交 / 系统）
+ * - 允许使用时间（超过后开始 AI 检测）
+ * - 最多使用时间（超过后全屏封锁）
  */
 @Composable
-fun AppControlScreen(
-    onOpenUsageLimits: () -> Unit = {},
-    onPickAppForLimit: (InstalledApp) -> Unit = {}
-) {
+fun AppControlScreen() {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
     var filterText by remember { mutableStateOf("") }
@@ -80,50 +81,10 @@ fun AppControlScreen(
     ) {
         Text("应用管控", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Text(
-            "选择要管控的应用，纯游戏自动拦截，视频/社交由 AI 动态识别",
+            "点击应用即可设置类型与使用时长，纯游戏自动拦截，视频/社交由 AI 动态识别",
             fontSize = 14.sp,
             color = Color.White.copy(alpha = 0.7f)
         )
-
-        // ── 使用时长入口 ──────────────────────────────
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F1F23)),
-            onClick = onOpenUsageLimits
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.HourglassEmpty,
-                        contentDescription = null,
-                        tint = Color(0xFFD0BCFF),
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            "应用时长管理",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White
-                        )
-                        Text(
-                            "设置触发检测或封锁的使用时长阈值",
-                            fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.5f)
-                        )
-                    }
-                }
-                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.White.copy(alpha = 0.3f))
-            }
-        }
 
         // ── 搜索 ──────────────────────────────────────
         OutlinedTextField(
@@ -176,6 +137,9 @@ fun AppControlScreen(
                 items(filteredApps, key = { it.packageName }) { app ->
                     AppControlRow(
                         app = app,
+                        hasRule = remember(app.packageName) {
+                            UsageRuleStore(context).getRule(app.packageName) != null
+                        },
                         onClick = { editingApp = app }
                     )
                 }
@@ -183,26 +147,32 @@ fun AppControlScreen(
         }
     }
 
-    // ── 分类设置弹窗 ─────────────────────────────────
+    // ── 编辑弹窗：类型 + 时长一体 ────────────────────
     val scope = rememberCoroutineScope()
     editingApp?.let { app ->
-        CategoryEditSheet(
+        AppEditSheet(
             app = app,
             onDismiss = { editingApp = null },
-            onCategoryChanged = { category ->
-                val store = AppCategoryStore(context)
+            onSaved = { category, rule ->
+                val categoryStore = AppCategoryStore(context)
+                val ruleStore = UsageRuleStore(context)
                 if (category == null) {
-                    store.clearUserOverride(app.packageName)
+                    categoryStore.clearUserOverride(app.packageName)
                 } else {
-                    store.setUserOverride(app.packageName, category)
+                    categoryStore.setUserOverride(app.packageName, category)
+                }
+                if (rule == null) {
+                    ruleStore.removeRule(app.packageName)
+                } else {
+                    ruleStore.setRule(rule)
                 }
                 AppInventory.invalidate()
                 editingApp = null
                 // 重新加载以刷新分类显示
                 scope.launch {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        val store2 = AppCategoryStore(context)
-                        apps = AppInventory.listLaunchableApps(context, store2, forceRefresh = true)
+                        val store = AppCategoryStore(context)
+                        apps = AppInventory.listLaunchableApps(context, store, forceRefresh = true)
                     }
                 }
             }
@@ -210,9 +180,9 @@ fun AppControlScreen(
     }
 }
 
-/** 应用行：图标 + 名称 + 分类标签。 */
+/** 应用行：图标 + 名称 + 分类标签 + 时长规则标记。 */
 @Composable
-private fun AppControlRow(app: InstalledApp, onClick: () -> Unit) {
+private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Unit) {
     val (statusLabel, statusColor) = when (app.category) {
         AppCategory.GAME -> "游戏" to Color(0xFFF44336)
         AppCategory.STUDY -> "学习" to Color(0xFF4CAF50)
@@ -277,6 +247,22 @@ private fun AppControlRow(app: InstalledApp, onClick: () -> Unit) {
                 )
             }
 
+            if (hasRule) {
+                Surface(
+                    color = Color(0xFF7C4DFF).copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "限时",
+                        color = Color(0xFFD0BCFF),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+            }
+
             Surface(
                 color = statusColor.copy(alpha = 0.2f),
                 shape = RoundedCornerShape(8.dp)
@@ -293,21 +279,28 @@ private fun AppControlRow(app: InstalledApp, onClick: () -> Unit) {
     }
 }
 
-/** 手动指定应用分类的底部弹窗。 */
+/** 应用编辑底部弹窗：类型 + 允许使用时间 + 最多使用时间。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CategoryEditSheet(
+private fun AppEditSheet(
     app: InstalledApp,
     onDismiss: () -> Unit,
-    onCategoryChanged: (AppCategory?) -> Unit
+    onSaved: (category: AppCategory?, rule: AppUsageRule?) -> Unit
 ) {
     val context = LocalContext.current
     val categoryStore = remember { AppCategoryStore(context) }
-    var selected by remember {
-        mutableStateOf(
+    val ruleStore = remember { UsageRuleStore(context) }
+
+    // 初始值：用户手动设置优先，否则取自动识别分类
+    var selectedCategory by remember {
+        mutableStateOf<AppCategory?>(
             categoryStore.getUserOverride(app.packageName) ?: app.category
         )
     }
+    val existingRule = remember { ruleStore.getRule(app.packageName) }
+    var allowMinutes by remember { mutableStateOf(existingRule?.triggerMinutes?.toString() ?: "") }
+    var maxMinutes by remember { mutableStateOf(existingRule?.hardBlockMinutes?.toString() ?: "") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF1C1B1F)) {
         Column(
@@ -315,7 +308,7 @@ private fun CategoryEditSheet(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
                 text = app.label,
@@ -328,10 +321,11 @@ private fun CategoryEditSheet(
                 fontSize = 12.sp,
                 color = Color.White.copy(alpha = 0.45f)
             )
-            Spacer(Modifier.height(4.dp))
-            Text("手动指定分类（将覆盖自动识别）", fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f))
 
+            // ── 应用类型 ──────────────────────────────
+            Text("应用类型", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.7f))
             val options = listOf(
+                null to "自动识别",
                 AppCategory.GAME to "游戏",
                 AppCategory.STUDY to "学习/办公",
                 AppCategory.VIDEO to "视频",
@@ -339,24 +333,60 @@ private fun CategoryEditSheet(
                 AppCategory.SOCIAL to "社交",
                 AppCategory.SYSTEM to "系统"
             )
-            options.chunked(2).forEach { rowItems ->
+            options.chunked(4).forEach { rowItems ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     rowItems.forEach { (cat, label) ->
                         FilterChip(
-                            selected = selected == cat,
-                            onClick = { selected = cat },
-                            label = { Text(label, fontSize = 13.sp) },
+                            selected = selectedCategory == cat,
+                            onClick = { selectedCategory = cat },
+                            label = { Text(label, fontSize = 12.sp) },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
 
+            // ── 使用时长 ──────────────────────────────
+            Text("使用时长限制（可选）", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.7f))
+
+            OutlinedTextField(
+                value = allowMinutes,
+                onValueChange = { allowMinutes = it; errorMsg = null },
+                label = { Text("允许使用时间（分钟）") },
+                placeholder = { Text("如 30，超过后开始 AI 检测") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+            OutlinedTextField(
+                value = maxMinutes,
+                onValueChange = { maxMinutes = it; errorMsg = null },
+                label = { Text("最多使用时间（分钟）") },
+                placeholder = { Text("如 60，超过后全屏封锁") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+            Text(
+                text = "留空表示不限制；最多使用时间必须 ≥ 允许使用时间",
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.4f)
+            )
+
+            errorMsg?.let {
+                Text(it, color = Color(0xFFC6786F), fontSize = 12.sp)
+            }
+
+            Spacer(Modifier.height(4.dp))
+
+            // ── 操作按钮 ──────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -368,13 +398,31 @@ private fun CategoryEditSheet(
                 ) { Text("取消") }
                 Button(
                     onClick = {
-                        onCategoryChanged(selected)
-                        onDismiss()
+                        val trigger = allowMinutes.trim().toIntOrNull()
+                        val hard = maxMinutes.trim().toIntOrNull()
+                        when {
+                            trigger != null && trigger <= 0 ->
+                                errorMsg = "允许使用时间必须大于 0"
+                            hard != null && hard <= 0 ->
+                                errorMsg = "最多使用时间必须大于 0"
+                            trigger != null && hard != null && hard < trigger ->
+                                errorMsg = "最多使用时间必须 ≥ 允许使用时间"
+                            else -> {
+                                val rule = if (trigger != null || hard != null) {
+                                    AppUsageRule(
+                                        packageName = app.packageName,
+                                        triggerMinutes = trigger,
+                                        hardBlockMinutes = hard
+                                    )
+                                } else null
+                                onSaved(selectedCategory, rule)
+                            }
+                        }
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F378B))
-                ) { Text("确认") }
+                ) { Text("保存") }
             }
         }
     }

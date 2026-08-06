@@ -152,6 +152,36 @@ class GuardAccessibilityService : AccessibilityService() {
         super.onDestroy()
         instance = null
         Log.d(TAG, "无障碍服务已销毁")
+        // 服务被系统停掉（部分 ROM 会定时清理无障碍）时提醒用户重新开启，
+        // 避免锁机保护在用户不知情的情况下失效
+        notifyAccessibilityLost()
+    }
+
+    /** 无障碍服务断开时发通知引导重新开启。 */
+    private fun notifyAccessibilityLost() {
+        try {
+            val lockState = lockState ?: return
+            // 只有锁机期间断开才值得提醒（平时断开不影响）
+            if (!lockState.isLocked) return
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                this,
+                2,
+                Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                    android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+            val notification = android.app.Notification.Builder(this, com.focusguard.app.FocusGuardApp.CHANNEL_ID)
+                .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
+                .setContentTitle("锁机保护部分失效")
+                .setContentText("无障碍服务已断开，无法拦截切换到其他应用，点击重新开启")
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+            val nm = getSystemService(android.app.NotificationManager::class.java)
+            nm.notify(1002, notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "发送无障碍断开提醒失败：${e.message}")
+        }
     }
 
     fun performHome(): Boolean = try {

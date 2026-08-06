@@ -3,6 +3,7 @@ package com.focusguard.app.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.LockState
@@ -43,6 +45,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
     var selectedMinutes by remember { mutableIntStateOf(30) }
     var selectedMode by remember { mutableStateOf(LockMode.PLAIN) }
     var pomodoroRounds by remember { mutableIntStateOf(4) }
+    var customMinutes by remember { mutableStateOf("") }
 
     // 软件锁机只需无障碍：锁机时拦截所有切换到其他应用的尝试
     val accessibilityOn = PermissionChecker.isAccessibilityEnabled(context)
@@ -168,6 +171,29 @@ fun TimerLockScreen(onBack: () -> Unit) {
                     )
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            // ── 自定义时长 ──────────────────────────────
+            OutlinedTextField(
+                value = customMinutes,
+                onValueChange = { input ->
+                    customMinutes = input
+                    val parsed = input.trim().toIntOrNull()
+                    if (parsed != null && parsed > 0) {
+                        selectedMinutes = parsed
+                    }
+                },
+                label = { Text("自定义时长（分钟）") },
+                placeholder = { Text("输入任意分钟数，如 25") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+            Text(
+                text = "输入后自动选中该时长",
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.4f)
+            )
         } else {
             Text("番茄钟轮数", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
             Row(

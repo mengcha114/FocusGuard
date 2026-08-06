@@ -141,9 +141,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             composable("apps") {
-                                AppControlScreen(
-                                    onOpenUsageLimits = { navController.navigate("usage_limits") }
-                                )
+                                AppControlScreen()
                             }
                             composable("logs") {
                                 LogScreen()
@@ -158,9 +156,6 @@ class MainActivity : ComponentActivity() {
                             }
                             composable("unlock_challenge") {
                                 UnlockChallengeScreen(onUnlocked = { navController.popBackStack() })
-                            }
-                            composable("usage_limits") {
-                                AppUsageLimitScreen(onBack = { navController.popBackStack() })
                             }
                         }
                     }

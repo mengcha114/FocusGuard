@@ -77,6 +77,17 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|fontScale|screenLayout|smallestScreenSize" />
 
+        <!-- 解锁挑战答题页（独立窗口，避免输入法触发锁机页顶回循环） -->
+        <activity
+            android:name=".enforce.UnlockChallengeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.FocusGuard.Block"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|fontScale|screenLayout|smallestScreenSize" />
+
         <!-- Blocking overlay activity -->
         <activity
             android:name=".enforce.BlockActivity"

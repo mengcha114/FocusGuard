@@ -6,12 +6,8 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
-import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,18 +26,24 @@ import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.LockState
 
 /**
- * 全局强制锁机界面。
+ * 全局强制锁机界面（勒索式全屏覆盖）。
  *
- * 功能：
- * - 覆盖整个屏幕，无法被用户关掉
- * - 返回键 / Home 键均被拦截（通过无障碍阻止回桌面）
- * - 只有答对挑战题才能解锁
- * - 进程被杀后重启 Activity 仍会根据 LockState 判断是否继续锁
+ * 防退出机制（多层）：
+ * 1. 返回键拦截
+ * 2. 失焦轮询顶回：每 400ms 检查窗口焦点，失焦即重新置顶（不依赖无障碍）
+ * 3. 无障碍服务窗口拦截：切换到其他应用时顶回（无障碍存在时生效）
+ * 4. 答题时（UnlockChallengeActivity 在前台）暂停顶回，避免输入法循环
+ * 5. 锁机状态持久化，强杀/重启进程后依然锁定
  */
 class LockScreenActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "LockScreenActivity"
+
+        /** 当前锁机页实例，供答题页解锁后通知收尾。 */
+        @Volatile
+        var instance: LockScreenActivity? = null
+            private set
 
         fun show(context: Context) {
             val intent = Intent(context, LockScreenActivity::class.java).apply {
@@ -71,12 +73,28 @@ class LockScreenActivity : ComponentActivity() {
 
     private lateinit var lockState: LockState
 
-    /** 是否正在显示答题界面（输入法可能弹出，此时不能顶回）。 */
-    private var challengeVisible = false
+    /** 失焦轮询：间隔 400ms，不依赖无障碍，只要失焦就顶回。 */
+    private val focusPollingRunnable = object : Runnable {
+        override fun run() {
+            if (!isDestroyed && lockState.shouldBlockNow && !UnlockChallengeActivity.active) {
+                if (!hasWindowFocus()) {
+                    Log.d(TAG, "轮询发现窗口失焦，执行顶回")
+                    // 通知栏被拉下来时先收起
+                    com.focusguard.app.access.GuardAccessibilityService.instance
+                        ?.dismissNotificationShade()
+                    reassert(this@LockScreenActivity)
+                }
+            }
+            if (!isDestroyed) {
+                window.decorView.postDelayed(this, 400L)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockState = LockState(this)
+        instance = this
 
         // 锁屏上也能显示
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -94,10 +112,10 @@ class LockScreenActivity : ComponentActivity() {
 
         // 全屏沉浸：隐藏状态栏/导航栏，防下拉通知栏
         try {
-            val controller = WindowInsetsControllerCompat(window, window.decorView)
-            controller.hide(WindowInsetsCompat.Type.systemBars())
+            val controller = androidx.core.view.WindowInsetsControllerCompat(window, window.decorView)
+            controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         } catch (e: Exception) {
             Log.w(TAG, "进入沉浸模式失败：${e.message}")
         }
@@ -111,54 +129,27 @@ class LockScreenActivity : ComponentActivity() {
         setContent {
             LockScreenContent(
                 lockState = lockState,
-                challengeVisible = challengeVisible,
-                onChallengeVisibilityChange = { challengeVisible = it },
+                onStartChallenge = { UnlockChallengeActivity.show(this) },
                 onUnlocked = {
                     lockState.releaseLock()
                     finish()
                 }
             )
         }
+
+        // 启动失焦轮询（不依赖无障碍的防退出兜底）
+        window.decorView.postDelayed(focusPollingRunnable, 400L)
+    }
+
+    /** 答题页答对全部题目后调用：解锁并关闭。 */
+    fun onUnlockedExternally() {
+        lockState.releaseLock()
+        finish()
     }
 
     @Deprecated("Back blocked during lock")
     override fun onBackPressed() {
         // 拦截返回键——锁机期间任何退出手段都无效
-    }
-
-    /** 输入法是否可见（可见时说明用户在答题，不是试图逃跑）。 */
-    private fun isImeVisible(): Boolean {
-        return try {
-            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.isAcceptingText
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    /** 窗口失焦（用户按 Home / 最近任务 / 通知栏）时立即顶回前台。 */
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus && lockState.shouldBlockNow && !challengeVisible && !isImeVisible()) {
-            // 通知栏被拉下来时先收起（部分机型窗口失焦即代表通知栏弹出）
-            com.focusguard.app.access.GuardAccessibilityService.instance
-                ?.dismissNotificationShade()
-            // 延迟一点再置顶，避免与系统转场动画冲突导致闪屏
-            android.os.Handler(mainLooper).postDelayed({
-                if (lockState.shouldBlockNow && !challengeVisible) {
-                    reassert(this)
-                }
-            }, 150L)
-        }
-    }
-
-    override fun onUserLeaveHint() {
-        // 用户试图离开（如按 Home）时重新置顶自身。
-        // 番茄钟休息阶段允许离开；答题界面（输入法弹出）时不顶回。
-        super.onUserLeaveHint()
-        if (lockState.shouldBlockNow && !challengeVisible) {
-            reassert(this)
-        }
     }
 
     override fun onResume() {
@@ -167,19 +158,22 @@ class LockScreenActivity : ComponentActivity() {
             finish()
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (instance === this) instance = null
+    }
 }
 
 @Composable
 private fun LockScreenContent(
     lockState: LockState,
-    challengeVisible: Boolean,
-    onChallengeVisibilityChange: (Boolean) -> Unit,
+    onStartChallenge: () -> Unit,
     onUnlocked: () -> Unit
 ) {
     var remainingSeconds by remember { mutableIntStateOf(lockState.remainingSeconds) }
     var isWorkPhase by remember { mutableStateOf(lockState.pomodoroIsWorkPhase) }
     var phaseSeconds by remember { mutableIntStateOf(lockState.pomodoroRemainingSeconds) }
-    var showChallenge by remember { mutableStateOf(false) }
 
     val isPomodoro = lockState.lockSource == "POMODORO"
 
@@ -286,29 +280,11 @@ private fun LockScreenContent(
             )
             Spacer(Modifier.height(16.dp))
             OutlinedButton(
-                onClick = { showChallenge = true },
+                onClick = onStartChallenge,
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Text("挑战答题解锁", color = Color(0xFFD0BCFF))
             }
-        }
-    }
-
-    if (showChallenge) {
-        // 通知 Activity：答题界面可见，输入法弹出时不顶回
-        LaunchedEffect(Unit) { onChallengeVisibilityChange(true) }
-        DisposableEffect(Unit) {
-            onDispose { onChallengeVisibilityChange(false) }
-        }
-        // 直接复用 UnlockChallengeScreen
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF121212))
-        ) {
-            com.focusguard.app.ui.screens.UnlockChallengeScreen(
-                onUnlocked = onUnlocked
-            )
         }
     }
 }
