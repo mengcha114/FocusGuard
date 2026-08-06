@@ -14,6 +14,12 @@ local.properties
 # 系统
 .DS_Store
 
-# 签名文件（切勿提交）
+# 签名文件
+# 注意：keystore/focusguard-debug.jks 刻意纳入版本管理。
+# 这是一个仅用于本项目自用调试分发的固定密钥，纳入仓库才能保证
+# 每次 CI 构建产出相同签名，从而支持覆盖安装升级（否则每次
+# 构建都是随机 debug key，安装时报"签名不一致"）。
+# 若将来上架应用市场，请另行生成 release keystore 并用 CI Secret 注入。
 *.jks
 *.keystore
+!keystore/focusguard-debug.jks
