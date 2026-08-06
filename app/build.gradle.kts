@@ -11,8 +11,19 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
+    }
+
+    // 固定签名：仓库内置 keystore，任何机器/任何次构建签名都一致，
+    // 从而支持覆盖安装升级（此前用随机 debug key 导致"签名不一致"无法升级）
+    signingConfigs {
+        create("shared") {
+            storeFile = rootProject.file("keystore/focusguard-debug.jks")
+            storePassword = "focusguard"
+            keyAlias = "focusguard"
+            keyPassword = "focusguard"
+        }
     }
 
     buildTypes {
@@ -22,9 +33,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("shared")
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
 
@@ -86,6 +99,9 @@ dependencies {
     
     // DataStore for settings
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // WorkManager：守护看门狗（进程被杀后仍能被系统唤起重启守护服务）
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
     
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")

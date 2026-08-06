@@ -76,6 +76,31 @@ class MainActivity : ComponentActivity() {
         serviceRunning = com.focusguard.app.service.MonitorService.isRunning ||
             appSettings.serviceRunning
 
+        // ── 锁机状态检查（放在 setContent 之前）──────────
+        // 用户通过切出等方式绕过锁机后再打开应用时，必须立刻回到锁机页。
+        // 早期实现在这里没有任何处理，导致主界面与锁机页互相拉起 → 闪退。
+        try {
+            val lockState = com.focusguard.app.data.LockState(this)
+            val usageRuleStore = com.focusguard.app.usage.UsageRuleStore(this)
+            val hasBlockRule = usageRuleStore.allRules().any { it.hardBlockMinutes != null }
+
+            // 有锁机或封锁规则 → 确保守护服务与看门狗在位
+            if (lockState.isLocked || hasBlockRule) {
+                com.focusguard.app.service.LockGuardService.ensureRunning(this)
+                com.focusguard.app.service.GuardWatchdogWorker.schedule(this)
+            }
+
+            // 锁机仍在生效 → 直接跳转锁机页并结束自己，不渲染主界面
+            if (lockState.isLocked && lockState.shouldBlockNow) {
+                com.focusguard.app.enforce.LockScreenActivity.show(this)
+                finish()
+                return
+            }
+        } catch (e: Exception) {
+            // 状态检查失败不能阻塞应用启动
+            android.util.Log.w("MainActivity", "锁机状态检查失败：${e.message}")
+        }
+
         setContent {
             FocusGuardTheme(themeMode = appSettings.themeMode) {
                 val navController = rememberNavController()
@@ -241,5 +266,18 @@ class MainActivity : ComponentActivity() {
         // 从系统设置页返回后同步权限状态
         syncPermissionFlags()
         permissionRefreshTick++
+
+        // 回到前台时再检查一次锁机状态：
+        // 覆盖"应用已在后台 → 锁机开始 → 用户切回主界面"的场景
+        try {
+            val lockState = com.focusguard.app.data.LockState(this)
+            if (lockState.isLocked && lockState.shouldBlockNow) {
+                com.focusguard.app.service.LockGuardService.ensureRunning(this)
+                com.focusguard.app.enforce.LockScreenActivity.show(this)
+                finish()
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "onResume 锁机检查失败：${e.message}")
+        }
     }
 }

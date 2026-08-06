@@ -8,9 +8,8 @@ import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -18,44 +17,87 @@ import com.focusguard.app.data.LockState
 import com.focusguard.app.ui.screens.UnlockChallengeScreen
 
 /**
- * 解锁挑战答题页（独立 Activity）。
+ * 解锁挑战答题页（独立 Activity，与锁机页同 task）。
  *
- * 为什么独立成 Activity：答题需要弹出输入法，而锁机页的"失焦即顶回"
- * 会把输入法顶掉形成死循环（闪退）。独立页面拥有自己的窗口，
- * 锁机页通过 [active] 标志感知答题状态，答题期间不执行顶回。
+ * ## 为什么独立成 Activity
+ * 答题需要弹出输入法。若答题界面内嵌在锁机页里，输入法弹出会导致
+ * 锁机页失焦 → 触发"失焦顶回" → 输入法被顶掉 → 循环 → 崩溃。
+ *
+ * ## 为什么必须与锁机页同 task
+ * 锁机页是 singleTask + taskAffinity=""，若答题页用不同 affinity，
+ * 会形成跨 task 启动，在 Android 10+ 上受"后台启动 Activity"限制，
+ * 部分 ROM 直接静默拒绝 → 表现为"点击答题没反应 / 闪退"。
+ * 两者共享 taskAffinity 后，答题页只是压在锁机页之上的普通跳转。
+ *
+ * ## active 标志的安全设计
+ * 早期实现用 `var active: Boolean`，若 startActivity 失败（onCreate 永不执行），
+ * active 会永久卡在 true，导致此后所有顶回被跳过 → 锁机彻底失效。
+ * 现在改为**带时间戳的意图标记**：只在启动后的短暂窗口内有效，
+ * Activity 真正创建后才转为长期有效，销毁时立即失效。
  */
 class UnlockChallengeActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "UnlockChallengeActivity"
+        private const val EXTRA_REQUIRED_CORRECT = "required_correct"
 
-        /** 答题页是否在前台。锁机页据此暂停"失焦即顶回"。 */
+        /** 启动意图的有效窗口：超过此时长仍未创建成功即认为启动失败。 */
+        private const val LAUNCH_INTENT_WINDOW_MS = 4_000L
+
+        /** 答题页真正在前台。 */
         @Volatile
-        var active: Boolean = false
-            private set
+        private var created: Boolean = false
 
-        /** 当前答题页实例，解锁后由它通知锁机页收尾。 */
+        /** 最近一次发起启动的时间戳，用于覆盖"启动中"的空窗期。 */
+        @Volatile
+        private var launchRequestedAt: Long = 0L
+
+        /** 当前答题页实例。 */
         @Volatile
         var instance: UnlockChallengeActivity? = null
             private set
 
-        fun show(context: Context, requiredCorrect: Int = 1) {
-            // 先置 active 再启动：锁机页的失焦轮询会跳过顶回，
-            // 否则 startActivity 到 onCreate 之间的空窗期答题页会被顶掉（表现为闪退）
-            active = true
-            val intent = Intent(context, UnlockChallengeActivity::class.java).apply {
-                putExtra(EXTRA_REQUIRED_CORRECT, requiredCorrect)
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
-                )
+        /**
+         * 答题流程是否处于活跃状态（锁机页据此暂停顶回）。
+         *
+         * 关键：启动窗口会自动过期，绝不会因启动失败而永久卡住。
+         */
+        val active: Boolean
+            get() {
+                if (created) return true
+                val elapsed = System.currentTimeMillis() - launchRequestedAt
+                return elapsed in 0..LAUNCH_INTENT_WINDOW_MS
             }
-            context.startActivity(intent)
-        }
 
-        private const val EXTRA_REQUIRED_CORRECT = "required_correct"
+        /**
+         * 启动答题页。
+         *
+         * @param requiredCorrect 需要连续答对的题数
+         * @return 是否成功发起启动
+         */
+        fun show(context: Context, requiredCorrect: Int = 1): Boolean {
+            // 先打时间戳：覆盖 startActivity → onCreate 之间的空窗期，
+            // 避免锁机页在这段时间把刚要出现的答题页顶掉。
+            launchRequestedAt = System.currentTimeMillis()
+            return try {
+                val intent = Intent(context, UnlockChallengeActivity::class.java).apply {
+                    putExtra(EXTRA_REQUIRED_CORRECT, requiredCorrect)
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_NO_ANIMATION
+                    )
+                }
+                context.startActivity(intent)
+                Log.d(TAG, "已发起答题页启动，需答对 $requiredCorrect 题")
+                true
+            } catch (e: Exception) {
+                // 启动失败立即清掉时间戳，让锁机页恢复防护
+                launchRequestedAt = 0L
+                Log.e(TAG, "启动答题页失败：${e.message}")
+                false
+            }
+        }
     }
 
     private lateinit var lockState: LockState
@@ -64,53 +106,101 @@ class UnlockChallengeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         lockState = LockState(this)
         instance = this
-        active = true
+        created = true
+
         val requiredCorrect = intent.getIntExtra(EXTRA_REQUIRED_CORRECT, 1)
+        Log.d(TAG, "答题页已创建，需答对 $requiredCorrect 题")
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        }
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-
-        // 沉浸模式，隐藏系统栏
         try {
-            val controller = WindowInsetsControllerCompat(window, window.decorView)
-            controller.hide(WindowInsetsCompat.Type.systemBars())
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "进入沉浸模式失败：${e.message}")
+            Log.w(TAG, "设置窗口标志失败：${e.message}")
+        }
+
+        // 注意：这里绝不能加 FLAG_SECURE。
+        // FLAG_SECURE 在部分 ROM 上会阻止输入法窗口正常附着，
+        // 是"打开输入法就闪退"的直接成因。
+
+        // 隐藏系统栏但保留输入法可用（不使用 BEHAVIOR_SHOW_TRANSIENT 以免干扰 IME）
+        try {
+            val controller = androidx.core.view.WindowInsetsControllerCompat(window, window.decorView)
+            controller.hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+        } catch (e: Exception) {
+            Log.w(TAG, "隐藏状态栏失败：${e.message}")
         }
 
         setContent {
-            androidx.compose.foundation.layout.Box(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color(0xFF121212))
             ) {
                 UnlockChallengeScreen(
                     requiredCorrect = requiredCorrect,
-                    onUnlocked = {
-                        // 答对全部题目：解锁并收尾
-                        lockState.releaseLock()
-                        LockScreenActivity.instance?.onUnlockedExternally()
-                        finish()
-                    }
+                    onUnlocked = { handleSuccess() },
+                    onGiveUp = { returnToLockScreen() }
                 )
             }
         }
     }
 
+    /**
+     * 答对全部题目。
+     *
+     * 注意：这里**不直接调用 releaseLock**。
+     * 是"解锁"还是"换取暂停"由锁机页的 pendingPause 决定，
+     * 统一交给 [LockScreenActivity.onUnlockedExternally] 处理，
+     * 避免暂停申请被误解为完全解锁（曾导致答题后锁机直接消失）。
+     */
+    private fun handleSuccess() {
+        val lockScreen = LockScreenActivity.instance
+        if (lockScreen != null) {
+            lockScreen.onUnlockedExternally()
+        } else {
+            // 锁机页已被系统回收：按解锁处理，避免用户答对后仍被困住
+            Log.w(TAG, "锁机页实例不存在，直接释放锁机")
+            try {
+                lockState.releaseLock()
+            } catch (e: Exception) {
+                Log.w(TAG, "释放锁机失败：${e.message}")
+            }
+        }
+        finish()
+    }
+
+    /** 放弃答题，回到锁机页。 */
+    private fun returnToLockScreen() {
+        finish()
+        // finish 后 created 会转 false，锁机页恢复防护。
+        // 若锁机页已被回收则重新拉起。
+        if (LockScreenActivity.instance == null && lockState.shouldBlockNow) {
+            LockScreenActivity.show(applicationContext)
+        }
+    }
+
     @Deprecated("Back returns to lock screen, not unlock")
     override fun onBackPressed() {
-        // 返回键回到锁机页而不是解锁
-        LockScreenActivity.reassert(this)
-        finish()
+        returnToLockScreen()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         if (instance === this) instance = null
-        active = false
-        Log.d(TAG, "答题页已关闭，active=false")
+        created = false
+        launchRequestedAt = 0L
+        Log.d(TAG, "答题页已关闭，防护恢复")
+
+        // 答题页关闭但锁机仍在 → 确保锁机页回到前台
+        val stillLocked = try {
+            this::lockState.isInitialized && lockState.shouldBlockNow
+        } catch (e: Exception) {
+            false
+        }
+        if (stillLocked && LockScreenActivity.instance == null) {
+            LockScreenActivity.show(applicationContext)
+        }
     }
 }

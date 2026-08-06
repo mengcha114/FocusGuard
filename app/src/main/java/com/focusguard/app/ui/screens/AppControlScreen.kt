@@ -165,6 +165,12 @@ fun AppControlScreen() {
                     ruleStore.removeRule(app.packageName)
                 } else {
                     ruleStore.setRule(rule)
+                    // 设了硬封锁上限就必须启动守护服务，
+                    // 否则超限后没人负责拉起封锁页（用户反馈"超时后仍可使用"的根因）
+                    if (rule.hardBlockMinutes != null) {
+                        com.focusguard.app.service.LockGuardService.start(context)
+                        com.focusguard.app.service.GuardWatchdogWorker.schedule(context)
+                    }
                 }
                 AppInventory.invalidate()
                 editingApp = null

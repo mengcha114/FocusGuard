@@ -364,6 +364,10 @@ fun TimerLockScreen(onBack: () -> Unit) {
                     lockState.pomodoroRoundsLeft = pomodoroRounds
                     lockState.pomodoroEnd = System.currentTimeMillis() + 25 * 60_000L
                 }
+                // 先启动守护服务与看门狗，再拉起锁机页：
+                // 守护服务是防破解主防线，必须在锁机页出现前就位
+                com.focusguard.app.service.LockGuardService.start(context)
+                com.focusguard.app.service.GuardWatchdogWorker.schedule(context)
                 LockScreenActivity.show(context)
             },
             modifier = Modifier

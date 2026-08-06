@@ -146,8 +146,13 @@ class ChallengeGenerator {
     /**
      * 本地题目生成：全部由程序即时计算答案，
      * 不使用硬编码答案，因此不存在答案写错的可能。
+     *
+     * 公开可见的原因：锁机答题必须**立刻**出题。
+     * 走网络出题时若 API 异常（如 401）或网络慢，
+     * 用户会卡在"AI 正在出题中…"根本无法答题解锁。
+     * 因此 UI 先用本地题目立即渲染，AI 题目仅作为可选升级。
      */
-    private fun generateLocalQuestion(): ChallengeQuestion {
+    fun generateLocalQuestion(): ChallengeQuestion {
         return when (Random.nextInt(6)) {
             0 -> bigAddition()
             1 -> bigSubtraction()

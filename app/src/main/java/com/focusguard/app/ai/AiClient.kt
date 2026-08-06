@@ -45,7 +45,7 @@ class AiClient {
             java.util.LinkedList<String>()
         )
 
-        private const val MAX_DIAGNOSTICS = 20
+        private const val MAX_DIAGNOSTICS = 40
 
         /** 记录一次请求诊断。 */
         fun recordDiagnostic(line: String) {
@@ -142,7 +142,7 @@ class AiClient {
                 // 记录诊断（截断响应，避免日志过大）
                 recordDiagnostic(
                     "请求 协议=$apiFormat 模型=$modelName URL=${request.url}" +
-                        " → HTTP ${response.code} 响应=${responseBody.take(180)}"
+                        " → HTTP ${response.code} 响应=${responseBody.take(600)}"
                 )
                 if (!response.isSuccessful) {
                     Log.e(TAG, "接口返回 ${response.code}: $responseBody")
@@ -481,10 +481,19 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
             }
 
             if (text.isBlank()) {
-                return AiResult("NEUTRAL", 0f, "模型返回空内容", totalTokens)
+                return AiResult("NEUTRAL", 0f, "模型返回空内容", totalTokens).also {
+                    it.parseFailed = true
+                }
             }
-            val result = JSONObject(extractJson(text))
-            buildResult(result, json).copy(totalTokens = totalTokens)
+            // 先按 JSON 解析；失败则退到纯文本关键词兜底，
+            // 只有两者都失败才算真正解析失败
+            try {
+                val result = JSONObject(extractJson(text))
+                buildResult(result, json).copy(totalTokens = totalTokens)
+            } catch (jsonError: Exception) {
+                parseFromPlainText(text, totalTokens)
+                    ?: throw jsonError
+            }
         } catch (e: Exception) {
             Log.e(TAG, "解析响应失败: $responseBody", e)
             // 用更可读的提示替代大段原始 JSON，方便用户判断问题类型
@@ -495,6 +504,8 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
                     "模型返回空内容（可尝试换非思考模型）"
                 else -> "响应格式异常"
             }
+            // 把响应原文一并记入诊断缓冲，导出日志时可看到完整内容
+            recordDiagnostic("解析失败[$hint] 原文=${responseBody.take(600)}")
             AiResult("NEUTRAL", 0f, "结果解析失败：$hint").also {
                 // 解析失败标记：上层会自动降级重试（去掉 tools）
                 it.parseFailed = true
@@ -534,11 +545,69 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
         }
     }
 
+    /**
+     * 从模型输出里抠出 JSON 对象。
+     *
+     * 用花括号配平扫描而不是正则：非贪婪正则 `\{.*?}` 遇到嵌套对象
+     * 会在第一个 `}` 处截断，产生不合法的 JSON（这正是"响应格式异常"的
+     * 主要来源）。这里从第一个 `{` 开始逐字符配平，并跳过字符串字面量
+     * 内部的花括号。
+     */
     private fun extractJson(content: String): String {
-        Regex("```(?:json)?\\s*\\n?(\\{.*?})\\s*\\n?```", RegexOption.DOT_MATCHES_ALL)
-            .find(content)?.let { return it.groupValues[1] }
-        Regex("\\{.*?}", RegexOption.DOT_MATCHES_ALL)
-            .find(content)?.let { return it.value }
+        val start = content.indexOf('{')
+        if (start < 0) return content
+
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (i in start until content.length) {
+            val c = content[i]
+            when {
+                escaped -> escaped = false
+                c == '\\' && inString -> escaped = true
+                c == '"' -> inString = !inString
+                inString -> Unit
+                c == '{' -> depth++
+                c == '}' -> {
+                    depth--
+                    if (depth == 0) return content.substring(start, i + 1)
+                }
+            }
+        }
+        // 花括号没配平（输出被 max_tokens 截断）→ 返回原文，交给纯文本兜底
         return content
+    }
+
+    /**
+     * 纯文本兜底解析。
+     *
+     * 模型不肯输出 JSON 时（说明文字、Markdown 列表、只回一个词），
+     * 从自然语言里找分类关键词，避免整轮检测白白浪费掉这次 token。
+     */
+    private fun parseFromPlainText(text: String, totalTokens: Int): AiResult? {
+        val upper = text.uppercase()
+        val classification = when {
+            upper.contains("ENTERTAINMENT") -> "ENTERTAINMENT"
+            upper.contains("STUDY_WORK") || upper.contains("STUDY") -> "STUDY_WORK"
+            upper.contains("NEUTRAL") -> "NEUTRAL"
+            // 中文兜底：模型有时直接用中文回答
+            text.contains("娱乐") || text.contains("游戏") -> "ENTERTAINMENT"
+            text.contains("学习") || text.contains("工作") -> "STUDY_WORK"
+            else -> return null
+        }
+
+        // 尝试从文本里捞置信度（0.85 / 85% 两种写法）
+        val confidence = Regex("""0?\.\d+""").find(text)?.value?.toFloatOrNull()
+            ?: Regex("""(\d{1,3})\s*%""").find(text)?.groupValues?.get(1)
+                ?.toFloatOrNull()?.div(100f)
+            ?: 0.6f
+
+        Log.d(TAG, "JSON 解析失败但纯文本兜底成功：$classification")
+        return AiResult(
+            classification = classification,
+            confidence = confidence.coerceIn(0f, 1f),
+            reason = "文本兜底解析：" + text.replace('\n', ' ').take(40),
+            totalTokens = totalTokens
+        )
     }
 }

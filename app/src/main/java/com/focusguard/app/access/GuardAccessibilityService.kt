@@ -8,20 +8,30 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import com.focusguard.app.data.LockState
 import com.focusguard.app.enforce.LockScreenActivity
+import com.focusguard.app.enforce.UnlockChallengeActivity
+import com.focusguard.app.service.LockGuardService
 
 /**
  * 无障碍服务。
  *
- * 两个职责：
- * 1. 锁机拦截（防破解）——锁机期间：
- *    - 任何切换到其他应用的尝试都被顶回锁屏页
- *    - 下拉通知栏 / 最近任务 / 语音助手 / 分屏小窗 出现时立即收起或顶回
- * 2. 强制退出——执法模式 EXIT 时回桌面
+ * 定位调整（重要）：无障碍**不再是锁机的唯一防线**。
+ * 各家 ROM 会随时回收无障碍服务，因此锁机的主防线已移到
+ * [LockGuardService]（前台服务 + 使用情况权限轮询）。
+ * 本服务现在只是"加速器"：存在时反应更快（事件驱动 vs 700ms 轮询），
+ * 不存在时锁机依然有效。
+ *
+ * 职责：
+ * 1. 锁机拦截（事件驱动，比轮询快）
+ * 2. 屏蔽通知栏 / 最近任务 / 语音助手 / 分屏小窗
+ * 3. 强制退出（执法模式 EXIT）
+ * 4. 服务连接时确保 [LockGuardService] 在跑（互为保活）
  */
 class GuardAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "GuardAccessibility"
+
+        @Volatile
         var instance: GuardAccessibilityService? = null
             private set
 
@@ -39,9 +49,9 @@ class GuardAccessibilityService : AccessibilityService() {
             "com.oplus.screenrecorder",                  // OPPO 系
             "com.coloros.assistantscreen",
             "com.vivo.assistant",                        // vivo 语音助手
-            "com.bbk.launcher2",
             "com.huawei.vassistant",                     // 华为语音助手
-            "com.huawei.systemmanager"
+            "com.huawei.systemmanager",
+            "com.hihonor.assistant"                      // 荣耀
         )
     }
 
@@ -54,7 +64,8 @@ class GuardAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         lockState = LockState(this)
-        // 需要窗口内容信息才能识别分屏/小窗窗口类型
+
+        // 需要窗口内容信息才能识别分屏/小窗窗口
         try {
             serviceInfo = serviceInfo.apply {
                 flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
@@ -62,6 +73,16 @@ class GuardAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.w(TAG, "设置无障碍 flags 失败：${e.message}")
         }
+
+        // 无障碍与前台守护互为保活：任一存活就把对方拉起来
+        try {
+            if (!LockGuardService.isRunning) {
+                LockGuardService.start(this)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "拉起锁机守护失败：${e.message}")
+        }
+
         Log.d(TAG, "无障碍服务已连接")
     }
 
@@ -71,30 +92,28 @@ class GuardAccessibilityService : AccessibilityService() {
         val state = lockState ?: return
         if (!state.isLocked) return
 
-        // 番茄钟休息阶段放行
+        // 番茄钟休息阶段 / 暂停中 放行
         if (!state.shouldBlockNow) return
 
+        // 答题页在前台时绝不干预（输入法会被顶掉导致闪退）
+        if (UnlockChallengeActivity.active) return
+
         when (event.eventType) {
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                handleWindowStateChanged(event)
-            }
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
-                // 分屏 / 画中画小窗出现时立即顶回
-                handleWindowsChanged()
-            }
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> handleWindowsChanged()
         }
     }
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString() ?: return
-        // 自身界面（锁屏页/应用主界面）不拦截
+        // 自身界面（锁屏页/答题页/应用主界面）不拦截
         if (pkg == packageName) return
 
         val now = System.currentTimeMillis()
         if (now - lastReassertAt < 300L) return
         lastReassertAt = now
 
-        // 下拉通知栏 / 最近任务 / 语音助手等系统界面：先收起，再顶回
+        // 下拉通知栏 / 最近任务 / 语音助手等系统界面：先收起
         if (pkg in blockedSystemPackages) {
             Log.d(TAG, "锁机中检测到系统界面 $pkg，执行防破解")
             dismissNotificationShade()
@@ -152,17 +171,25 @@ class GuardAccessibilityService : AccessibilityService() {
         super.onDestroy()
         instance = null
         Log.d(TAG, "无障碍服务已销毁")
-        // 服务被系统停掉（部分 ROM 会定时清理无障碍）时提醒用户重新开启，
-        // 避免锁机保护在用户不知情的情况下失效
+
+        // 无障碍掉了不等于锁机失效：确保前台守护在跑，它不依赖无障碍
+        try {
+            if (!LockGuardService.isRunning) {
+                LockGuardService.start(this)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "无障碍销毁时拉起守护失败：${e.message}")
+        }
+
         notifyAccessibilityLost()
     }
 
     /** 无障碍服务断开时发通知引导重新开启。 */
     private fun notifyAccessibilityLost() {
         try {
-            val lockState = lockState ?: return
+            val state = lockState ?: return
             // 只有锁机期间断开才值得提醒（平时断开不影响）
-            if (!lockState.isLocked) return
+            if (!state.isLocked) return
             val pendingIntent = android.app.PendingIntent.getActivity(
                 this,
                 2,
@@ -170,10 +197,12 @@ class GuardAccessibilityService : AccessibilityService() {
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or
                     android.app.PendingIntent.FLAG_IMMUTABLE
             )
-            val notification = android.app.Notification.Builder(this, com.focusguard.app.FocusGuardApp.CHANNEL_ID)
+            val notification = android.app.Notification.Builder(
+                this, com.focusguard.app.FocusGuardApp.CHANNEL_ID
+            )
                 .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
-                .setContentTitle("锁机保护部分失效")
-                .setContentText("无障碍服务已断开，无法拦截切换到其他应用，点击重新开启")
+                .setContentTitle("无障碍已断开（锁机仍生效）")
+                .setContentText("锁机由前台守护继续维持，但拦截速度变慢，建议重新开启无障碍")
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .build()

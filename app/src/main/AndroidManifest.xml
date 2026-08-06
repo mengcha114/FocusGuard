@@ -5,6 +5,8 @@
     <!-- Screen capture -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- 锁机守护前台服务（Android 14+ 要求声明具体类型） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
     <!-- Overlay for blocking -->
@@ -108,11 +110,17 @@
             android:taskAffinity=""
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
-        <!-- Monitor service -->
+        <!-- Monitor service（AI 检测，需要 MediaProjection） -->
         <service
             android:name=".service.MonitorService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
+        <!-- 锁机守护前台服务（不依赖无障碍，使用情况权限即可工作） -->
+        <service
+            android:name=".service.LockGuardService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Accessibility service -->
         <service
@@ -127,13 +135,15 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- 开机自启动：恢复锁机状态 / 提醒重新开启守护 -->
+        <!-- 开机自启动：恢复锁机状态 + 启动锁机守护服务 -->
         <receiver
             android:name=".boot.BootReceiver"
-            android:exported="false">
-            <intent-filter>
+            android:exported="true">
+            <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

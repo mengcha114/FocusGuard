@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -44,6 +45,7 @@ import kotlinx.coroutines.delay
 class AppBlockActivity : ComponentActivity() {
 
     companion object {
+        private const val TAG = "AppBlockActivity"
         private const val EXTRA_PACKAGE = "package_name"
         private const val EXTRA_LABEL = "app_label"
         private const val EXTRA_USED_MINUTES = "used_minutes"
@@ -88,8 +90,8 @@ class AppBlockActivity : ComponentActivity() {
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
         }
-        // 禁止截屏，避免用户截图后从图库看内容
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        // 保持屏幕常亮，避免息屏后封锁页被系统回收
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         blockedPackage = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
         val label = intent.getStringExtra(EXTRA_LABEL).orEmpty().ifBlank { blockedPackage }
@@ -122,8 +124,23 @@ class AppBlockActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // 用户主动离开（如按 Home）时结束自己，不残留在任务栈
-        finish()
+        // 注意：这里不能直接 finish。
+        // 早期实现一 finish 就把封锁页销毁，用户按 Home 再点回被封锁的应用
+        // 就能正常使用（这正是"超过最高时间后仍可使用"的直接原因）。
+        // 现在交给 LockGuardService 巡检：用户若再打开被封锁应用，
+        // 守护服务会在 1 秒内重新拉起本页面。
+        Log.d(TAG, "用户离开封锁页，守护服务将在其重新打开被封应用时拦截")
+    }
+
+    /**
+     * 封锁页失焦（下拉通知栏等）时不做处理，
+     * 顶回逻辑统一由守护服务负责，避免与系统窗口争抢焦点。
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) {
+            GuardAccessibilityService.instance?.dismissNotificationShade()
+        }
     }
 
     private fun goHome() {
