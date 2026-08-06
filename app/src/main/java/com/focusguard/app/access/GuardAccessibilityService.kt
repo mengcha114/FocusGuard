@@ -113,17 +113,7 @@ class GuardAccessibilityService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (now - lastReassertAt < 300L) return
 
-        // 检测画中画（小窗）窗口：有则收起并顶回
-        val hasPip = try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                windows?.any { it.type == AccessibilityWindowInfo.TYPE_PICTURE_IN_PICTURE } == true
-            } else {
-                false
-            }
-        } catch (e: Exception) {
-            false
-        }
-        // 检测分屏：多于一个全屏应用窗口
+        // 检测分屏/小窗：多于一个应用窗口同时可见 → 顶回锁机页
         val hasSplit = try {
             val appWindows = windows?.filter {
                 it.type == AccessibilityWindowInfo.TYPE_APPLICATION
@@ -133,9 +123,9 @@ class GuardAccessibilityService : AccessibilityService() {
             false
         }
 
-        if (hasPip || hasSplit) {
+        if (hasSplit) {
             lastReassertAt = now
-            Log.d(TAG, "锁机中检测到小窗/分屏（pip=$hasPip split=$hasSplit），立即顶回")
+            Log.d(TAG, "锁机中检测到分屏/小窗，立即顶回")
             try {
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 LockScreenActivity.reassert(this)
