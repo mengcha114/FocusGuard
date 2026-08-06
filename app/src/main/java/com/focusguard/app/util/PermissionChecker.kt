@@ -1,7 +1,5 @@
 package com.focusguard.app.util
 
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -9,7 +7,6 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.focusguard.app.access.GuardAccessibilityService
-import com.focusguard.app.admin.GuardDeviceAdminReceiver
 
 /**
  * 统一的权限状态查询入口。
@@ -21,12 +18,6 @@ object PermissionChecker {
 
     fun canDrawOverlays(context: Context): Boolean =
         Settings.canDrawOverlays(context)
-
-    fun isDeviceAdminActive(context: Context): Boolean {
-        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-            ?: return false
-        return dpm.isAdminActive(ComponentName(context, GuardDeviceAdminReceiver::class.java))
-    }
 
     fun isAccessibilityEnabled(context: Context): Boolean {
         // 服务实例存在说明确实已连接，比读设置字符串更可靠

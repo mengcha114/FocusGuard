@@ -10,9 +10,6 @@
     <!-- Overlay for blocking -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     
-    <!-- Device admin for lock screen -->
-    <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
-    
     <!-- Usage stats -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     
@@ -105,19 +102,6 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
-
-        <!-- Device admin receiver -->
-        <receiver
-            android:name=".admin.GuardDeviceAdminReceiver"
-            android:exported="false"
-            android:permission="android.permission.BIND_DEVICE_ADMIN">
-            <meta-data
-                android:name="android.app.device_admin"
-                android:resource="@xml/device_admin_receiver" />
-            <intent-filter>
-                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-            </intent-filter>
-        </receiver>
 
     </application>
 

@@ -93,6 +93,19 @@ class LockScreenActivity : ComponentActivity() {
         // 拦截返回键——锁机期间任何退出手段都无效
     }
 
+    /** 窗口失焦（用户按 Home / 最近任务 / 通知栏）时立即顶回前台。 */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus && lockState.shouldBlockNow) {
+            // 延迟一点再置顶，避免与系统转场动画冲突导致闪屏
+            android.os.Handler(mainLooper).postDelayed({
+                if (lockState.shouldBlockNow) {
+                    show(this)
+                }
+            }, 150L)
+        }
+    }
+
     override fun onUserLeaveHint() {
         // 用户试图离开（如按 Home）时重新置顶自身。
         // 番茄钟休息阶段允许离开，此时不重新拉起。

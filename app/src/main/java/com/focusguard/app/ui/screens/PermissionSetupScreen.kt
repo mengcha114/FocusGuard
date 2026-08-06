@@ -64,16 +64,10 @@ fun PermissionSetupScreen(
             PermissionItem(
                 key = "overlay",
                 title = "悬浮窗",
-                description = "显示警告与全屏封锁界面",
+                description = "在应用之上显示警告与提示",
                 icon = Icons.Default.Layers,
-                isGranted = PermissionChecker.canDrawOverlays(context)
-            ),
-            PermissionItem(
-                key = "device_admin",
-                title = "设备管理员",
-                description = "执行强制锁屏",
-                icon = Icons.Default.Lock,
-                isGranted = PermissionChecker.isDeviceAdminActive(context)
+                isGranted = PermissionChecker.canDrawOverlays(context),
+                isRequired = false
             ),
             PermissionItem(
                 key = "accessibility",

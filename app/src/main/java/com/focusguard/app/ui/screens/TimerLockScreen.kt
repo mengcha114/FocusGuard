@@ -44,9 +44,9 @@ fun TimerLockScreen(onBack: () -> Unit) {
     var selectedMode by remember { mutableStateOf(LockMode.PLAIN) }
     var pomodoroRounds by remember { mutableIntStateOf(4) }
 
+    // 软件锁机只需无障碍：锁机时拦截所有切换到其他应用的尝试
     val accessibilityOn = PermissionChecker.isAccessibilityEnabled(context)
-    val overlayOn = PermissionChecker.canDrawOverlays(context)
-    val ready = accessibilityOn && overlayOn
+    val ready = accessibilityOn
 
     Column(
         modifier = Modifier
@@ -83,26 +83,17 @@ fun TimerLockScreen(onBack: () -> Unit) {
                     Spacer(Modifier.width(10.dp))
                     Column {
                         Text(
-                            "锁机需要以下权限才能生效",
+                            "需要开启无障碍服务才能锁机",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White
                         )
                         Spacer(Modifier.height(4.dp))
-                        if (!accessibilityOn) {
-                            Text(
-                                "· 无障碍服务：用于拦截切换到其他应用",
-                                fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.7f)
-                            )
-                        }
-                        if (!overlayOn) {
-                            Text(
-                                "· 悬浮窗：用于在其他应用之上显示锁定界面",
-                                fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.7f)
-                            )
-                        }
+                        Text(
+                            "锁机为全屏软件覆盖，无障碍用于拦截切换到其他应用",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
                     }
                 }
             }

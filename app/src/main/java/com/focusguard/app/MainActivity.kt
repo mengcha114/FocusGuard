@@ -1,8 +1,6 @@
 package com.focusguard.app
 
 import android.Manifest
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
@@ -43,14 +41,6 @@ class MainActivity : ComponentActivity() {
             )
         } else {
             Toast.makeText(this, "屏幕录制权限被拒绝", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private val deviceAdminLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            appSettings.deviceAdminGranted = true
         }
     }
 
@@ -179,18 +169,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isAllPermissionsGranted(): Boolean {
-        return com.focusguard.app.util.PermissionChecker.canDrawOverlays(this) &&
-            com.focusguard.app.util.PermissionChecker.isDeviceAdminActive(this) &&
-            com.focusguard.app.util.PermissionChecker.isUsageStatsGranted(this)
+        // 锁机为软件全屏覆盖，不需要设备管理员；
+        // 必需权限只有：应用使用情况（识别前台）+ 无障碍（锁机拦截）
+        return com.focusguard.app.util.PermissionChecker.isUsageStatsGranted(this) &&
+            com.focusguard.app.util.PermissionChecker.isAccessibilityEnabled(this)
     }
 
     /** 把系统真实权限同步回 Settings 标记（overlay、screen capture）。 */
     private fun syncPermissionFlags() {
         if (com.focusguard.app.util.PermissionChecker.canDrawOverlays(this)) {
             appSettings.overlayGranted = true
-        }
-        if (com.focusguard.app.util.PermissionChecker.isDeviceAdminActive(this)) {
-            appSettings.deviceAdminGranted = true
         }
     }
 
@@ -205,16 +193,6 @@ class MainActivity : ComponentActivity() {
                     Uri.parse("package:$packageName")
                 )
                 settingsPageLauncher.launch(intent)
-            }
-            "device_admin" -> {
-                val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                    putExtra(
-                        DevicePolicyManager.EXTRA_DEVICE_ADMIN,
-                        ComponentName(this@MainActivity, com.focusguard.app.admin.GuardDeviceAdminReceiver::class.java)
-                    )
-                    putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "专注卫士需要设备管理员权限来强制锁屏")
-                }
-                deviceAdminLauncher.launch(intent)
             }
             "usage_stats" -> {
                 val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)

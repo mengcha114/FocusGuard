@@ -25,7 +25,6 @@
     <string name="permission_setup">权限设置</string>
     <string name="screen_capture">屏幕录制</string>
     <string name="overlay">悬浮窗</string>
-    <string name="device_admin">设备管理员</string>
     <string name="accessibility">无障碍服务</string>
     <string name="battery_optimize">电池优化</string>
     <string name="notification_permission">通知权限</string>

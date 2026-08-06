@@ -38,7 +38,6 @@ class Settings(context: Context) {
         // Permission states
         private const val KEY_SCREEN_CAPTURE_GRANTED = "screen_capture_granted"
         private const val KEY_OVERLAY_GRANTED = "overlay_granted"
-        private const val KEY_DEVICE_ADMIN_GRANTED = "device_admin_granted"
         private const val KEY_ACCESSIBILITY_GRANTED = "accessibility_granted"
     }
     
@@ -164,10 +163,6 @@ class Settings(context: Context) {
     var overlayGranted: Boolean
         get() = prefs.getBoolean(KEY_OVERLAY_GRANTED, false)
         set(value) = prefs.edit().putBoolean(KEY_OVERLAY_GRANTED, value).apply()
-    
-    var deviceAdminGranted: Boolean
-        get() = prefs.getBoolean(KEY_DEVICE_ADMIN_GRANTED, false)
-        set(value) = prefs.edit().putBoolean(KEY_DEVICE_ADMIN_GRANTED, value).apply()
     
     var accessibilityGranted: Boolean
         get() = prefs.getBoolean(KEY_ACCESSIBILITY_GRANTED, false)

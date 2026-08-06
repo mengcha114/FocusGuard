@@ -1,23 +1,23 @@
 package com.focusguard.app.enforce
 
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import android.util.Log
-import com.focusguard.app.admin.GuardDeviceAdminReceiver
 import com.focusguard.app.data.Settings
 
+/**
+ * 执法器。
+ *
+ * 锁机 = 软件层面的全屏覆盖（勒索病毒式）：
+ * 拉起 [LockScreenActivity] 盖住整个屏幕，拦截返回键，
+ * 由无障碍服务在用户尝试切换到其他应用时把锁屏页顶回前台。
+ * 不依赖设备管理员，因此无需系统级权限。
+ */
 class Enforcer(private val context: Context) {
-    
+
     companion object {
         private const val TAG = "Enforcer"
     }
-    
-    private val devicePolicyManager = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-    private val adminComponent = ComponentName(context, GuardDeviceAdminReceiver::class.java)
-    
+
     fun enforce(mode: Settings.EnforcementMode, reason: String): String {
         return when (mode) {
             Settings.EnforcementMode.LOCK -> {
@@ -34,29 +34,25 @@ class Enforcer(private val context: Context) {
             }
         }
     }
-    
+
+    /** 软件全屏锁机：拉起全屏锁屏页，无需设备管理员。 */
     private fun lockScreen() {
         try {
-            // 先用 DeviceAdmin 触发系统锁屏，然后拉起 LockScreenActivity 持续守锁，
-            // 防止用户解锁后直接回到被拦截的应用
-            if (devicePolicyManager.isAdminActive(adminComponent)) {
-                devicePolicyManager.lockNow()
-            }
             LockScreenActivity.show(context)
-            Log.d(TAG, "Screen locked via DeviceAdmin + LockScreenActivity")
+            Log.d(TAG, "软件锁机已启动（全屏覆盖）")
         } catch (e: Exception) {
-            Log.e(TAG, "Lock screen failed", e)
-            LockScreenActivity.show(context)
+            Log.e(TAG, "拉起锁屏页失败", e)
+            exitAndBlock("锁机失败: ${e.message}")
         }
     }
-    
+
     private fun exitAndBlock(reason: String) {
         try {
-            // Launch block activity
-            val intent = Intent(context, BlockActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            // 退出当前应用并显示遮挡界面
+            val intent = android.content.Intent(context, BlockActivity::class.java).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 putExtra("reason", reason)
             }
             context.startActivity(intent)
@@ -65,10 +61,9 @@ class Enforcer(private val context: Context) {
             Log.e(TAG, "Exit and block failed", e)
         }
     }
-    
+
     private fun showWarning(reason: String) {
         // For warn mode, we just show a notification
-        // The actual notification is handled by the service
         Log.d(TAG, "Warning mode: $reason")
     }
 }
