@@ -1,0 +1,50 @@
+name: Build APK
+
+# 触发条件：
+# 1. 推送到 main 分支
+# 2. 手动触发（Actions 页面点 "Run workflow"）
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 配置 Gradle 缓存
+        uses: gradle/actions/setup-gradle@v3
+
+      # 本机生成的 gradle-wrapper.properties 指向腾讯镜像（国内快），
+      # 但 GitHub 服务器在海外，官方源更稳，这里换回去
+      - name: 修正 Gradle 下载源
+        run: |
+          sed -i 's|https\\://mirrors.tencent.com/gradle/gradle-8.7-bin.zip|https\\://services.gradle.org/distributions/gradle-8.7-bin.zip|' gradle/wrapper/gradle-wrapper.properties
+          grep distributionUrl gradle/wrapper/gradle-wrapper.properties
+
+      # local.properties 里的 sdk.dir 是开发机路径，CI 环境不需要它
+      #（ANDROID_HOME 由 AGP 自动探测），直接移除避免干扰
+      - name: 清理本机路径配置
+        run: rm -f local.properties
+
+      - name: 构建 Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: 上传 APK 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
