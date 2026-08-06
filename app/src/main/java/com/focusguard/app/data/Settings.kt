@@ -14,6 +14,7 @@ class Settings(context: Context) {
         private const val KEY_MODEL_NAME = "model_name"
         private const val KEY_AI_CUSTOM_PROMPT = "ai_custom_prompt"
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_API_FORMAT = "api_format"
         
         // Detection settings
         private const val KEY_INTERVAL_MINUTES = "interval_minutes"
@@ -87,6 +88,14 @@ class Settings(context: Context) {
     var themeMode: Int
         get() = prefs.getInt(KEY_THEME_MODE, 0)
         set(value) = prefs.edit().putInt(KEY_THEME_MODE, value.coerceIn(0, 3)).apply()
+
+    /**
+     * API 协议格式：openai（默认，兼容 Kimi/GLM/Qwen/DeepSeek 等）、
+     * anthropic（Claude）、gemini（Google）。
+     */
+    var apiFormat: String
+        get() = prefs.getString(KEY_API_FORMAT, "openai") ?: "openai"
+        set(value) = prefs.edit().putString(KEY_API_FORMAT, value).apply()
     
     // Detection settings
     var intervalMinutes: Int

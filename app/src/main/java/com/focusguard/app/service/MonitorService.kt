@@ -242,6 +242,10 @@ class MonitorService : Service() {
                 delay(USAGE_TICK_MS)
                 if (!isActive) break
 
+                // 锁机兜底：锁机状态激活但锁机页不在前台（被最近任务/滑动销毁、
+                // 进程被杀后服务重建）时，自动重新拉起锁机页
+                enforceLockReassert()
+
                 // 每个 tick 都累计使用时长并检查是否触发闸门
                 when (val verdict = usageTick()) {
                     is UsageTracker.Verdict.ShouldHardBlock -> {
@@ -274,9 +278,26 @@ class MonitorService : Service() {
         }
     }
 
+    /**
+     * 锁机兜底：锁机状态激活、锁机页不在前台且无答题页时，
+     * 重新拉起锁机页。防止用户通过最近任务/滑动销毁锁机页绕过锁机。
+     */
+    private fun enforceLockReassert() {
+        try {
+            if (!lockState.isLocked || !lockState.shouldBlockNow) return
+            // 锁机页或答题页任一在前台都算受控
+            if (com.focusguard.app.enforce.LockScreenActivity.instance != null) return
+            if (com.focusguard.app.enforce.UnlockChallengeActivity.active) return
+
+            Log.d(TAG, "锁机状态激活但锁机页不在前台，自动重新拉起")
+            com.focusguard.app.enforce.LockScreenActivity.show(this)
+        } catch (e: Exception) {
+            Log.w(TAG, "锁机兜底拉起失败：${e.message}")
+        }
+    }
+
     /** 当前应等待的检测间隔，自适应开启时由调度器决定。 */
-    private fun currentDetectionDelayMs(): Long {
-        val sched = scheduler
+    private fun currentDetectionDelayMs(): Long {        val sched = scheduler
         return if (settings.adaptiveIntervalEnabled && sched != null) {
             sched.nextDelaySeconds() * 1000L
         } else {

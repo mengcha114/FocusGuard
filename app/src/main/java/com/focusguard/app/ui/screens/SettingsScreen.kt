@@ -28,6 +28,7 @@ fun SettingsScreen(onSave: () -> Unit) {
     var apiBaseUrl by remember { mutableStateOf(settings.apiBaseUrl) }
     var apiKey by remember { mutableStateOf(settings.apiKey) }
     var modelName by remember { mutableStateOf(settings.modelName) }
+    var apiFormat by remember { mutableStateOf(settings.apiFormat) }
     var aiCustomPrompt by remember { mutableStateOf(settings.aiCustomPrompt) }
     var intervalMinutes by remember { mutableStateOf(settings.intervalMinutes.toString()) }
     var confidenceThreshold by remember { mutableStateOf(settings.confidenceThreshold) }
@@ -76,6 +77,52 @@ fun SettingsScreen(onSave: () -> Unit) {
                 placeholder = { Text("moonshot-v1-8k-vision-preview") },
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
             )
+            Spacer(Modifier.height(8.dp))
+
+            // ── 厂商预设一键填充 ────────────────────────
+            Text(
+                "厂商预设（点击自动填入地址与模型）",
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.55f)
+            )
+            Spacer(Modifier.height(4.dp))
+            val presets = listOf(
+                "OpenAI" to Triple("openai", "https://api.openai.com/v1", "gpt-4o-mini"),
+                "Kimi" to Triple("openai", "https://api.moonshot.cn/v1", "moonshot-v1-8k-vision-preview"),
+                "GLM 智谱" to Triple("openai", "https://open.bigmodel.cn/api/paas/v4", "glm-4v-plus"),
+                "通义千问" to Triple("openai", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-vl-plus"),
+                "DeepSeek" to Triple("openai", "https://api.deepseek.com/v1", "deepseek-chat"),
+                "Claude" to Triple("anthropic", "https://api.anthropic.com", "claude-3-5-sonnet-latest"),
+                "Gemini" to Triple("gemini", "https://generativelanguage.googleapis.com", "gemini-1.5-flash")
+            )
+            presets.chunked(2).forEach { rowPresets ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    rowPresets.forEach { (name, cfg) ->
+                        OutlinedButton(
+                            onClick = {
+                                apiBaseUrl = cfg.second
+                                modelName = cfg.third
+                                apiFormat = cfg.first
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp)
+                        ) {
+                            Text(name, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "GLM/千问/DeepSeek 为 OpenAI 兼容格式；Claude 走 /v1/messages；Gemini 走 generateContent",
+                fontSize = 10.sp,
+                color = Color.White.copy(alpha = 0.4f)
+            )
+
             Spacer(Modifier.height(8.dp))
 
             // ── Kimi 一键填充 ──────────────────────────────
@@ -315,6 +362,9 @@ fun SettingsScreen(onSave: () -> Unit) {
                     sb.append("===== Token 统计 =====\n")
                     sb.append("今日调用：${tokenBudget.callsToday} 次\n")
                     sb.append("今日节约：${tokenBudget.savedCallsToday} 次\n")
+                    sb.append("===== AI 调用诊断（最近 ${com.focusguard.app.ai.AiClient.exportDiagnostics().lines().count()} 条） =====\n")
+                    sb.append(com.focusguard.app.ai.AiClient.exportDiagnostics())
+                    sb.append("\n")
                     sb.append("===== 检测日志 =====\n")
                     sb.append(logStore.exportText())
 
@@ -362,6 +412,7 @@ fun SettingsScreen(onSave: () -> Unit) {
                 settings.apiBaseUrl = apiBaseUrl
                 settings.apiKey = apiKey
                 settings.modelName = modelName
+                settings.apiFormat = apiFormat
                 settings.aiCustomPrompt = aiCustomPrompt
                 settings.intervalMinutes = intervalMinutes.toIntOrNull() ?: 3
                 settings.confidenceThreshold = confidenceThreshold

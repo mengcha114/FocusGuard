@@ -40,6 +40,9 @@ class UnlockChallengeActivity : ComponentActivity() {
             private set
 
         fun show(context: Context, requiredCorrect: Int = 1) {
+            // 先置 active 再启动：锁机页的失焦轮询会跳过顶回，
+            // 否则 startActivity 到 onCreate 之间的空窗期答题页会被顶掉（表现为闪退）
+            active = true
             val intent = Intent(context, UnlockChallengeActivity::class.java).apply {
                 putExtra(EXTRA_REQUIRED_CORRECT, requiredCorrect)
                 addFlags(

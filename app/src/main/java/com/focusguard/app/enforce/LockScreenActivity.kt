@@ -182,6 +182,18 @@ class LockScreenActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (instance === this) instance = null
+        // 被最近任务/系统销毁时，若锁机状态仍在且未解锁，自动恢复锁机页。
+        // 应用持有悬浮窗权限，后台启动 Activity 不受限。
+        if (lockState.isLocked && lockState.shouldBlockNow) {
+            Log.d(TAG, "锁机页被销毁但锁机未结束，延时自动恢复")
+            android.os.Handler(mainLooper).postDelayed({
+                if (lockState.isLocked && lockState.shouldBlockNow &&
+                    !UnlockChallengeActivity.active
+                ) {
+                    show(this)
+                }
+            }, 600L)
+        }
     }
 }
 
