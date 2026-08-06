@@ -27,6 +27,7 @@ import com.focusguard.app.detection.AppCategoryStore
 import com.focusguard.app.detection.AppClassifier
 import com.focusguard.app.detection.AppInventory
 import com.focusguard.app.detection.InstalledApp
+import kotlinx.coroutines.launch
 
 /**
  * 应用管控页。
@@ -183,6 +184,7 @@ fun AppControlScreen(
     }
 
     // ── 分类设置弹窗 ─────────────────────────────────
+    val scope = rememberCoroutineScope()
     editingApp?.let { app ->
         CategoryEditSheet(
             app = app,
@@ -197,7 +199,7 @@ fun AppControlScreen(
                 AppInventory.invalidate()
                 editingApp = null
                 // 重新加载以刷新分类显示
-                kotlinx.coroutines.MainScope().launch {
+                scope.launch {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         val store2 = AppCategoryStore(context)
                         apps = AppInventory.listLaunchableApps(context, store2, forceRefresh = true)
