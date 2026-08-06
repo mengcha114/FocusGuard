@@ -45,6 +45,9 @@ fun TimerLockScreen(onBack: () -> Unit) {
     var pomodoroRounds by remember { mutableIntStateOf(4) }
     var customMinutes by remember { mutableStateOf("") }
     var unlockStrength by remember { mutableIntStateOf(1) }
+    var pauseEnabled by remember { mutableStateOf(false) }
+    var pauseQuota by remember { mutableIntStateOf(3) }
+    var pauseMinutes by remember { mutableIntStateOf(5) }
 
     // 软件锁机只需无障碍：锁机时拦截所有切换到其他应用的尝试
     val accessibilityOn = PermissionChecker.isAccessibilityEnabled(context)
@@ -148,8 +151,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
             2 to "连对5题",
             3 to "朋友辅助",
             4 to "不可解锁"
-        )
-        Row(
+        )        Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -166,7 +168,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
             text = when (unlockStrength) {
                 1 -> "答对 1 道高难度题即可提前解锁"
                 2 -> "必须连续答对 5 道题才能解锁"
-                3 -> "锁机页显示凯撒密文+偏移量，朋友解密后输入密码解锁"
+                3 -> "锁机页显示加密代码，朋友用解密工具算出密码后输入解锁"
                 else -> "完全无法提前解锁，只能等时间结束"
             },
             fontSize = 12.sp,
@@ -247,6 +249,75 @@ fun TimerLockScreen(onBack: () -> Unit) {
             )
         }
 
+        // ── 暂停设置 ──────────────────────────────────
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F1F23))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("允许中途暂停", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                        Text(
+                            "每次暂停需答对 1 道题获取",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                    Switch(
+                        checked = pauseEnabled,
+                        onCheckedChange = { pauseEnabled = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color(0xFF4F378B)
+                        )
+                    )
+                }
+
+                if (pauseEnabled) {
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                    Spacer(Modifier.height(12.dp))
+
+                    Text("暂停次数", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.7f))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(1, 2, 3, 5).forEach { n ->
+                            FilterChip(
+                                selected = pauseQuota == n,
+                                onClick = { pauseQuota = n },
+                                label = { Text("$n 次", fontSize = 12.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Text("每次暂停时长", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.7f))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(3, 5, 10, 15).forEach { mins ->
+                            FilterChip(
+                                selected = pauseMinutes == mins,
+                                onClick = { pauseMinutes = mins },
+                                label = { Text("$mins 分钟", fontSize = 12.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // ── 规则说明 ──────────────────────────────────
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -279,11 +350,13 @@ fun TimerLockScreen(onBack: () -> Unit) {
                 }
                 lockState.startLock(totalMinutes, selectedMode.name)
                 lockState.unlockStrength = unlockStrength
+                lockState.pauseEnabled = pauseEnabled
+                lockState.pauseQuota = pauseQuota
+                lockState.pauseMinutes = pauseMinutes
                 if (unlockStrength == 3) {
                     // 强度 3：预先生成凯撒密文，锁机页直接展示
                     lockState.setupFriendChallenge()
-                }
-                if (selectedMode == LockMode.POMODORO) {
+                }                if (selectedMode == LockMode.POMODORO) {
                     lockState.pomodoroRunning = true
                     lockState.pomodoroIsWorkPhase = true
                     lockState.pomodoroRoundsLeft = pomodoroRounds

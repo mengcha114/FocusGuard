@@ -74,6 +74,9 @@ class LockScreenActivity : ComponentActivity() {
 
     private lateinit var lockState: LockState
 
+    /** 答题成功后是解锁（false）还是申请暂停（true）。 */
+    private var pendingPause = false
+
     /** 失焦轮询：间隔 400ms，不依赖无障碍，只要失焦就顶回。 */
     private val focusPollingRunnable = object : Runnable {
         override fun run() {
@@ -137,7 +140,10 @@ class LockScreenActivity : ComponentActivity() {
         setContent {
             LockScreenContent(
                 lockState = lockState,
-                onStartChallenge = { count -> UnlockChallengeActivity.show(this, count) },
+                onStartChallenge = { count ->
+                    pendingPause = count < 0
+                    UnlockChallengeActivity.show(this, kotlin.math.abs(count).coerceAtLeast(1))
+                },
                 onUnlocked = {
                     lockState.releaseLock()
                     finish()
@@ -149,10 +155,16 @@ class LockScreenActivity : ComponentActivity() {
         window.decorView.postDelayed(focusPollingRunnable, 400L)
     }
 
-    /** 答题页答对全部题目后调用：解锁并关闭。 */
+    /** 答题页答对全部题目后调用：暂停申请则开始暂停，否则解锁。 */
     fun onUnlockedExternally() {
-        lockState.releaseLock()
-        finish()
+        if (pendingPause) {
+            pendingPause = false
+            lockState.startPause()
+            Log.d(TAG, "答题成功，获得一次暂停（${lockState.pauseMinutes} 分钟）")
+        } else {
+            lockState.releaseLock()
+            finish()
+        }
     }
 
     @Deprecated("Back blocked during lock")
@@ -182,14 +194,16 @@ private fun LockScreenContent(
     var remainingSeconds by remember { mutableIntStateOf(lockState.remainingSeconds) }
     var isWorkPhase by remember { mutableStateOf(lockState.pomodoroIsWorkPhase) }
     var phaseSeconds by remember { mutableIntStateOf(lockState.pomodoroRemainingSeconds) }
+    var pauseSeconds by remember { mutableIntStateOf(lockState.pauseRemainingSeconds) }
 
     val isPomodoro = lockState.lockSource == "POMODORO"
 
-    // 倒计时 + 番茄钟阶段推进
+    // 倒计时 + 番茄钟阶段推进 + 暂停倒计时
     LaunchedEffect(Unit) {
         while (lockState.isLocked) {
             kotlinx.coroutines.delay(1000L)
             remainingSeconds = lockState.remainingSeconds
+            pauseSeconds = lockState.pauseRemainingSeconds
 
             if (isPomodoro) {
                 phaseSeconds = lockState.pomodoroRemainingSeconds
@@ -221,7 +235,12 @@ private fun LockScreenContent(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            val accent = if (isPomodoro && !isWorkPhase) Color(0xFF4CAF50) else Color(0xFF7C4DFF)
+            val isPausing = lockState.isPaused
+            val accent = when {
+                isPausing -> Color(0xFF4CAF50)
+                isPomodoro && !isWorkPhase -> Color(0xFF4CAF50)
+                else -> Color(0xFF7C4DFF)
+            }
 
             Icon(
                 imageVector = Icons.Default.Lock,
@@ -239,6 +258,7 @@ private fun LockScreenContent(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = when {
+                    isPausing -> "暂停中 · 可自由使用"
                     isPomodoro && isWorkPhase -> "番茄钟专注阶段 · 设备已锁定"
                     isPomodoro -> "番茄钟休息阶段 · 可自由使用"
                     else -> "设备已锁定，请专心工作学习"
@@ -249,8 +269,12 @@ private fun LockScreenContent(
             )
             Spacer(Modifier.height(32.dp))
 
-            // 倒计时：番茄钟显示当前阶段剩余，普通锁机显示总剩余
-            val shownSeconds = if (isPomodoro) phaseSeconds else remainingSeconds
+            // 倒计时：暂停中显示暂停剩余，番茄钟显示当前阶段剩余，普通锁机显示总剩余
+            val shownSeconds = when {
+                isPausing -> pauseSeconds
+                isPomodoro -> phaseSeconds
+                else -> remainingSeconds
+            }
             val h = shownSeconds / 3600
             val m = (shownSeconds % 3600) / 60
             val s = shownSeconds % 60
@@ -265,7 +289,7 @@ private fun LockScreenContent(
                     text = timeText,
                     fontSize = 52.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isPomodoro && !isWorkPhase) Color(0xFF81C784) else Color(0xFFFF6B6B),
+                    color = if (isPausing) Color(0xFF81C784) else Color(0xFFFF6B6B),
                     modifier = Modifier.padding(horizontal = 32.dp, vertical = 16.dp)
                 )
             }
@@ -330,6 +354,31 @@ private fun LockScreenContent(
                     }
                 }
             }
+
+            // ── 暂停申请（答题获得暂停时长） ──────────
+            if (lockState.pauseEnabled && !lockState.isPaused) {
+                Spacer(Modifier.height(24.dp))
+                if (lockState.canPause) {
+                    Text(
+                        text = "可以申请暂停：剩余 ${lockState.pauseQuota - lockState.pauseUsed} 次，每次 ${lockState.pauseMinutes} 分钟",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.45f)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { onStartChallenge(-1) }, // -1 标记为暂停申请
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("答题申请暂停", color = Color(0xFF8AB4F8))
+                    }
+                } else {
+                    Text(
+                        text = "暂停次数已用完",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.35f)
+                    )
+                }
+            }
         }
     }
 }
@@ -341,6 +390,7 @@ private fun FriendUnlockSection(
     shift: Int,
     onVerified: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var input by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var showHint by remember { mutableStateOf(false) }
@@ -383,7 +433,7 @@ private fun FriendUnlockSection(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "凯撒偏移量：$shift",
+                    text = "偏移量：$shift",
                     fontSize = 14.sp,
                     color = Color(0xFF8AB4F8)
                 )
@@ -416,7 +466,8 @@ private fun FriendUnlockSection(
             Text(
                 text = "把密文中的每个字母按偏移量向前移动 $shift 位即得密码。\n" +
                     "例：偏移 3 时，D→A，E→B，F→C。数字保持不变。\n" +
-                    "把密文发给朋友，朋友解密后把结果告诉你。",
+                    "把密文发给朋友，朋友可通过在线工具解密，如：\n" +
+                    "https://www.lddgo.net/encrypt/caesar-cipher",
                 fontSize = 12.sp,
                 color = Color.White.copy(alpha = 0.6f),
                 lineHeight = 18.sp
@@ -425,10 +476,7 @@ private fun FriendUnlockSection(
 
         Button(
             onClick = {
-                if (com.focusguard.app.data.LockState(
-                        androidx.compose.ui.platform.LocalContext.current
-                    ).verifyFriendPassword(input)
-                ) {
+                if (com.focusguard.app.data.LockState(context).verifyFriendPassword(input)) {
                     onVerified()
                 } else {
                     errorMsg = "密码错误，请核对解密结果"

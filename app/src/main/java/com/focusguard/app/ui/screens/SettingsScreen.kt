@@ -34,6 +34,7 @@ fun SettingsScreen(onSave: () -> Unit) {
     var consecutiveViolations by remember { mutableStateOf(settings.consecutiveViolations.toString()) }
     var whitelist by remember { mutableStateOf(settings.whitelist) }
     var enforcementMode by remember { mutableStateOf(settings.enforcementMode) }
+    var themeMode by remember { mutableStateOf(settings.themeMode) }
     var dailyCallLimit by remember { mutableStateOf(settings.dailyCallLimit.toString()) }
 
     // Token 节约系统开关
@@ -255,6 +256,34 @@ fun SettingsScreen(onSave: () -> Unit) {
             EnforcementModeSelector(selected = enforcementMode, onSelect = { enforcementMode = it })
         }
 
+        // ── 界面主题 ──────────────────────────────────────────────
+        SettingsSection(title = "界面主题", icon = Icons.Default.Palette) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                (0..3).forEach { mode ->
+                    FilterChip(
+                        selected = themeMode == mode,
+                        onClick = { themeMode = mode },
+                        label = {
+                            Text(
+                                com.focusguard.app.ui.theme.ThemeModes.labelOf(mode),
+                                fontSize = 12.sp
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "切换后点击保存生效",
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.45f)
+            )
+        }
+
         // ── 白名单 ────────────────────────────────────────────────
         SettingsSection(title = "白名单", icon = Icons.Default.PlaylistAdd) {
             OutlinedTextField(
@@ -339,6 +368,7 @@ fun SettingsScreen(onSave: () -> Unit) {
                 settings.consecutiveViolations = consecutiveViolations.toIntOrNull() ?: 2
                 settings.whitelist = whitelist
                 settings.enforcementMode = enforcementMode
+                settings.themeMode = themeMode
                 settings.tokenSavingEnabled = tokenSavingEnabled
                 settings.screenHashDedupEnabled = screenHashDedup
                 settings.screenTextPrefilterEnabled = screenTextPrefilter

@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
             appSettings.serviceRunning
 
         setContent {
-            FocusGuardTheme {
+            FocusGuardTheme(themeMode = appSettings.themeMode) {
                 val navController = rememberNavController()
                 // permissionRefreshTick 变化时重新计算 allGranted
                 val refreshTick = permissionRefreshTick

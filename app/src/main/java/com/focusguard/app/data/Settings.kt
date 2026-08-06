@@ -13,6 +13,7 @@ class Settings(context: Context) {
         private const val KEY_API_KEY = "api_key"
         private const val KEY_MODEL_NAME = "model_name"
         private const val KEY_AI_CUSTOM_PROMPT = "ai_custom_prompt"
+        private const val KEY_THEME_MODE = "theme_mode"
         
         // Detection settings
         private const val KEY_INTERVAL_MINUTES = "interval_minutes"
@@ -79,6 +80,13 @@ class Settings(context: Context) {
     var aiCustomPrompt: String
         get() = prefs.getString(KEY_AI_CUSTOM_PROMPT, "") ?: ""
         set(value) = prefs.edit().putString(KEY_AI_CUSTOM_PROMPT, value).apply()
+
+    /**
+     * UI 主题：0=深色紫 1=深色蓝 2=深色绿 3=浅色。
+     */
+    var themeMode: Int
+        get() = prefs.getInt(KEY_THEME_MODE, 0)
+        set(value) = prefs.edit().putInt(KEY_THEME_MODE, value.coerceIn(0, 3)).apply()
     
     // Detection settings
     var intervalMinutes: Int
