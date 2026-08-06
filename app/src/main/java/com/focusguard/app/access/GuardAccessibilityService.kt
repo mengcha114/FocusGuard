@@ -115,7 +115,11 @@ class GuardAccessibilityService : AccessibilityService() {
 
         // 检测画中画（小窗）窗口：有则收起并顶回
         val hasPip = try {
-            windows?.any { it.type == AccessibilityWindowInfo.TYPE_PICTURE_IN_PICTURE } == true
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                windows?.any { it.type == AccessibilityWindowInfo.TYPE_PICTURE_IN_PICTURE } == true
+            } else {
+                false
+            }
         } catch (e: Exception) {
             false
         }
