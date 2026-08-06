@@ -195,13 +195,18 @@ private fun LockScreenContent(
     var isWorkPhase by remember { mutableStateOf(lockState.pomodoroIsWorkPhase) }
     var phaseSeconds by remember { mutableIntStateOf(lockState.pomodoroRemainingSeconds) }
     var pauseSeconds by remember { mutableIntStateOf(lockState.pauseRemainingSeconds) }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     val isPomodoro = lockState.lockSource == "POMODORO"
 
-    // 倒计时 + 番茄钟阶段推进 + 暂停倒计时
+    // 随机一条励志语录（每次进入锁机页不同）
+    val motto = remember { MotivationalQuotes.random() }
+
+    // 倒计时 + 番茄钟阶段推进 + 暂停倒计时 + 时钟
     LaunchedEffect(Unit) {
         while (lockState.isLocked) {
             kotlinx.coroutines.delay(1000L)
+            nowMillis = System.currentTimeMillis()
             remainingSeconds = lockState.remainingSeconds
             pauseSeconds = lockState.pauseRemainingSeconds
 
@@ -242,16 +247,33 @@ private fun LockScreenContent(
                 else -> Color(0xFF7C4DFF)
             }
 
+            // ── 日期时间 ──────────────────────────────
+            val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            val dateFormat = java.text.SimpleDateFormat("yyyy年M月d日 EEEE", java.util.Locale.getDefault())
+            Text(
+                text = timeFormat.format(java.util.Date(nowMillis)),
+                fontSize = 44.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = dateFormat.format(java.util.Date(nowMillis)),
+                fontSize = 14.sp,
+                color = Color.White.copy(alpha = 0.55f)
+            )
+            Spacer(Modifier.height(28.dp))
+
             Icon(
                 imageVector = Icons.Default.Lock,
                 contentDescription = null,
                 tint = accent,
-                modifier = Modifier.size(72.dp)
+                modifier = Modifier.size(56.dp)
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
             Text(
                 text = "专注卫士",
-                fontSize = 26.sp,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
@@ -268,6 +290,23 @@ private fun LockScreenContent(
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(32.dp))
+
+            // ── 励志语录 ──────────────────────────────
+            Surface(
+                color = Color.White.copy(alpha = 0.05f),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(
+                    text = "「$motto」",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.65f),
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
 
             // 倒计时：暂停中显示暂停剩余，番茄钟显示当前阶段剩余，普通锁机显示总剩余
             val shownSeconds = when {
@@ -491,4 +530,33 @@ private fun FriendUnlockSection(
             Text("输入密码解锁", fontSize = 15.sp)
         }
     }
+}
+
+/** 励志语录库：锁机页随机展示一条。 */
+private object MotivationalQuotes {
+
+    private val quotes = listOf(
+        "自律给我自由",
+        "现在的努力，是为了以后更好的自己",
+        "把专注当成习惯，优秀就会成为自然",
+        "每一个不起舞的日子，都是对生命的辜负",
+        "坚持一下，你比自己想象的更强大",
+        "今天的不开心就到此为止，明天依然光芒万丈",
+        "你的时间花在哪里，人生的花就开在哪里",
+        "别让未来的你，讨厌现在放纵的自己",
+        "努力是会上瘾的，尤其是尝到甜头之后",
+        "优秀的人不是天生优秀，而是比常人更自律",
+        "读书是为了遇见更好的自己",
+        "熬过无人问津的日子，才有诗和远方",
+        "自律的顶端是享受孤独",
+        "你现在偷的懒，都会变成以后打脸的巴掌",
+        "与其仰望别人，不如点亮自己",
+        "脚踏实地，才能仰望星空",
+        "奋斗的路上，每一步都算数",
+        "把每一件简单的事做好，就是不简单",
+        "专注当下，未来自然来",
+        "坚持做难而正确的事"
+    )
+
+    fun random(): String = quotes[kotlin.random.Random.nextInt(quotes.size)]
 }

@@ -36,7 +36,7 @@ class AiClient {
     companion object {
         private const val TAG = "AiClient"
         /** 输出上限。判定结果只是一个短 JSON，给多了纯属浪费。 */
-        private const val MAX_OUTPUT_TOKENS = 120
+        private const val MAX_OUTPUT_TOKENS = 200
     }
 
     private val client = OkHttpClient.Builder()
@@ -112,6 +112,16 @@ class AiClient {
                 // 不传 temperature：OpenAI 系默认即可；
                 // Kimi K2.x/K3 的 temperature 是固定值（1.0/0.6），
                 // 传了任何其他值都会直接返回 400 invalid_request_error
+                // ── Kimi 思考模型适配 ──────────────────────
+                // K2.5/K2.6 默认开启思考，思考内容会吃掉 max_tokens，
+                // 导致 content 为空 → "结果解析失败"。显式关闭思考。
+                if (modelName.contains("k2.5", true) || modelName.contains("k2.6", true)) {
+                    put("thinking", JSONObject().apply { put("type", "disabled") })
+                }
+                // K3 不支持 thinking 参数，改用 reasoning_effort 降档省 token
+                if (modelName.contains("k3", true)) {
+                    put("reasoning_effort", "low")
+                }
             }
 
             val request = Request.Builder()
@@ -238,11 +248,16 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
             )
         } catch (e: Exception) {
             Log.e(TAG, "解析响应失败: $responseBody", e)
-            // 把原始响应片段带回 reason，用户导出日志即可定位具体问题
-            AiResult(
-                "NEUTRAL", 0f,
-                "结果解析失败：${responseBody.take(160)}"
-            )
+            // 用更可读的提示替代大段原始 JSON，方便用户判断问题类型
+            val hint = when {
+                responseBody.isBlank() -> "响应为空"
+                responseBody.contains("\"reasoning_content\"", true) ->
+                    "模型只输出了思考内容，未输出分类结果（可尝试换非思考模型）"
+                responseBody.contains("\"content\":\"\"", true) ->
+                    "模型返回空内容（max_tokens 可能被思考占用）"
+                else -> "响应格式异常"
+            }
+            AiResult("NEUTRAL", 0f, "结果解析失败：$hint")
         }
     }
 
