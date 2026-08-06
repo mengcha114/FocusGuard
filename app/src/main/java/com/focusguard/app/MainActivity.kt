@@ -145,9 +145,6 @@ class MainActivity : ComponentActivity() {
                                     onOpenUsageLimits = { navController.navigate("usage_limits") }
                                 )
                             }
-                            composable("pomodoro") {
-                                PomodoroScreen()
-                            }
                             composable("logs") {
                                 LogScreen()
                             }
