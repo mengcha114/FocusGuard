@@ -24,7 +24,5 @@
     <style name="Theme.FocusGuard.Block" parent="Theme.FocusGuard">
         <item name="android:windowBackground">@color/md_theme_background</item>
         <item name="android:windowFullscreen">true</item>
-        <item name="android:windowShowWhenLocked">true</item>
-        <item name="android:turnScreenOn">true</item>
     </style>
 </resources>
