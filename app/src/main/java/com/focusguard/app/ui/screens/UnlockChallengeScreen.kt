@@ -24,7 +24,10 @@ import com.focusguard.app.data.Settings
 import kotlinx.coroutines.launch
 
 @Composable
-fun UnlockChallengeScreen(onUnlocked: () -> Unit) {
+fun UnlockChallengeScreen(
+    onUnlocked: () -> Unit,
+    requiredCorrect: Int = 2
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val settings = remember { Settings(context) }
     val generator = remember { ChallengeGenerator() }
@@ -33,8 +36,8 @@ fun UnlockChallengeScreen(onUnlocked: () -> Unit) {
     var currentQuestion by remember { mutableStateOf<ChallengeQuestion?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var userAnswer by remember { mutableStateOf("") }
-    var targetCorrectCount by remember { mutableStateOf(2) }
-    var currentCorrectCount by remember { mutableStateOf(0) }
+    var targetCorrectCount by remember { mutableIntStateOf(requiredCorrect.coerceAtLeast(1)) }
+    var currentCorrectCount by remember { mutableIntStateOf(0) }
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
 

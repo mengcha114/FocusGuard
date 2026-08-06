@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -77,7 +78,14 @@ class LockScreenActivity : ComponentActivity() {
     private val focusPollingRunnable = object : Runnable {
         override fun run() {
             if (!isDestroyed && lockState.shouldBlockNow && !UnlockChallengeActivity.active) {
-                if (!hasWindowFocus()) {
+                // 输入法弹出时（强度 3 输密码）窗口焦点仍在，不受影响；
+                // 但部分 ROM 上输入法弹出会造成瞬时失焦，这里再补一次输入法判断兜底
+                val imeActive = try {
+                    (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).isAcceptingText
+                } catch (e: Exception) {
+                    false
+                }
+                if (!hasWindowFocus() && !imeActive) {
                     Log.d(TAG, "轮询发现窗口失焦，执行顶回")
                     // 通知栏被拉下来时先收起
                     com.focusguard.app.access.GuardAccessibilityService.instance
@@ -129,7 +137,7 @@ class LockScreenActivity : ComponentActivity() {
         setContent {
             LockScreenContent(
                 lockState = lockState,
-                onStartChallenge = { UnlockChallengeActivity.show(this) },
+                onStartChallenge = { count -> UnlockChallengeActivity.show(this, count) },
                 onUnlocked = {
                     lockState.releaseLock()
                     finish()
@@ -168,7 +176,7 @@ class LockScreenActivity : ComponentActivity() {
 @Composable
 private fun LockScreenContent(
     lockState: LockState,
-    onStartChallenge: () -> Unit,
+    onStartChallenge: (Int) -> Unit,
     onUnlocked: () -> Unit
 ) {
     var remainingSeconds by remember { mutableIntStateOf(lockState.remainingSeconds) }
@@ -273,18 +281,166 @@ private fun LockScreenContent(
 
             Spacer(Modifier.height(48.dp))
 
-            Text(
-                text = "如需提前解锁，请答对高难度计算题",
-                fontSize = 13.sp,
-                color = Color.White.copy(alpha = 0.45f)
-            )
-            Spacer(Modifier.height(16.dp))
-            OutlinedButton(
-                onClick = onStartChallenge,
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("挑战答题解锁", color = Color(0xFFD0BCFF))
+            when (lockState.unlockStrength) {
+                4 -> {
+                    // 强度 4：无法解锁，只能等时间结束
+                    Text(
+                        text = "本锁机不可提前解锁，请等待时间结束",
+                        fontSize = 13.sp,
+                        color = Color(0xFFC6786F),
+                        textAlign = TextAlign.Center
+                    )
+                }
+                3 -> {
+                    // 强度 3：朋友辅助（凯撒密码）
+                    FriendUnlockSection(
+                        cipher = lockState.friendCipher,
+                        shift = lockState.friendShift,
+                        onVerified = onUnlocked
+                    )
+                }
+                2 -> {
+                    Text(
+                        text = "需连续答对 5 道高难度题才能解锁",
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.45f),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedButton(
+                        onClick = { onStartChallenge(5) },
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("开始挑战（5 题）", color = Color(0xFFD0BCFF))
+                    }
+                }
+                else -> {
+                    Text(
+                        text = "答对 1 道高难度计算题即可解锁",
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.45f),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedButton(
+                        onClick = { onStartChallenge(1) },
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("挑战答题解锁", color = Color(0xFFD0BCFF))
+                    }
+                }
             }
+        }
+    }
+}
+
+/** 强度 3：朋友辅助解锁——显示凯撒密文与偏移，输入解密后的密码。 */
+@Composable
+private fun FriendUnlockSection(
+    cipher: String,
+    shift: Int,
+    onVerified: () -> Unit
+) {
+    var input by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+    var showHint by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = "朋友辅助解锁",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFFD0BCFF)
+        )
+
+        Surface(
+            color = Color(0xFF241F27),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "密文",
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.4f)
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = cipher.ifBlank { "——" },
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    letterSpacing = 6.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "凯撒偏移量：$shift",
+                    fontSize = 14.sp,
+                    color = Color(0xFF8AB4F8)
+                )
+            }
+        }
+
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it; errorMsg = null },
+            label = { Text("朋友解密后的密码") },
+            placeholder = { Text("输入明文密码") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
+        )
+
+        errorMsg?.let {
+            Text(it, color = Color(0xFFC6786F), fontSize = 12.sp)
+        }
+
+        TextButton(onClick = { showHint = !showHint }) {
+            Text(
+                text = if (showHint) "收起解密说明" else "怎么解密？",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 12.sp
+            )
+        }
+
+        if (showHint) {
+            Text(
+                text = "把密文中的每个字母按偏移量向前移动 $shift 位即得密码。\n" +
+                    "例：偏移 3 时，D→A，E→B，F→C。数字保持不变。\n" +
+                    "把密文发给朋友，朋友解密后把结果告诉你。",
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.6f),
+                lineHeight = 18.sp
+            )
+        }
+
+        Button(
+            onClick = {
+                if (com.focusguard.app.data.LockState(
+                        androidx.compose.ui.platform.LocalContext.current
+                    ).verifyFriendPassword(input)
+                ) {
+                    onVerified()
+                } else {
+                    errorMsg = "密码错误，请核对解密结果"
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F378B))
+        ) {
+            Text("输入密码解锁", fontSize = 15.sp)
         }
     }
 }

@@ -39,8 +39,9 @@ class UnlockChallengeActivity : ComponentActivity() {
         var instance: UnlockChallengeActivity? = null
             private set
 
-        fun show(context: Context) {
+        fun show(context: Context, requiredCorrect: Int = 1) {
             val intent = Intent(context, UnlockChallengeActivity::class.java).apply {
+                putExtra(EXTRA_REQUIRED_CORRECT, requiredCorrect)
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -50,6 +51,8 @@ class UnlockChallengeActivity : ComponentActivity() {
             }
             context.startActivity(intent)
         }
+
+        private const val EXTRA_REQUIRED_CORRECT = "required_correct"
     }
 
     private lateinit var lockState: LockState
@@ -59,6 +62,7 @@ class UnlockChallengeActivity : ComponentActivity() {
         lockState = LockState(this)
         instance = this
         active = true
+        val requiredCorrect = intent.getIntExtra(EXTRA_REQUIRED_CORRECT, 1)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -81,6 +85,7 @@ class UnlockChallengeActivity : ComponentActivity() {
                     .background(Color(0xFF121212))
             ) {
                 UnlockChallengeScreen(
+                    requiredCorrect = requiredCorrect,
                     onUnlocked = {
                         // 答对全部题目：解锁并收尾
                         lockState.releaseLock()

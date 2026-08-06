@@ -20,7 +20,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.LockState
-import com.focusguard.app.data.Settings
 import com.focusguard.app.enforce.LockScreenActivity
 import com.focusguard.app.util.PermissionChecker
 
@@ -40,12 +39,12 @@ enum class LockMode(val label: String, val description: String) {
 fun TimerLockScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val lockState = remember { LockState(context) }
-    val settings = remember { Settings(context) }
 
     var selectedMinutes by remember { mutableIntStateOf(30) }
     var selectedMode by remember { mutableStateOf(LockMode.PLAIN) }
     var pomodoroRounds by remember { mutableIntStateOf(4) }
     var customMinutes by remember { mutableStateOf("") }
+    var unlockStrength by remember { mutableIntStateOf(1) }
 
     // 软件锁机只需无障碍：锁机时拦截所有切换到其他应用的尝试
     val accessibilityOn = PermissionChecker.isAccessibilityEnabled(context)
@@ -142,6 +141,38 @@ fun TimerLockScreen(onBack: () -> Unit) {
             }
         }
 
+        // ── 解锁强度 ──────────────────────────────────
+        Text("解锁强度", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        val strengthOptions = listOf(
+            1 to "答题解锁",
+            2 to "连对5题",
+            3 to "朋友辅助",
+            4 to "不可解锁"
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            strengthOptions.forEach { (level, label) ->
+                FilterChip(
+                    selected = unlockStrength == level,
+                    onClick = { unlockStrength = level },
+                    label = { Text("强度$level $label", fontSize = 12.sp) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        Text(
+            text = when (unlockStrength) {
+                1 -> "答对 1 道高难度题即可提前解锁"
+                2 -> "必须连续答对 5 道题才能解锁"
+                3 -> "锁机页显示凯撒密文+偏移量，朋友解密后输入密码解锁"
+                else -> "完全无法提前解锁，只能等时间结束"
+            },
+            fontSize = 12.sp,
+            color = Color.White.copy(alpha = 0.55f)
+        )
+
         // ── 时长 / 轮数 ───────────────────────────────
         if (selectedMode == LockMode.PLAIN) {
             Text("锁机时长", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
@@ -229,7 +260,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                     text = "1. 锁定期间全屏覆盖，返回键与 Home 键均无效\n" +
                         "2. 切换到任何其他应用都会被立即顶回锁定界面\n" +
                         "3. 强杀进程也无法绕过——锁机状态已持久化\n" +
-                        "4. 需要提前解锁必须答对 ${settings.unlockQuestionCount} 道高难度计算题",
+                        "4. 解锁方式取决于所选强度（1-4 级）",
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.7f),
                     lineHeight = 19.sp
@@ -247,6 +278,11 @@ fun TimerLockScreen(onBack: () -> Unit) {
                     pomodoroRounds * 30
                 }
                 lockState.startLock(totalMinutes, selectedMode.name)
+                lockState.unlockStrength = unlockStrength
+                if (unlockStrength == 3) {
+                    // 强度 3：预先生成凯撒密文，锁机页直接展示
+                    lockState.setupFriendChallenge()
+                }
                 if (selectedMode == LockMode.POMODORO) {
                     lockState.pomodoroRunning = true
                     lockState.pomodoroIsWorkPhase = true

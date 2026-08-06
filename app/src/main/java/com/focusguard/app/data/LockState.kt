@@ -16,6 +16,9 @@ class LockState(context: Context) {
         private const val PREFS = "focus_guard_lock_state"
         private const val KEY_LOCK_UNTIL = "lock_until"
         private const val KEY_LOCK_SOURCE = "lock_source"
+        private const val KEY_LOCK_STRENGTH = "lock_strength"
+        private const val KEY_FRIEND_CIPHER = "friend_cipher"
+        private const val KEY_FRIEND_SHIFT = "friend_shift"
         private const val KEY_POMODORO_END = "pomodoro_end"
         private const val KEY_POMODORO_IS_WORK = "pomodoro_is_work"
         private const val KEY_POMODORO_RUNNING = "pomodoro_running"
@@ -52,9 +55,45 @@ class LockState(context: Context) {
         lockSource = source
     }
 
+    /**
+     * 解锁强度（1-4）：
+     * 1 = 答对 1 题解锁
+     * 2 = 连续答对 5 题解锁
+     * 3 = 朋友辅助：手机显示凯撒密文+偏移，朋友解密后输入密码解锁
+     * 4 = 无法解锁，只能等时间结束
+     */
+    var unlockStrength: Int
+        get() = prefs.getInt(KEY_LOCK_STRENGTH, 1)
+        set(value) = prefs.edit().putInt(KEY_LOCK_STRENGTH, value.coerceIn(1, 4)).apply()
+
+    /** 强度 3 的凯撒密文。 */
+    var friendCipher: String
+        get() = prefs.getString(KEY_FRIEND_CIPHER, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_FRIEND_CIPHER, value).apply()
+
+    /** 强度 3 的凯撒偏移量。 */
+    var friendShift: Int
+        get() = prefs.getInt(KEY_FRIEND_SHIFT, 0)
+        set(value) = prefs.edit().putInt(KEY_FRIEND_SHIFT, value).apply()
+
+    /** 生成并保存强度 3 的密文与偏移。 */
+    fun setupFriendChallenge() {
+        val (cipher, shift) = com.focusguard.app.util.CaesarHelper.generateChallenge()
+        friendCipher = cipher
+        friendShift = shift
+    }
+
+    /** 强度 3：验证朋友解密出的密码。 */
+    fun verifyFriendPassword(input: String): Boolean {
+        val plain = com.focusguard.app.util.CaesarHelper.decrypt(friendCipher, friendShift)
+        return plain.isNotEmpty() && input.trim().equals(plain, ignoreCase = true)
+    }
+
     fun releaseLock() {
         lockUntil = 0L
         lockSource = ""
+        friendCipher = ""
+        friendShift = 0
     }
 
     // ── 番茄钟 ────────────────────────────────────────
