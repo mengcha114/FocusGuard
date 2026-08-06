@@ -21,6 +21,7 @@ class LockState(context: Context) {
         private const val KEY_POMODORO_RUNNING = "pomodoro_running"
         private const val KEY_POMODORO_DONE_DATE = "pomodoro_done_date"
         private const val KEY_POMODORO_DONE_COUNT = "pomodoro_done_count"
+        private const val KEY_POMODORO_ROUNDS_LEFT = "pomodoro_rounds_left"
     }
 
     private val prefs: SharedPreferences =
@@ -85,6 +86,57 @@ class LockState(context: Context) {
             .putString(KEY_POMODORO_DONE_DATE, today())
             .putInt(KEY_POMODORO_DONE_COUNT, value)
             .apply()
+
+    /** 番茄钟剩余轮数。 */
+    var pomodoroRoundsLeft: Int
+        get() = prefs.getInt(KEY_POMODORO_ROUNDS_LEFT, 0)
+        set(value) = prefs.edit().putInt(KEY_POMODORO_ROUNDS_LEFT, value.coerceAtLeast(0)).apply()
+
+    /**
+     * 当前是否应该处于「屏幕被锁住」的状态。
+     *
+     * 普通锁机：整段时间都锁。
+     * 番茄钟：只有专注阶段锁，休息阶段放开让用户自由使用。
+     */
+    val shouldBlockNow: Boolean
+        get() {
+            if (!isLocked) return false
+            if (lockSource != "POMODORO") return true
+            // 番茄钟模式下，休息阶段不阻塞
+            return pomodoroIsWorkPhase
+        }
+
+    /** 番茄钟阶段剩余秒数。 */
+    val pomodoroRemainingSeconds: Int
+        get() = ((pomodoroEnd - System.currentTimeMillis()) / 1000)
+            .coerceAtLeast(0L)
+            .toInt()
+
+    /**
+     * 推进番茄钟到下一阶段。返回 true 表示整个番茄钟序列已结束。
+     */
+    fun advancePomodoroPhase(): Boolean {
+        return if (pomodoroIsWorkPhase) {
+            // 专注结束 → 进入休息
+            pomodoroCompletedToday += 1
+            pomodoroIsWorkPhase = false
+            pomodoroEnd = System.currentTimeMillis() + 5 * 60_000L
+            false
+        } else {
+            // 休息结束 → 进入下一轮专注，或全部结束
+            val left = pomodoroRoundsLeft - 1
+            pomodoroRoundsLeft = left
+            if (left <= 0) {
+                pomodoroRunning = false
+                releaseLock()
+                true
+            } else {
+                pomodoroIsWorkPhase = true
+                pomodoroEnd = System.currentTimeMillis() + 25 * 60_000L
+                false
+            }
+        }
+    }
 
     private fun today(): String = java.text.SimpleDateFormat(
         "yyyy-MM-dd",

@@ -55,23 +55,16 @@ fun PermissionSetupScreen(
     val permissions = remember(refreshKey) {
         listOf(
             PermissionItem(
-                key = "screen_capture",
-                title = "屏幕录制",
-                description = "AI 视觉识别的基础，仅在需要时截屏",
-                icon = Icons.Default.Screenshot,
-                isGranted = settings.screenCaptureGranted
-            ),
-            PermissionItem(
                 key = "usage_stats",
                 title = "应用使用情况",
-                description = "识别前台应用，用于零 token 快速判定",
+                description = "识别前台应用与统计使用时长，请在列表中找到「专注卫士」并开启",
                 icon = Icons.Default.QueryStats,
                 isGranted = PermissionChecker.isUsageStatsGranted(context)
             ),
             PermissionItem(
                 key = "overlay",
                 title = "悬浮窗",
-                description = "显示警告与遮挡界面",
+                description = "显示警告与全屏封锁界面",
                 icon = Icons.Default.Layers,
                 isGranted = PermissionChecker.canDrawOverlays(context)
             ),
@@ -83,19 +76,26 @@ fun PermissionSetupScreen(
                 isGranted = PermissionChecker.isDeviceAdminActive(context)
             ),
             PermissionItem(
+                key = "accessibility",
+                title = "无障碍服务",
+                description = "锁机拦截、强制退出应用、读屏省 token，请在列表中开启「专注卫士」",
+                icon = Icons.Default.Accessibility,
+                isGranted = PermissionChecker.isAccessibilityEnabled(context)
+            ),
+            PermissionItem(
+                key = "screen_capture",
+                title = "屏幕录制",
+                description = "AI 视觉识别的基础。点击「开始守护」时会弹出系统授权框",
+                icon = Icons.Default.Screenshot,
+                isGranted = settings.screenCaptureGranted,
+                isRequired = false
+            ),
+            PermissionItem(
                 key = "notification",
                 title = "通知",
                 description = "显示守护状态与检测结果",
                 icon = Icons.Default.Notifications,
                 isGranted = PermissionChecker.isNotificationGranted(context),
-                isRequired = false
-            ),
-            PermissionItem(
-                key = "accessibility",
-                title = "无障碍服务",
-                description = "读取屏幕文字省 token，并支持强制退出应用",
-                icon = Icons.Default.Accessibility,
-                isGranted = PermissionChecker.isAccessibilityEnabled(context),
                 isRequired = false
             ),
             PermissionItem(

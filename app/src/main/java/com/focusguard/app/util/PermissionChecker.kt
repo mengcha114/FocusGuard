@@ -36,7 +36,15 @@ object PermissionChecker {
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             ).orEmpty()
-            enabled.contains("${context.packageName}/${GuardAccessibilityService::class.java.name}")
+            val fullName = "${context.packageName}/${GuardAccessibilityService::class.java.name}"
+            // 部分 ROM 写成相对类名（包名/.access.XxxService），两种都要匹配
+            val shortName = "${context.packageName}/.${
+                GuardAccessibilityService::class.java.name.removePrefix("${context.packageName}.")
+            }"
+            enabled.split(':').any { entry ->
+                entry.equals(fullName, ignoreCase = true) ||
+                    entry.equals(shortName, ignoreCase = true)
+            }
         } catch (e: Exception) {
             false
         }

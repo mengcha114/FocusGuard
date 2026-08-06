@@ -1,12 +1,10 @@
 package com.focusguard.app
 
 import android.Manifest
-import android.app.AppOpsManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -21,13 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -67,6 +60,21 @@ class MainActivity : ComponentActivity() {
         // Notification permission granted or denied
     }
 
+    /**
+     * 用于所有「跳系统设置页」类权限。
+     * 这类权限没有回调结果，只能在返回后重新查询系统真实状态，
+     * 因此统一用一个 launcher 触发 UI 刷新。
+     */
+    private val settingsPageLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        syncPermissionFlags()
+        permissionRefreshTick++
+    }
+
+    /** 权限界面刷新计数，自增即触发 Compose 重新查询权限状态。 */
+    private var permissionRefreshTick by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appSettings = AppSettings(this)
@@ -76,7 +84,11 @@ class MainActivity : ComponentActivity() {
             FocusGuardTheme {
                 val navController = rememberNavController()
                 var serviceRunning by remember { mutableStateOf(appSettings.serviceRunning) }
-                var showPermissionSetup by remember { mutableStateOf(!isAllPermissionsGranted()) }
+                // permissionRefreshTick 变化时重新计算 allGranted
+                val refreshTick = permissionRefreshTick
+                var showPermissionSetup by remember(refreshTick) {
+                    mutableStateOf(!isAllPermissionsGranted())
+                }
 
                 if (showPermissionSetup) {
                     PermissionSetupScreen(
@@ -103,7 +115,7 @@ class MainActivity : ComponentActivity() {
                                     icon = { Icon(Icons.Default.Timer, contentDescription = null) },
                                     label = { Text("番茄钟") },
                                     selected = false,
-                                    onClick = { navController.navigate("pomodoro") }
+                                    onClick = { navController.navigate("timer_lock") }
                                 )
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.List, contentDescription = null) },
@@ -167,9 +179,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isAllPermissionsGranted(): Boolean {
-        return appSettings.screenCaptureGranted &&
-               appSettings.overlayGranted &&
-               appSettings.deviceAdminGranted
+        return com.focusguard.app.util.PermissionChecker.canDrawOverlays(this) &&
+            com.focusguard.app.util.PermissionChecker.isDeviceAdminActive(this) &&
+            com.focusguard.app.util.PermissionChecker.isUsageStatsGranted(this)
+    }
+
+    /** 把系统真实权限同步回 Settings 标记（overlay、screen capture）。 */
+    private fun syncPermissionFlags() {
+        if (com.focusguard.app.util.PermissionChecker.canDrawOverlays(this)) {
+            appSettings.overlayGranted = true
+        }
+        if (com.focusguard.app.util.PermissionChecker.isDeviceAdminActive(this)) {
+            appSettings.deviceAdminGranted = true
+        }
     }
 
     private fun requestPermission(permission: String) {
@@ -178,15 +200,11 @@ class MainActivity : ComponentActivity() {
                 screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
             }
             "overlay" -> {
-                if (!Settings.canDrawOverlays(this)) {
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                    startActivity(intent)
-                } else {
-                    appSettings.overlayGranted = true
-                }
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                settingsPageLauncher.launch(intent)
             }
             "device_admin" -> {
                 val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
@@ -194,9 +212,13 @@ class MainActivity : ComponentActivity() {
                         DevicePolicyManager.EXTRA_DEVICE_ADMIN,
                         ComponentName(this@MainActivity, com.focusguard.app.admin.GuardDeviceAdminReceiver::class.java)
                     )
-                    putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "专注卫士需要设备管理员权限来锁屏")
+                    putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "专注卫士需要设备管理员权限来强制锁屏")
                 }
                 deviceAdminLauncher.launch(intent)
+            }
+            "usage_stats" -> {
+                val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                settingsPageLauncher.launch(intent)
             }
             "notification" -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -205,24 +227,23 @@ class MainActivity : ComponentActivity() {
             }
             "accessibility" -> {
                 val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                startActivity(intent)
+                settingsPageLauncher.launch(intent)
             }
             "battery" -> {
                 val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                     data = Uri.parse("package:$packageName")
                 }
-                startActivity(intent)
+                settingsPageLauncher.launch(intent)
             }
         }
     }
 
     private fun startGuard() {
-        if (!appSettings.screenCaptureGranted) {
-            Toast.makeText(this, "请先授予屏幕录制权限", Toast.LENGTH_SHORT).show()
-            requestPermission("screen_capture")
+        if (appSettings.apiKey.isBlank()) {
+            Toast.makeText(this, "请先在设置中填写 API 密钥并保存", Toast.LENGTH_LONG).show()
             return
         }
-        appSettings.serviceRunning = true
+        // MediaProjection 授权每次启动都要重新申请，系统不允许复用
         screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
     }
 
@@ -232,7 +253,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun testDetection() {
-        // Launch a test detection via service
-        Toast.makeText(this, "正在测试识别...", Toast.LENGTH_SHORT).show()
+        if (!com.focusguard.app.service.MonitorService.isRunning) {
+            Toast.makeText(this, "请先开始守护，再执行测试识别", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Toast.makeText(this, "正在测试识别，结果将出现在日志中", Toast.LENGTH_SHORT).show()
+        com.focusguard.app.service.MonitorService.requestImmediateCheck(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 从系统设置页返回后同步权限状态
+        syncPermissionFlags()
+        permissionRefreshTick++
     }
 }

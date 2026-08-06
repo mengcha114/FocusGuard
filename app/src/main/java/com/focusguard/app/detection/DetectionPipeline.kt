@@ -197,9 +197,12 @@ class DetectionPipeline(
             }
 
             // ── L6 预算闸门 ───────────────────────────
-            if (settings.apiKey.isBlank()) {
+            // 每次都从 SharedPreferences 重新读取，而不是构造时缓存，
+            // 否则用户在设置里改完密钥后仍会看到"未配置"
+            val currentApiKey = settings.apiKey
+            if (currentApiKey.isBlank()) {
                 return DetectionOutcome(
-                    "NEUTRAL", 0f, "未配置 API 密钥，无法进行 AI 识别",
+                    "NEUTRAL", 0f, "未配置 API 密钥，请在设置中填写并保存",
                     DetectionSource.ERROR, pkg, label
                 )
             }
@@ -216,7 +219,7 @@ class DetectionPipeline(
             val aiResult = aiClient.analyzeScreen(
                 imageBytes = capture.jpegBytes,
                 baseUrl = settings.apiBaseUrl,
-                apiKey = settings.apiKey,
+                apiKey = currentApiKey,
                 modelName = settings.modelName,
                 whitelist = settings.whitelist
             )

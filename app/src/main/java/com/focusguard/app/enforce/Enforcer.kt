@@ -37,16 +37,16 @@ class Enforcer(private val context: Context) {
     
     private fun lockScreen() {
         try {
+            // 先用 DeviceAdmin 触发系统锁屏，然后拉起 LockScreenActivity 持续守锁，
+            // 防止用户解锁后直接回到被拦截的应用
             if (devicePolicyManager.isAdminActive(adminComponent)) {
                 devicePolicyManager.lockNow()
-                Log.d(TAG, "Screen locked via DeviceAdmin")
-            } else {
-                Log.w(TAG, "DeviceAdmin not active, falling back to block screen")
-                exitAndBlock("设备管理员未激活")
             }
+            LockScreenActivity.show(context)
+            Log.d(TAG, "Screen locked via DeviceAdmin + LockScreenActivity")
         } catch (e: Exception) {
             Log.e(TAG, "Lock screen failed", e)
-            exitAndBlock("锁屏失败: ${e.message}")
+            LockScreenActivity.show(context)
         }
     }
     

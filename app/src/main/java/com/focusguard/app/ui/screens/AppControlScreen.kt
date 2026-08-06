@@ -1,70 +1,92 @@
 package com.focusguard.app.ui.screens
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
 import com.focusguard.app.detection.AppCategory
+import com.focusguard.app.detection.AppCategoryStore
 import com.focusguard.app.detection.AppClassifier
+import com.focusguard.app.detection.AppInventory
+import com.focusguard.app.detection.InstalledApp
 
+/**
+ * 应用管控页。
+ *
+ * 列出设备上实际安装的可启动应用（带图标与名称），
+ * 支持搜索、分类筛选，点击应用可手动指定其分类（覆盖自动识别）。
+ */
 @Composable
-fun AppControlScreen(onOpenUsageLimits: () -> Unit = {}) {
-    var selectedTab by remember { mutableStateOf(0) }
+fun AppControlScreen(
+    onOpenUsageLimits: () -> Unit = {},
+    onPickAppForLimit: (InstalledApp) -> Unit = {}
+) {
+    val context = LocalContext.current
+    var selectedTab by remember { mutableIntStateOf(0) }
     var filterText by remember { mutableStateOf("") }
+    var apps by remember { mutableStateOf<List<InstalledApp>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var editingApp by remember { mutableStateOf<InstalledApp?>(null) }
 
-    val defaultApps = remember {
-        listOf(
-            "com.tencent.tmgp.sgame" to ("王者荣耀" to AppCategory.GAME),
-            "com.miHoYo.Yuanshen" to ("原神" to AppCategory.GAME),
-            "com.tencent.tmgp.pubgmhd" to ("和平精英" to AppCategory.GAME),
-            "cn.xuexi.android" to ("学习强国" to AppCategory.STUDY),
-            "com.dedao.npp" to ("得到" to AppCategory.STUDY),
-            "com.youdao.dict" to ("有道词典" to AppCategory.STUDY),
-            "tv.danmaku.bili" to ("哔哩哔哩" to AppCategory.VIDEO),
-            "com.tencent.qqlive" to ("腾讯视频" to AppCategory.VIDEO),
-            "com.ss.android.ugc.aweme" to ("抖音" to AppCategory.SHORT_VIDEO),
-            "com.smile.gifmaker" to ("快手" to AppCategory.SHORT_VIDEO),
-            "com.sina.weibo" to ("新浪微博" to AppCategory.SOCIAL),
-            "com.tencent.mm" to ("微信" to AppCategory.SOCIAL),
-            "com.xingin.xhs" to ("小红书" to AppCategory.SOCIAL),
-            "com.zhihu.android" to ("知乎" to AppCategory.SOCIAL)
-        )
+    // 读取已安装应用（含自动识别出的分类）
+    LaunchedEffect(Unit) {
+        loading = true
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val store = AppCategoryStore(context)
+            apps = AppInventory.listLaunchableApps(context, store)
+        }
+        loading = false
+    }
+
+    val filteredApps = remember(apps, selectedTab, filterText) {
+        apps.filter { app ->
+            val matchesSearch = filterText.isBlank() ||
+                app.label.contains(filterText, ignoreCase = true) ||
+                app.packageName.contains(filterText, ignoreCase = true)
+            val matchesTab = when (selectedTab) {
+                1 -> app.category == AppCategory.GAME || app.category == AppCategory.SHORT_VIDEO
+                2 -> app.category == AppCategory.STUDY
+                3 -> AppClassifier.needsAiDetection(app.category)
+                else -> true
+            }
+            matchesSearch && matchesTab
+        }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        Text("应用管控", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Text(
-            text = "应用管控",
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White
-        )
-
-        Text(
-            text = "设置各应用的检测策略，纯游戏自动拦截，视频/社交由 AI 动态识别",
+            "选择要管控的应用，纯游戏自动拦截，视频/社交由 AI 动态识别",
             fontSize = 14.sp,
             color = Color.White.copy(alpha = 0.7f)
         )
 
-        // 使用时长入口
+        // ── 使用时长入口 ──────────────────────────────
         Card(
-            modifier = Modifier
-                .fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF1F1F23)),
             onClick = onOpenUsageLimits
@@ -98,32 +120,29 @@ fun AppControlScreen(onOpenUsageLimits: () -> Unit = {}) {
                         )
                     }
                 }
-                Icon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.3f)
-                )
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.White.copy(alpha = 0.3f))
             }
         }
 
-        // Search Bar
+        // ── 搜索 ──────────────────────────────────────
         OutlinedTextField(
             value = filterText,
             onValueChange = { filterText = it },
             placeholder = { Text("搜索应用...") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true
         )
 
-        // Filter Tabs
+        // ── 分类 Tab ──────────────────────────────────
         TabRow(
             selectedTabIndex = selectedTab,
             containerColor = Color(0xFF263238),
             contentColor = Color.White
         ) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                Text("全部 (${defaultApps.size})", modifier = Modifier.padding(12.dp))
+                Text("全部 (${apps.size})", modifier = Modifier.padding(12.dp))
             }
             Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
                 Text("游戏/娱乐", modifier = Modifier.padding(12.dp))
@@ -136,85 +155,126 @@ fun AppControlScreen(onOpenUsageLimits: () -> Unit = {}) {
             }
         }
 
-        val filteredApps = remember(selectedTab, filterText) {
-            defaultApps.filter { (pkg, pair) ->
-                val (name, cat) = pair
-                val matchesSearch = name.contains(filterText, ignoreCase = true) || pkg.contains(filterText, ignoreCase = true)
-                val matchesTab = when (selectedTab) {
-                    1 -> cat == AppCategory.GAME || cat == AppCategory.SHORT_VIDEO
-                    2 -> cat == AppCategory.STUDY
-                    3 -> AppClassifier.needsAiDetection(cat)
-                    else -> true
+        // ── 应用列表 ──────────────────────────────────
+        if (loading) {
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color(0xFFD0BCFF))
+                    Spacer(Modifier.height(10.dp))
+                    Text("正在读取应用列表…", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
                 }
-                matchesSearch && matchesTab
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(filteredApps, key = { it.packageName }) { app ->
+                    AppControlRow(
+                        app = app,
+                        onClick = { editingApp = app }
+                    )
+                }
             }
         }
+    }
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(filteredApps) { (pkg, pair) ->
-                val (name, cat) = pair
-                AppControlItem(
-                    packageName = pkg,
-                    appName = name,
-                    category = cat
-                )
+    // ── 分类设置弹窗 ─────────────────────────────────
+    editingApp?.let { app ->
+        CategoryEditSheet(
+            app = app,
+            onDismiss = { editingApp = null },
+            onCategoryChanged = { category ->
+                val store = AppCategoryStore(context)
+                if (category == null) {
+                    store.clearUserOverride(app.packageName)
+                } else {
+                    store.setUserOverride(app.packageName, category)
+                }
+                AppInventory.invalidate()
+                editingApp = null
+                // 重新加载以刷新分类显示
+                kotlinx.coroutines.MainScope().launch {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val store2 = AppCategoryStore(context)
+                        apps = AppInventory.listLaunchableApps(context, store2, forceRefresh = true)
+                    }
+                }
             }
-        }
+        )
     }
 }
 
+/** 应用行：图标 + 名称 + 分类标签。 */
 @Composable
-fun AppControlItem(
-    packageName: String,
-    appName: String,
-    category: AppCategory
-) {
-    val (statusLabel, statusColor, strategyText) = when (category) {
-        AppCategory.GAME -> Triple("禁止", Color(0xFFF44336), "前台自动触发锁机/退出")
-        AppCategory.STUDY -> Triple("允许", Color(0xFF4CAF50), "豁免检测，放心使用")
-        AppCategory.SYSTEM -> Triple("系统", Color(0xFF9E9E9E), "系统应用")
-        AppCategory.VIDEO -> Triple("AI 分析", Color(0xFFFF9800), "结合文字/视觉智能识别")
-        AppCategory.SHORT_VIDEO -> Triple("AI 分析", Color(0xFFFF9800), "结合文字/视觉智能识别")
-        AppCategory.SOCIAL -> Triple("AI 分析", Color(0xFFFF9800), "结合文字/视觉智能识别")
-        AppCategory.UNKNOWN -> Triple("AI 分析", Color(0xFFFF9800), "未知应用动态检测")
+private fun AppControlRow(app: InstalledApp, onClick: () -> Unit) {
+    val (statusLabel, statusColor) = when (app.category) {
+        AppCategory.GAME -> "游戏" to Color(0xFFF44336)
+        AppCategory.STUDY -> "学习" to Color(0xFF4CAF50)
+        AppCategory.SYSTEM -> "系统" to Color(0xFF9E9E9E)
+        AppCategory.VIDEO -> "视频" to Color(0xFFFF9800)
+        AppCategory.SHORT_VIDEO -> "短视频" to Color(0xFFFF9800)
+        AppCategory.SOCIAL -> "社交" to Color(0xFFFF9800)
+        AppCategory.UNKNOWN -> "未知" to Color(0xFF90A4AE)
+    }
+
+    val iconBitmap: ImageBitmap? = remember(app.packageName) {
+        runCatching { app.icon?.toBitmap(48, 48)?.asImageBitmap() }.getOrNull()
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF263238)
-        )
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF263238))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (iconBitmap != null) {
+                Image(
+                    bitmap = iconBitmap,
+                    contentDescription = null,
+                    modifier = Modifier.size(36.dp)
+                )
+            } else {
+                Box(
+                    modifier = Modifier.size(36.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        app.label.take(1),
+                        fontSize = 18.sp,
+                        color = Color.White.copy(alpha = 0.5f)
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(12.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = appName,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    text = app.label,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                    maxLines = 1
                 )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = packageName,
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.4f)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = strategyText,
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.7f)
+                    text = app.packageName,
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.4f),
+                    maxLines = 1
                 )
             }
+
             Surface(
                 color = statusColor.copy(alpha = 0.2f),
                 shape = RoundedCornerShape(8.dp)
@@ -224,8 +284,95 @@ fun AppControlItem(
                     color = statusColor,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                 )
+            }
+        }
+    }
+}
+
+/** 手动指定应用分类的底部弹窗。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryEditSheet(
+    app: InstalledApp,
+    onDismiss: () -> Unit,
+    onCategoryChanged: (AppCategory?) -> Unit
+) {
+    val context = LocalContext.current
+    val categoryStore = remember { AppCategoryStore(context) }
+    var selected by remember {
+        mutableStateOf(
+            categoryStore.getUserOverride(app.packageName) ?: app.category
+        )
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF1C1B1F)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = app.label,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+            Text(
+                text = app.packageName,
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.45f)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text("手动指定分类（将覆盖自动识别）", fontSize = 13.sp, color = Color.White.copy(alpha = 0.6f))
+
+            val options = listOf(
+                AppCategory.GAME to "游戏",
+                AppCategory.STUDY to "学习/办公",
+                AppCategory.VIDEO to "视频",
+                AppCategory.SHORT_VIDEO to "短视频",
+                AppCategory.SOCIAL to "社交",
+                AppCategory.SYSTEM to "系统"
+            )
+            options.chunked(2).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    rowItems.forEach { (cat, label) ->
+                        FilterChip(
+                            selected = selected == cat,
+                            onClick = { selected = cat },
+                            label = { Text(label, fontSize = 13.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("取消") }
+                Button(
+                    onClick = {
+                        onCategoryChanged(selected)
+                        onDismiss()
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F378B))
+                ) { Text("确认") }
             }
         }
     }
