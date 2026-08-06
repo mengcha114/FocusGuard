@@ -150,10 +150,19 @@ class MonitorService : Service() {
             }
             ACTION_STOP -> stopMonitoring()
             ACTION_TEST -> serviceScope.launch { performDetection(isManualTest = true) }
+            // 系统在资源紧张时杀掉服务后重建（START_STICKY）：
+            // MediaProjection 授权无法自动重放，此时不做检测，
+            // 但锁机状态仍由 LockState 持久化 + LockScreenActivity 兜底，
+            // 不会被这次重建绕过。
+            null -> {
+                Log.w(TAG, "服务被系统重建（无授权数据），保持运行但等待重新授权")
+                startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null))
+            }
         }
-        // 不使用 START_STICKY：MediaProjection 授权无法在重启后复用，
-        // 系统重启服务只会得到一个不可用的空实例。
-        return START_NOT_STICKY
+        // START_STICKY：服务被杀后系统会重建。
+        // 重建后虽无 MediaProjection 无法检测，但前台服务身份保持，
+        // 用户重新点击"开始守护"即可恢复完整功能。
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

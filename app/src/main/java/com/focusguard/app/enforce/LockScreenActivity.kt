@@ -4,9 +4,14 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,9 +54,25 @@ class LockScreenActivity : ComponentActivity() {
             }
             context.startActivity(intent)
         }
+
+        /** 防破解顶回：不携带 CLEAR_TASK，避免每次顶回都销毁重建自己造成闪烁。 */
+        fun reassert(context: Context) {
+            val intent = Intent(context, LockScreenActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+                )
+            }
+            context.startActivity(intent)
+        }
     }
 
     private lateinit var lockState: LockState
+
+    /** 是否正在显示答题界面（输入法可能弹出，此时不能顶回）。 */
+    private var challengeVisible = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,6 +92,16 @@ class LockScreenActivity : ComponentActivity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
 
+        // 全屏沉浸：隐藏状态栏/导航栏，防下拉通知栏
+        try {
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } catch (e: Exception) {
+            Log.w(TAG, "进入沉浸模式失败：${e.message}")
+        }
+
         // 如果锁机已到期则直接退出
         if (!lockState.isLocked) {
             finish()
@@ -80,6 +111,8 @@ class LockScreenActivity : ComponentActivity() {
         setContent {
             LockScreenContent(
                 lockState = lockState,
+                challengeVisible = challengeVisible,
+                onChallengeVisibilityChange = { challengeVisible = it },
                 onUnlocked = {
                     lockState.releaseLock()
                     finish()
@@ -93,14 +126,27 @@ class LockScreenActivity : ComponentActivity() {
         // 拦截返回键——锁机期间任何退出手段都无效
     }
 
+    /** 输入法是否可见（可见时说明用户在答题，不是试图逃跑）。 */
+    private fun isImeVisible(): Boolean {
+        return try {
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.isAcceptingText
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     /** 窗口失焦（用户按 Home / 最近任务 / 通知栏）时立即顶回前台。 */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus && lockState.shouldBlockNow) {
+        if (!hasFocus && lockState.shouldBlockNow && !challengeVisible && !isImeVisible()) {
+            // 通知栏被拉下来时先收起（部分机型窗口失焦即代表通知栏弹出）
+            com.focusguard.app.access.GuardAccessibilityService.instance
+                ?.dismissNotificationShade()
             // 延迟一点再置顶，避免与系统转场动画冲突导致闪屏
             android.os.Handler(mainLooper).postDelayed({
-                if (lockState.shouldBlockNow) {
-                    show(this)
+                if (lockState.shouldBlockNow && !challengeVisible) {
+                    reassert(this)
                 }
             }, 150L)
         }
@@ -108,10 +154,10 @@ class LockScreenActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         // 用户试图离开（如按 Home）时重新置顶自身。
-        // 番茄钟休息阶段允许离开，此时不重新拉起。
+        // 番茄钟休息阶段允许离开；答题界面（输入法弹出）时不顶回。
         super.onUserLeaveHint()
-        if (lockState.shouldBlockNow) {
-            show(this)
+        if (lockState.shouldBlockNow && !challengeVisible) {
+            reassert(this)
         }
     }
 
@@ -126,6 +172,8 @@ class LockScreenActivity : ComponentActivity() {
 @Composable
 private fun LockScreenContent(
     lockState: LockState,
+    challengeVisible: Boolean,
+    onChallengeVisibilityChange: (Boolean) -> Unit,
     onUnlocked: () -> Unit
 ) {
     var remainingSeconds by remember { mutableIntStateOf(lockState.remainingSeconds) }
@@ -247,6 +295,11 @@ private fun LockScreenContent(
     }
 
     if (showChallenge) {
+        // 通知 Activity：答题界面可见，输入法弹出时不顶回
+        LaunchedEffect(Unit) { onChallengeVisibilityChange(true) }
+        DisposableEffect(Unit) {
+            onDispose { onChallengeVisibilityChange(false) }
+        }
         // 直接复用 UnlockChallengeScreen
         Box(
             modifier = Modifier

@@ -267,6 +267,66 @@ fun SettingsScreen(onSave: () -> Unit) {
             )
         }
 
+        // ── 调试与导出 ────────────────────────────────────────────
+        SettingsSection(title = "调试", icon = Icons.Default.BugReport) {
+            var exportMsg by remember { mutableStateOf<String?>(null) }
+            Button(
+                onClick = {
+                    val logStore = com.focusguard.app.data.LogStore(context)
+                    val sb = StringBuilder()
+                    sb.append("===== 设备信息 =====\n")
+                    sb.append("品牌型号：${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n")
+                    sb.append("系统：Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})\n")
+                    sb.append("===== 配置（密钥已脱敏） =====\n")
+                    sb.append("API 地址：${settings.apiBaseUrl}\n")
+                    sb.append("模型：${settings.modelName}\n")
+                    sb.append("检测间隔：${settings.intervalMinutes} 分钟\n")
+                    sb.append("执法模式：${settings.enforcementMode.name}\n")
+                    sb.append("Token 节约：${if (settings.tokenSavingEnabled) "开" else "关"}\n")
+                    sb.append("===== Token 统计 =====\n")
+                    sb.append("今日调用：${tokenBudget.callsToday} 次\n")
+                    sb.append("今日节约：${tokenBudget.savedCallsToday} 次\n")
+                    sb.append("===== 检测日志 =====\n")
+                    sb.append(logStore.exportText())
+
+                    // 写入文件并分享
+                    val file = java.io.File(context.cacheDir, "focusguard_export_${System.currentTimeMillis()}.txt")
+                    file.writeText(sb.toString())
+                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_STREAM, androidx.core.content.FileProvider.getUriForFile(
+                            context, "${context.packageName}.fileprovider", file
+                        ))
+                        putExtra(android.content.Intent.EXTRA_TEXT, "专注卫士诊断信息（也可在聊天中直接复制以下内容）：\n\n${sb.toString()}")
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    runCatching {
+                        context.startActivity(android.content.Intent.createChooser(shareIntent, "导出诊断日志"))
+                        exportMsg = "已生成诊断日志，请选择分享方式"
+                    }.onFailure {
+                        exportMsg = "导出失败：${it.message}"
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F))
+            ) {
+                Icon(Icons.Default.Share, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("导出诊断日志", fontSize = 15.sp)
+            }
+            exportMsg?.let {
+                Spacer(Modifier.height(6.dp))
+                Text(it, fontSize = 12.sp, color = Color(0xFF4CAF50))
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "包含设备信息、配置（密钥脱敏）、Token 统计与检测日志，排查问题时可分享给开发者",
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.45f)
+            )
+        }
+
         // ── 保存按钮 ──────────────────────────────────────────────
         Button(
             onClick = {

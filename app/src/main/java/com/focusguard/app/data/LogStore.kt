@@ -102,6 +102,29 @@ class LogStore(context: Context) {
         if (logFile.exists()) logFile.delete()
     }
 
+    /**
+     * 导出全部日志为可读文本（调试用）。
+     * 每行一条：时间 | 分类 | 置信度 | 动作 | 来源 | 应用 | 原因
+     */
+    fun exportText(): String = synchronized(lock) {
+        val logs = readLogs()
+        if (logs.isEmpty()) return "（暂无日志）"
+        val sb = StringBuilder()
+        sb.append("专注卫士检测日志（共 ${logs.size} 条）\n")
+        sb.append("导出时间：${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}\n")
+        sb.append("========================================\n")
+        logs.forEach { log ->
+            sb.append("[${log.getDateFormatted()} ${log.getTimeFormatted()}] ")
+                .append(log.classification)
+                .append(" ${(log.confidence * 100).toInt()}%")
+                .append(" 动作=${log.action}")
+                .append(" 来源=${log.source}")
+                .append(" 应用=${log.appLabel.ifBlank { "-" }}")
+                .append("\n  原因：${log.reason}\n")
+        }
+        sb.toString()
+    }
+
     private fun readLogs(): List<DetectionLog> {
         if (!logFile.exists()) return emptyList()
         return try {

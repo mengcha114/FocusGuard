@@ -203,10 +203,19 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
                 return AiResult("NEUTRAL", 0f, "无响应内容", totalTokens)
             }
 
-            val content = choices.getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
-                .trim()
+            val message = choices.getJSONObject(0).optJSONObject("message")
+                ?: return AiResult("NEUTRAL", 0f, "响应缺少 message 字段", totalTokens)
+
+            // 部分模型（如 Kimi K2.x 思考模型）把最终答案放在 reasoning_content 里，
+            // content 可能为空字符串；两者都取来拼在一起解析。
+            val content = buildString {
+                append(message.optString("content").orEmpty().trim())
+                val reasoning = message.optString("reasoning_content").orEmpty().trim()
+                if (reasoning.isNotEmpty()) {
+                    append('\n')
+                    append(reasoning)
+                }
+            }
 
             val result = JSONObject(extractJson(content))
 
@@ -228,8 +237,12 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
                 totalTokens = totalTokens
             )
         } catch (e: Exception) {
-            Log.e(TAG, "解析响应失败", e)
-            AiResult("NEUTRAL", 0f, "结果解析失败")
+            Log.e(TAG, "解析响应失败: $responseBody", e)
+            // 把原始响应片段带回 reason，用户导出日志即可定位具体问题
+            AiResult(
+                "NEUTRAL", 0f,
+                "结果解析失败：${responseBody.take(160)}"
+            )
         }
     }
 
