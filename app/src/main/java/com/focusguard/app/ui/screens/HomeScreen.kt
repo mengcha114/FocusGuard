@@ -34,6 +34,7 @@ fun HomeScreen(
     val todayChecks = remember { logStore.getTodayCheckCount() }
     val focusScore = remember { logStore.getTodayFocusScore() }
     val violations = remember { logStore.getTodayViolations().size }
+    val recentLogs = remember { logStore.getAllLogs().take(5) }
 
     LazyColumn(
         modifier = Modifier
@@ -67,7 +68,7 @@ fun HomeScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(
-                        imageVector = if (serviceRunning) Icons.Default.Shield else Icons.Default.ShieldOff,
+                        imageVector = if (serviceRunning) Icons.Default.Shield else Icons.Default.Security,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
                         tint = Color.White
@@ -230,7 +231,6 @@ fun HomeScreen(
             )
         }
 
-        val recentLogs = remember { logStore.getAllLogs().take(5) }
         if (recentLogs.isEmpty()) {
             item {
                 Card(

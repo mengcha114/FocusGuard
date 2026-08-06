@@ -206,14 +206,13 @@ object AppClassifier {
         confidence: Float,
         store: AppCategoryStore?
     ) {
-        if (store == null || confidence < 0.85f) return
-        // 只有 GAME 和 STUDY 两类是应用级的稳定属性，才值得记录。
-        // VIDEO/SOCIAL 的内容随时在变，不应该缓存到应用层面。
-        val category = when (classification) {
-            "ENTERTAINMENT" -> null // 不做应用级缓存，避免因"一次娱乐内容"误判整个应用
-            else -> null
-        }
-        if (category != null) store.putLearned(packageName, category)
+        // 目前刻意不写入应用级缓存：
+        // 只有 GAME/STUDY 才是应用级的稳定属性，但 AI 的 ENTERTAINMENT 判定
+        // 往往来自"一次娱乐内容"（比如 B 站刷了个搞笑视频），固化到应用层面
+        // 会把整个应用误判成娱乐，与"视频平台不误杀"的原则冲突。
+        // 元数据推断层（AppMetadataInspector）已经覆盖了稳定属性的学习。
+        @Suppress("UNUSED_PARAMETER")
+        return
     }
 
     fun classifyByScreenText(text: String): String {
