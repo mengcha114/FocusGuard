@@ -151,7 +151,8 @@ fun TimerLockScreen(onBack: () -> Unit) {
             2 to "连对5题",
             3 to "朋友辅助",
             4 to "不可解锁"
-        )        Row(
+        )
+        Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -356,7 +357,8 @@ fun TimerLockScreen(onBack: () -> Unit) {
                 if (unlockStrength == 3) {
                     // 强度 3：预先生成凯撒密文，锁机页直接展示
                     lockState.setupFriendChallenge()
-                }                if (selectedMode == LockMode.POMODORO) {
+                }
+                if (selectedMode == LockMode.POMODORO) {
                     lockState.pomodoroRunning = true
                     lockState.pomodoroIsWorkPhase = true
                     lockState.pomodoroRoundsLeft = pomodoroRounds
