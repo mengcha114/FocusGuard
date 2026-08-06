@@ -140,8 +140,7 @@ class UnlockChallengeActivity : ComponentActivity() {
             ) {
                 UnlockChallengeScreen(
                     requiredCorrect = requiredCorrect,
-                    onUnlocked = { handleSuccess() },
-                    onGiveUp = { returnToLockScreen() }
+                    onUnlocked = { handleSuccess() }
                 )
             }
         }
