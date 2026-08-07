@@ -42,6 +42,9 @@ class Settings(context: Context) {
         private const val KEY_CUSTOM_API_BASE_URL = "custom_api_base_url"
         private const val KEY_CUSTOM_API_MODEL = "custom_api_model"
 
+        // 智能检测模式（风险驱动的秒级动态间隔）
+        private const val KEY_SMART_SCHEDULE = "smart_schedule"
+
         // Token 节约系统开关
         private const val KEY_TOKEN_SAVING_ENABLED = "token_saving_enabled"
         private const val KEY_SCREEN_HASH_DEDUP = "screen_hash_dedup"
@@ -212,6 +215,17 @@ class Settings(context: Context) {
     var customApiModel: String
         get() = prefs.getString(KEY_CUSTOM_API_MODEL, "") ?: ""
         set(value) = prefs.edit().putString(KEY_CUSTOM_API_MODEL, value).apply()
+
+    /**
+     * 智能检测模式（默认开启）。
+     *
+     * 开启后检测间隔由 [com.focusguard.app.token.SmartScheduler] 秒级动态计算：
+     * 风险 EWMA + 应用停留时长学习（奈奎斯特采样）+ 提醒后间隔折半。
+     * 关闭则回退到固定间隔（老行为）。
+     */
+    var smartScheduleEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SMART_SCHEDULE, true)
+        set(value) = prefs.edit().putBoolean(KEY_SMART_SCHEDULE, value).apply()
 
     // ── Token 节约系统 ───────────────────────────────────────────────
 

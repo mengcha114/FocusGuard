@@ -44,6 +44,9 @@ fun SettingsScreen(onSave: () -> Unit) {
     var aiAlertEnabled by remember { mutableStateOf(settings.aiAlertEnabled) }
     var aiAlertDelaySeconds by remember { mutableIntStateOf(settings.aiAlertDelaySeconds) }
 
+    // 智能检测模式
+    var smartScheduleEnabled by remember { mutableStateOf(settings.smartScheduleEnabled) }
+
     // 仅锁该软件时长 / 自定义箴言
     var appBlockMinutes by remember { mutableIntStateOf(settings.appBlockMinutes) }
     var customMottos by remember { mutableStateOf(settings.customMottos) }
@@ -295,6 +298,65 @@ fun SettingsScreen(onSave: () -> Unit) {
                 color = if (tokenSavingEnabled) Color.White.copy(alpha = 0.45f)
                         else Color.White.copy(alpha = 0.2f)
             )
+        }
+
+        // ── 智能检测调度 ──────────────────────────────────────────
+        SettingsSection(title = "智能检测调度", icon = Icons.Default.AutoAwesome) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("智能模式（秒级动态间隔）", fontSize = 14.sp, color = Color.White)
+                    Text(
+                        text = "根据风险自动收紧/放宽检测节奏，比固定间隔更准也更省 token",
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.45f)
+                    )
+                }
+                Switch(
+                    checked = smartScheduleEnabled,
+                    onCheckedChange = { smartScheduleEnabled = it }
+                )
+            }
+
+            if (smartScheduleEnabled) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "算法说明：
+" +
+                        "• 风险评分（EWMA）：娱乐=1、中性=0.35、学习=0，" +
+                        "按 45% 权重滚动平均——单次误判不会剧烈跳变，连续娱乐会迅速收紧
+" +
+                        "• 间隔映射：interval = 基准 × 2^(1-风险) × (1/6)^风险，" +
+                        "风险 0 时放宽到 2 倍，风险 1 时压到 1/6
+" +
+                        "• 停留学习（奈奎斯特采样）：记录每个应用的平均前台停留时长，" +
+                        "检测间隔不超过其一半——短视频停留 40s 就按 20s 采样
+" +
+                        "• 提醒折半：每弹一次提醒间隔减半（最多 3 次），" +
+                        "配合下方「连续违规次数」让执法快速到来
+" +
+                        "• 边界：20 秒 ~ 10 分钟；熄屏自动省电；接口失败退避 ≥60s",
+                    fontSize = 11.sp,
+                    lineHeight = 17.sp,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "上方「检测间隔」作为基准值参与计算；实时调度状态见主页守护卡片",
+                    fontSize = 11.sp,
+                    color = Color(0xFF8AB4F8)
+                )
+            } else {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "已关闭：使用固定间隔（上方「检测间隔」分钟数）",
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.45f)
+                )
+            }
         }
 
         // ── 执法模式 ──────────────────────────────────────────────
@@ -572,6 +634,7 @@ fun SettingsScreen(onSave: () -> Unit) {
             settings.aiAlertEnabled = aiAlertEnabled
             settings.aiAlertDelaySeconds = aiAlertDelaySeconds.coerceIn(0, 120)
             // 仅锁该软件时长 + 自定义箴言
+            settings.smartScheduleEnabled = smartScheduleEnabled
             settings.appBlockMinutes = appBlockMinutes.coerceIn(1, 480)
             settings.customMottos = customMottos
             // 记录一次修改（防篡改答题计数）

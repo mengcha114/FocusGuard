@@ -86,6 +86,18 @@ class MonitorService : Service() {
         fun isLoopAlive(): Boolean =
             lastTickAt > 0 && System.currentTimeMillis() - lastTickAt < USAGE_TICK_MS * 3
 
+        /** 智能调度：下次检测间隔（秒）。0=未启用/未计算。 */
+        @Volatile
+        var smartIntervalSeconds: Long = 0L
+
+        /** 智能调度：当前风险分（0-100）。 */
+        @Volatile
+        var smartRiskPercent: Int = 0
+
+        /** 智能调度：决策依据文本（供 UI 展示）。 */
+        @Volatile
+        var smartReason: String = ""
+
         /** 诊断文本：给用户看的守护健康状态。 */
         fun healthText(): String {
             if (!isRunning) return "守护未运行"
@@ -98,6 +110,13 @@ class MonitorService : Service() {
                 append(" · AI 检测：")
                 append(if (detectAgo < 0) "尚未执行" else "${detectAgo}s 前")
                 if (!isLoopAlive()) append(" ⚠️ 循环已停止")
+                // 智能调度状态：下次检测倒计时 + 风险分
+                if (smartIntervalSeconds > 0) {
+                    append("\n智能调度：下次 ${smartIntervalSeconds}s · 风险 ${smartRiskPercent}%")
+                    if (smartReason.isNotBlank()) {
+                        append("\n（${smartReason}）")
+                    }
+                }
             }
         }
 
@@ -152,6 +171,12 @@ class MonitorService : Service() {
     private lateinit var usageRuleStore: UsageRuleStore
     private lateinit var usageTracker: UsageTracker
     private var scheduler: AdaptiveScheduler? = null
+
+    /** 智能调度器（风险驱动的秒级动态间隔）。 */
+    private var smartScheduler: com.focusguard.app.token.SmartScheduler? = null
+
+    /** 上次检测是否失败（智能调度的退避依据）。 */
+    private var lastDetectionWasError = false
 
     private var screenCapturer: ScreenCapturer? = null
     private var mediaProjection: MediaProjection? = null
@@ -304,6 +329,7 @@ class MonitorService : Service() {
         isRunning = true
         consecutiveViolations = 0
         scheduler = AdaptiveScheduler(settings.intervalMinutes)
+        smartScheduler = com.focusguard.app.token.SmartScheduler(settings.intervalMinutes)
 
         startMonitoringLoop()
         Log.d(TAG, "守护已启动，检测间隔 ${settings.intervalMinutes} 分钟")
@@ -429,6 +455,37 @@ class MonitorService : Service() {
         // 不需要重启守护（此前用服务启动时的旧值，改设置后仍按旧间隔检测，
         // 表现为"设了 1 分钟却 3-4 分钟才检测一次"）
         val currentInterval = settings.intervalMinutes.coerceAtLeast(1)
+
+        // ── 智能模式（默认）：秒级动态间隔 ──────────────
+        val smart = smartScheduler
+        if (settings.smartScheduleEnabled && smart != null) {
+            smart.updateBase(currentInterval)
+            val screenOn = try {
+                getSystemService(android.os.PowerManager::class.java)?.isInteractive ?: true
+            } catch (e: Exception) {
+                true
+            }
+            val fg = try {
+                com.focusguard.app.detection.AppClassifier
+                    .classifyForegroundApp(this, categoryStore)?.packageName
+            } catch (e: Exception) {
+                null
+            }
+            // 让调度器学习该应用的停留时长
+            smart.onForegroundApp(fg)
+            val seconds = smart.nextDelaySeconds(
+                screenOn = screenOn,
+                foregroundPackage = fg,
+                lastWasError = lastDetectionWasError
+            )
+            // 暴露给 UI 展示
+            smartIntervalSeconds = seconds
+            smartRiskPercent = (smart.currentRisk() * 100).toInt()
+            smartReason = smart.lastReason
+            return seconds * 1000L
+        }
+
+        // ── 传统自适应（倍率）──────────────────────────
         val sched = scheduler
         if (settings.adaptiveIntervalEnabled && sched != null) {
             // 用当前倍率 × 最新基准间隔（倍率上限已温和化为 2x）
@@ -548,12 +605,15 @@ class MonitorService : Service() {
                         countdownSeconds = 0
                     )
                 }
+                // 智能调度：每次提醒后间隔折半，尽快确认用户是否收手
+                smartScheduler?.onWarned()
                 "WARN"
             }
         } else if (outcome.source != DetectionSource.ERROR) {
             consecutiveViolations = 0
             // 已回到学习/中性状态：撤掉之前的提醒横幅
             AlertNotifier.cancelAlert(this)
+            smartScheduler?.onCalm()
         }
 
         logStore.addLog(
@@ -567,11 +627,17 @@ class MonitorService : Service() {
             )
         )
 
-        // 自适应调度反馈：学习→逐步放宽间隔（最多 2x），娱乐→立刻加密
+        // 调度反馈：学习→逐步放宽间隔，娱乐→立刻加密
         try {
             scheduler?.onResult(outcome.classification)
+            // 智能调度：风险 EWMA 更新 + 错误退避标记
+            lastDetectionWasError = outcome.source == DetectionSource.ERROR
+            smartScheduler?.onDetectionResult(
+                outcome.classification,
+                isError = lastDetectionWasError
+            )
         } catch (e: Exception) {
-            Log.w(TAG, "自适应反馈失败：${e.message}")
+            Log.w(TAG, "调度反馈失败：${e.message}")
         }
 
         updateNotification(outcome)
@@ -647,6 +713,8 @@ class MonitorService : Service() {
 
     /** 真正执行执法动作（锁机 / 仅锁该软件 / 警告）。 */
     private fun doEnforce(outcome: DetectionOutcome): String {
+        // 智能调度：执法后提醒计数归零、风险回落
+        smartScheduler?.onEnforced()
         val performed = enforcer.enforce(
             settings.enforcementMode,
             outcome.reason,
