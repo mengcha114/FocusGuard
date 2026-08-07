@@ -29,6 +29,15 @@ class Settings(context: Context) {
         private const val KEY_AI_ALERT_ENABLED = "ai_alert_enabled"
         private const val KEY_AI_ALERT_DELAY_SECONDS = "ai_alert_delay_seconds"
 
+        // 仅锁该软件（APP_BLOCK）时长
+        private const val KEY_APP_BLOCK_MINUTES = "app_block_minutes"
+
+        // 设置防篡改：二次修改需答题验证
+        private const val KEY_SETTINGS_EDIT_COUNT = "settings_edit_count"
+
+        // 自定义锁机箴言（每行一条）
+        private const val KEY_CUSTOM_MOTTOS = "custom_mottos"
+
         // Token 节约系统开关
         private const val KEY_TOKEN_SAVING_ENABLED = "token_saving_enabled"
         private const val KEY_SCREEN_HASH_DEDUP = "screen_hash_dedup"
@@ -50,8 +59,17 @@ class Settings(context: Context) {
     }
     
     enum class EnforcementMode(val value: Int) {
+        /** 全局锁机：检测到娱乐后全屏锁机，答题/时间结束解锁。 */
         LOCK(0),
-        EXIT(1),
+
+        /**
+         * 仅锁该软件（替代旧"强制退出"）：检测到娱乐后，
+         * 该应用被临时封锁 [appBlockMinutes] 分钟——打开即被全屏挡住，
+         * 退出该应用去用别的则不受影响。时长结束后自动恢复。
+         */
+        APP_BLOCK(1),
+
+        /** 仅提醒：弹横幅，不锁机。 */
         WARN(2);
         
         companion object {
@@ -153,6 +171,29 @@ class Settings(context: Context) {
     var aiAlertDelaySeconds: Int
         get() = prefs.getInt(KEY_AI_ALERT_DELAY_SECONDS, 15)
         set(value) = prefs.edit().putInt(KEY_AI_ALERT_DELAY_SECONDS, value.coerceIn(0, 120)).apply()
+
+    /**
+     * 「仅锁该软件」模式的封锁时长（分钟）。
+     * AI 判定娱乐后，该应用在这段时间内打开即被全屏封锁。
+     */
+    var appBlockMinutes: Int
+        get() = prefs.getInt(KEY_APP_BLOCK_MINUTES, 15)
+        set(value) = prefs.edit().putInt(KEY_APP_BLOCK_MINUTES, value.coerceIn(1, 480)).apply()
+
+    /**
+     * 设置被保存的次数。首次配置免费；
+     * 之后每次修改设置都需要答题验证（防被监管对象随意篡改）。
+     */
+    var settingsEditCount: Int
+        get() = prefs.getInt(KEY_SETTINGS_EDIT_COUNT, 0)
+        set(value) = prefs.edit().putInt(KEY_SETTINGS_EDIT_COUNT, value).apply()
+
+    /**
+     * 自定义锁机箴言（每行一条）。为空时使用内置箴言库。
+     */
+    var customMottos: String
+        get() = prefs.getString(KEY_CUSTOM_MOTTOS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CUSTOM_MOTTOS, value).apply()
 
     // ── Token 节约系统 ───────────────────────────────────────────────
 

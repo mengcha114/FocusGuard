@@ -580,10 +580,19 @@ class MonitorService : Service() {
         return "WARN"
     }
 
-    /** 真正执行执法动作（锁机 / 退出 / 警告）。 */
+    /** 真正执行执法动作（锁机 / 仅锁该软件 / 警告）。 */
     private fun doEnforce(outcome: DetectionOutcome): String {
-        val performed = enforcer.enforce(settings.enforcementMode, outcome.reason)
+        val performed = enforcer.enforce(
+            settings.enforcementMode,
+            outcome.reason,
+            outcome.packageName,
+            outcome.appLabel
+        )
         if (settings.enforcementMode != Settings.EnforcementMode.WARN) {
+            // 「仅锁该软件」模式：不触发全局锁机，只封锁该应用
+            if (settings.enforcementMode == Settings.EnforcementMode.APP_BLOCK) {
+                return performed
+            }
             lockState.startLock(settings.lockMinutesOnViolation, "AI")
             // 应用设置里配置的 AI 执法解锁强度
             lockState.unlockStrength = settings.aiLockStrength

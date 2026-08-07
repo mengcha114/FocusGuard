@@ -2,15 +2,18 @@ package com.focusguard.app.enforce
 
 import android.content.Context
 import android.util.Log
+import com.focusguard.app.data.AppBlockStore
 import com.focusguard.app.data.Settings
 
 /**
  * 执法器。
  *
- * 锁机 = 软件层面的全屏覆盖（勒索病毒式）：
- * 拉起 [LockScreenActivity] 盖住整个屏幕，拦截返回键，
- * 由无障碍服务在用户尝试切换到其他应用时把锁屏页顶回前台。
- * 不依赖设备管理员，因此无需系统级权限。
+ * 三种执法模式：
+ * - LOCK：全局软件锁机（全屏 LockScreenActivity，答题/时间结束解锁）
+ * - APP_BLOCK：仅锁该软件——对判定娱乐的应用下发临时封锁
+ *   （[AppBlockStore]），封锁期内打开该应用即被全屏挡住，
+ *   退出该应用去用别的则不受影响
+ * - WARN：仅横幅提醒，不锁机
  */
 class Enforcer(private val context: Context) {
 
@@ -18,15 +21,20 @@ class Enforcer(private val context: Context) {
         private const val TAG = "Enforcer"
     }
 
-    fun enforce(mode: Settings.EnforcementMode, reason: String): String {
+    fun enforce(
+        mode: Settings.EnforcementMode,
+        reason: String,
+        packageName: String = "",
+        appLabel: String = ""
+    ): String {
         return when (mode) {
             Settings.EnforcementMode.LOCK -> {
                 lockScreen()
                 "LOCK"
             }
-            Settings.EnforcementMode.EXIT -> {
-                exitAndBlock(reason)
-                "EXIT"
+            Settings.EnforcementMode.APP_BLOCK -> {
+                blockApp(reason, packageName, appLabel)
+                "APP_BLOCK"
             }
             Settings.EnforcementMode.WARN -> {
                 showWarning(reason)
@@ -48,28 +56,46 @@ class Enforcer(private val context: Context) {
             Log.d(TAG, "软件锁机已启动（全屏覆盖 + 守护已就位）")
         } catch (e: Exception) {
             Log.e(TAG, "拉起锁屏页失败", e)
-            exitAndBlock("锁机失败: ${e.message}")
+            blockApp("锁机失败: ${e.message}", packageName = "", appLabel = "")
         }
     }
 
-    private fun exitAndBlock(reason: String) {
+    /**
+     * 仅锁该软件：对该应用下发临时封锁，并立即拉起全屏封锁页。
+     *
+     * @param reason 封锁原因（记日志用）
+     * @param packageName 目标应用包名（为空时无法定位，仅提醒）
+     * @param appLabel 目标应用显示名
+     */
+    private fun blockApp(reason: String, packageName: String, appLabel: String) {
         try {
-            // 退出当前应用并显示遮挡界面
-            val intent = android.content.Intent(context, BlockActivity::class.java).apply {
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                putExtra("reason", reason)
+            if (packageName.isBlank()) {
+                Log.w(TAG, "缺少包名，无法执行应用封锁")
+                return
             }
-            context.startActivity(intent)
-            Log.d(TAG, "Block activity launched")
+            val settings = Settings(context)
+            val minutes = settings.appBlockMinutes.coerceAtLeast(1)
+            val until = System.currentTimeMillis() + minutes * 60_000L
+            AppBlockStore(context).block(packageName, until)
+            Log.d(TAG, "$appLabel 已被封锁 $minutes 分钟（$reason）")
+
+            com.focusguard.app.service.LockGuardService.ensureRunning(context)
+            com.focusguard.app.service.GuardWatchdogWorker.schedule(context)
+
+            AppBlockActivity.show(
+                context = context,
+                packageName = packageName,
+                appLabel = appLabel,
+                usedMinutes = 0,
+                limitMinutes = minutes,
+                blockUntil = until
+            )
         } catch (e: Exception) {
-            Log.e(TAG, "Exit and block failed", e)
+            Log.e(TAG, "应用封锁失败", e)
         }
     }
 
     private fun showWarning(reason: String) {
-        // For warn mode, we just show a notification
         Log.d(TAG, "Warning mode: $reason")
     }
 }

@@ -50,19 +50,28 @@ class AppBlockActivity : ComponentActivity() {
         private const val EXTRA_LABEL = "app_label"
         private const val EXTRA_USED_MINUTES = "used_minutes"
         private const val EXTRA_LIMIT_MINUTES = "limit_minutes"
+        private const val EXTRA_BLOCK_UNTIL = "block_until"
 
+        /**
+         * 拉起应用封锁页。
+         *
+         * @param blockUntil 临时封锁截止时间戳（毫秒）。>0 时显示
+         *   「封锁至 HH:mm + 剩余倒计时」；=0 时显示旧的"今日已用/上限"样式。
+         */
         fun show(
             context: Context,
             packageName: String,
             appLabel: String,
             usedMinutes: Int,
-            limitMinutes: Int
+            limitMinutes: Int,
+            blockUntil: Long = 0L
         ) {
             val intent = Intent(context, AppBlockActivity::class.java).apply {
                 putExtra(EXTRA_PACKAGE, packageName)
                 putExtra(EXTRA_LABEL, appLabel)
                 putExtra(EXTRA_USED_MINUTES, usedMinutes)
                 putExtra(EXTRA_LIMIT_MINUTES, limitMinutes)
+                putExtra(EXTRA_BLOCK_UNTIL, blockUntil)
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -97,15 +106,25 @@ class AppBlockActivity : ComponentActivity() {
         val label = intent.getStringExtra(EXTRA_LABEL).orEmpty().ifBlank { blockedPackage }
         val used = intent.getIntExtra(EXTRA_USED_MINUTES, 0)
         val limit = intent.getIntExtra(EXTRA_LIMIT_MINUTES, 0)
+        val blockUntil = intent.getLongExtra(EXTRA_BLOCK_UNTIL, 0L)
 
         setContent {
-            AppBlockScreen(
-                appLabel = label,
-                usedMinutes = used,
-                limitMinutes = limit,
-                resetHint = "计时于每日 0 点自动归零",
-                onGoHome = { goHome() }
-            )
+            if (blockUntil > 0L) {
+                // 临时封锁（仅锁该软件）：显示封锁截止时间与倒计时
+                AppBlockedUntilScreen(
+                    appLabel = label,
+                    blockUntil = blockUntil,
+                    onGoHome = { goHome() }
+                )
+            } else {
+                AppBlockScreen(
+                    appLabel = label,
+                    usedMinutes = used,
+                    limitMinutes = limit,
+                    resetHint = "计时于每日 0 点自动归零",
+                    onGoHome = { goHome() }
+                )
+            }
         }
     }
 
@@ -154,6 +173,150 @@ class AppBlockActivity : ComponentActivity() {
             })
         }
         finish()
+    }
+}
+
+/** 「仅锁该软件」临时封锁页：显示封锁截止时间与剩余倒计时。 */
+@Composable
+private fun AppBlockedUntilScreen(
+    appLabel: String,
+    blockUntil: Long,
+    onGoHome: () -> Unit
+) {
+    var remainingSeconds by remember { mutableIntStateOf(0) }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(blockUntil) {
+        while (true) {
+            delay(1000L)
+            nowMillis = System.currentTimeMillis()
+            remainingSeconds = ((blockUntil - nowMillis) / 1000).coerceAtLeast(0).toInt()
+            if (remainingSeconds <= 0) {
+                // 封锁到期：本页使命完成，回桌面
+                onGoHome()
+                break
+            }
+        }
+    }
+
+    val h = remainingSeconds / 3600
+    val m = (remainingSeconds % 3600) / 60
+    val s = remainingSeconds % 60
+    val timeText = if (h > 0) "%02d:%02d:%02d".format(h, m, s)
+        else "%02d:%02d".format(m, s)
+
+    val untilFormat = remember {
+        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(Color(0xFF17151C), Color(0xFF1F1B24), Color(0xFF262029))
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = Color(0xFF3A2E34)
+            ) {
+                Box(
+                    modifier = Modifier.size(100.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Block,
+                        contentDescription = null,
+                        tint = Color(0xFFC6786F),
+                        modifier = Modifier.size(52.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = "该应用已被封锁",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFFEDE8E4),
+                textAlign = TextAlign.Center
+            )
+
+            Text(
+                text = appLabel,
+                fontSize = 18.sp,
+                color = Color(0xFFB9AFA8),
+                textAlign = TextAlign.Center
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF241F27))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "封锁截止",
+                        fontSize = 12.sp,
+                        color = Color(0xFF8A8078)
+                    )
+                    Text(
+                        text = untilFormat.format(java.util.Date(blockUntil)),
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFC6786F)
+                    )
+                    Text(
+                        text = "剩余 $timeText",
+                        fontSize = 14.sp,
+                        color = Color(0xFFB9AFA8)
+                    )
+                }
+            }
+
+            Text(
+                text = "在此期间打开该应用会被挡住，
+退出后使用其他应用不受影响。",
+                fontSize = 14.sp,
+                color = Color(0xFF8A8078),
+                textAlign = TextAlign.Center,
+                lineHeight = 21.sp
+            )
+
+            Button(
+                onClick = onGoHome,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF3E4A5C)
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Home,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("返回桌面", fontSize = 16.sp)
+            }
+        }
     }
 }
 

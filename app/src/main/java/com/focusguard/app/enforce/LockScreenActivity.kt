@@ -391,7 +391,19 @@ private fun LockScreenContent(
     var pauseLeft by remember { mutableIntStateOf(lockState.pauseQuota - lockState.pauseUsed) }
 
     val isPomodoro = lockState.lockSource == "POMODORO"
-    val motto = remember { MotivationalQuotes.random() }
+    // 箴言：优先用用户自定义（每行一条，随机取），否则用内置库
+    val motto = remember {
+        val custom = runCatching {
+            com.focusguard.app.data.Settings(
+                androidx.compose.ui.platform.LocalContext.current
+            ).customMottos
+        }.getOrDefault("")
+        val customList = custom.lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        if (customList.isNotEmpty()) customList.random()
+        else MotivationalQuotes.random()
+    }
 
     // 进度环基准：首次进入时的剩余时间即为本段总时长
     var totalSeconds by remember { mutableIntStateOf(lockState.remainingSeconds.coerceAtLeast(1)) }

@@ -25,6 +25,9 @@
     <!-- Battery optimization -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- 全屏提醒（横屏/游戏等全屏场景也能弹出提醒，Android 14+ 需在通知设置里允许） -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
     <!-- Android 11+ 需要显式声明才能查询已安装应用列表 -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
@@ -79,6 +82,15 @@
             </intent-filter>
         </activity>
 
+        <!-- 全屏提醒页（Full-Screen Intent 目标） -->
+        <activity
+            android:name=".enforce.AlertActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.FocusGuard.Block"
+            android:launchMode="singleTop"
+            android:taskAffinity="" />
+
         <!-- 全局强制锁机界面 -->
         <activity
             android:name=".enforce.LockScreenActivity"
@@ -101,15 +113,6 @@
             android:taskAffinity=""
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation|uiMode|density|fontScale|screenLayout|smallestScreenSize" />
-
-        <!-- Blocking overlay activity -->
-        <activity
-            android:name=".enforce.BlockActivity"
-            android:exported="false"
-            android:theme="@style/Theme.FocusGuard.Block"
-            android:launchMode="singleTask"
-            android:excludeFromRecents="true"
-            android:taskAffinity="" />
 
         <!-- 应用时长超限后的持续封锁界面 -->
         <activity

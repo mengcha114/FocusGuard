@@ -324,6 +324,31 @@ class LockGuardService : Service() {
         // 锁机结束后仍要守护应用限额，因此不 return
         if (foreground == null || foreground == packageName) return
 
+        val label = runCatching {
+            packageManager.getApplicationLabel(
+                packageManager.getApplicationInfo(foreground, 0)
+            ).toString()
+        }.getOrDefault(foreground)
+
+        // B1. 「仅锁该软件」临时封锁（AI 执法下发）：打开即挡，直到截止时间
+        val appBlockStore = com.focusguard.app.data.AppBlockStore(applicationContext)
+        val blockUntil = appBlockStore.blockedUntil(foreground)
+        if (blockUntil > 0L) {
+            if (now - lastBlockReassertAt < REASSERT_COOLDOWN_MS) return
+            lastBlockReassertAt = now
+            Log.d(TAG, "$label 处于临时封锁期，拉起封锁页")
+            AppBlockActivity.show(
+                context = applicationContext,
+                packageName = foreground,
+                appLabel = label,
+                usedMinutes = 0,
+                limitMinutes = 0,
+                blockUntil = blockUntil
+            )
+            return
+        }
+
+        // B2. 每日使用时长硬封锁（用户配置的长期规则）
         val rule = usageRuleStore.getRule(foreground) ?: return
         val limit = rule.hardBlockMinutes ?: return
         val usedMinutes = (usageRuleStore.getTodaySeconds(foreground) / 60).toInt()
@@ -331,12 +356,6 @@ class LockGuardService : Service() {
 
         if (now - lastBlockReassertAt < REASSERT_COOLDOWN_MS) return
         lastBlockReassertAt = now
-
-        val label = runCatching {
-            packageManager.getApplicationLabel(
-                packageManager.getApplicationInfo(foreground, 0)
-            ).toString()
-        }.getOrDefault(foreground)
 
         Log.d(TAG, "$label 今日已用 $usedMinutes 分钟，超过上限 $limit 分钟，拉起封锁页")
         AppBlockActivity.show(
@@ -361,7 +380,13 @@ class LockGuardService : Service() {
 
         // 非主动停止 → 自重启。锁机中或有封锁规则时尤其重要。
         val needGuard = try {
-            lockState.isLocked || usageRuleStore.allRules().any { it.hardBlockMinutes != null }
+            val settings = com.focusguard.app.data.Settings(applicationContext)
+            settings.serviceRunning ||
+                lockState.isLocked ||
+                usageRuleStore.allRules().any { it.hardBlockMinutes != null } ||
+                usageRuleStore.allRules().any {
+                    com.focusguard.app.data.AppBlockStore(applicationContext).isBlocked(it.packageName)
+                }
         } catch (e: Exception) {
             false
         }
@@ -378,11 +403,33 @@ class LockGuardService : Service() {
     /** 用户在最近任务里滑掉应用 → 自恢复守护并拉回锁机页。 */
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        Log.d(TAG, "应用任务被移除")
+        Log.d(TAG, "应用任务被移除，尝试自恢复")
+
+        // 清后台 = 进程被杀。只要用户曾开启过守护/锁机/封锁规则，
+        // 就立即重启守护（前台服务通知马上回来），并注册看门狗兜底。
+        val shouldRevive = try {
+            val settings = com.focusguard.app.data.Settings(applicationContext)
+            settings.serviceRunning ||
+                lockState.isLocked ||
+                usageRuleStore.allRules().any { it.hardBlockMinutes != null } ||
+                com.focusguard.app.data.AppBlockStore(applicationContext)
+                    .let { store ->
+                        usageRuleStore.allRules().any { store.isBlocked(it.packageName) }
+                    }
+        } catch (e: Exception) {
+            false
+        }
+
         try {
-            if (lockState.isLocked && lockState.shouldBlockNow) {
+            if (shouldRevive) {
                 start(applicationContext)
-                LockScreenActivity.show(applicationContext)
+                GuardWatchdogWorker.schedule(applicationContext)
+                Log.d(TAG, "任务被移除，守护已重启")
+
+                // 锁机中 → 立即拉回锁机页
+                if (lockState.isLocked && lockState.shouldBlockNow) {
+                    LockScreenActivity.show(applicationContext)
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "任务移除后恢复失败：${e.message}")

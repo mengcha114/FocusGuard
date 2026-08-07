@@ -61,6 +61,20 @@ object AlertNotifier {
                 }
             }
 
+            // 全屏提醒：横屏视频/游戏等全屏场景下 Heads-up 会被系统抑制，
+            // Full-Screen Intent 是唯一保证"一定弹到用户眼前"的通道。
+            val fullScreenPi = PendingIntent.getActivity(
+                context,
+                9,
+                Intent(context, com.focusguard.app.enforce.AlertActivity::class.java).apply {
+                    putExtra("alert_title", title)
+                    putExtra("alert_message", body)
+                    putExtra("alert_countdown", countdownSeconds)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
             val notification = Notification.Builder(context, FocusGuardApp.ALERT_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_shield)
                 .setContentTitle(title)
@@ -73,6 +87,9 @@ object AlertNotifier {
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setPriority(Notification.PRIORITY_HIGH)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
+                // Android 14+ 需要 USE_FULL_SCREEN_INTENT 权限（默认关闭，需用户允许）；
+                // 未授权时系统自动忽略此字段，退化为普通横幅
+                .setFullScreenIntent(fullScreenPi, true)
                 .build()
 
             val nm = context.getSystemService(NotificationManager::class.java)

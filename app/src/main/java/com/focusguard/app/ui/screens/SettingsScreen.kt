@@ -44,6 +44,19 @@ fun SettingsScreen(onSave: () -> Unit) {
     var aiAlertEnabled by remember { mutableStateOf(settings.aiAlertEnabled) }
     var aiAlertDelaySeconds by remember { mutableIntStateOf(settings.aiAlertDelaySeconds) }
 
+    // 仅锁该软件时长 / 自定义箴言
+    var appBlockMinutes by remember { mutableIntStateOf(settings.appBlockMinutes) }
+    var customMottos by remember { mutableStateOf(settings.customMottos) }
+
+    // 二次修改答题验证
+    var showVerifyDialog by remember { mutableStateOf(false) }
+    val challengeGenerator = remember { com.focusguard.app.challenge.ChallengeGenerator() }
+    var verifyQuestion by remember {
+        mutableStateOf(challengeGenerator.generate(2))
+    }
+    var verifyAnswer by remember { mutableStateOf("") }
+    var verifyError by remember { mutableStateOf<String?>(null) }
+
     // Token 节约系统开关
     var tokenSavingEnabled by remember { mutableStateOf(settings.tokenSavingEnabled) }
     var screenHashDedup by remember { mutableStateOf(settings.screenHashDedupEnabled) }
@@ -403,6 +416,51 @@ fun SettingsScreen(onSave: () -> Unit) {
             }
         }
 
+        // ── 仅锁该软件时长 ────────────────────────────────────────
+        SettingsSection(title = "仅锁该软件时长", icon = Icons.Default.Block) {
+            Text(
+                text = if (enforcementMode == Settings.EnforcementMode.APP_BLOCK) {
+                    "执法模式为「仅锁该软件」：判定娱乐后该应用封锁 $appBlockMinutes 分钟"
+                } else {
+                    "切换执法模式为「仅锁该软件」后生效：判定娱乐后该应用封锁 $appBlockMinutes 分钟"
+                },
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.55f)
+            )
+            Spacer(Modifier.height(10.dp))
+            Slider(
+                value = appBlockMinutes.toFloat(),
+                onValueChange = { appBlockMinutes = it.toInt() },
+                valueRange = 5f..240f,
+                steps = 46
+            )
+            Text(
+                text = "封锁期内打开该应用会被全屏挡住，退出后其他应用不受影响",
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.45f)
+            )
+        }
+
+        // ── 自定义锁机箴言 ────────────────────────────────────────
+        SettingsSection(title = "自定义锁机箴言", icon = Icons.Default.FormatQuote) {
+            OutlinedTextField(
+                value = customMottos,
+                onValueChange = { customMottos = it },
+                label = { Text("每行一条，留空使用内置箴言") },
+                placeholder = { Text("例如：\n自律给我自由\n拒绝拖延，立刻行动") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 90.dp),
+                shape = RoundedCornerShape(12.dp)
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "锁机页面会随机展示你写的句子",
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.45f)
+            )
+        }
+
         // ── 界面主题 ──────────────────────────────────────────────
         SettingsSection(title = "界面主题", icon = Icons.Default.Palette) {
             Row(
@@ -507,33 +565,49 @@ fun SettingsScreen(onSave: () -> Unit) {
         }
 
         // ── 保存按钮 ──────────────────────────────────────────────
+        // 防篡改：首次配置免费；之后每次修改设置都要答题验证
+        // （防止被监管的人随意改动限制）。
+        fun doSave() {
+            settings.apiBaseUrl = apiBaseUrl
+            settings.apiKey = apiKey
+            settings.modelName = modelName
+            settings.apiFormat = apiFormat
+            settings.aiCustomPrompt = aiCustomPrompt
+            settings.intervalMinutes = intervalMinutes.toIntOrNull() ?: 3
+            settings.confidenceThreshold = confidenceThreshold
+            settings.consecutiveViolations = consecutiveViolations.toIntOrNull() ?: 2
+            settings.whitelist = whitelist
+            settings.enforcementMode = enforcementMode
+            settings.themeMode = themeMode
+            settings.tokenSavingEnabled = tokenSavingEnabled
+            settings.screenHashDedupEnabled = screenHashDedup
+            settings.screenTextPrefilterEnabled = screenTextPrefilter
+            settings.decisionCacheEnabled = decisionCacheEnabled
+            settings.adaptiveIntervalEnabled = adaptiveInterval
+            settings.dailyCallLimit = dailyCallLimit.toIntOrNull() ?: 120
+            tokenBudget.dailyCallLimit = settings.dailyCallLimit
+            // AI 检出娱乐后的锁机配置
+            settings.lockMinutesOnViolation = aiLockMinutes.coerceIn(1, 480)
+            settings.aiLockStrength = aiLockStrength
+            settings.aiAlertEnabled = aiAlertEnabled
+            settings.aiAlertDelaySeconds = aiAlertDelaySeconds.coerceIn(0, 120)
+            // 仅锁该软件时长 + 自定义箴言
+            settings.appBlockMinutes = appBlockMinutes.coerceIn(1, 480)
+            settings.customMottos = customMottos
+            // 记录一次修改（防篡改答题计数）
+            settings.settingsEditCount = settings.settingsEditCount + 1
+            saved = true
+            onSave()
+        }
+
         Button(
             onClick = {
-                settings.apiBaseUrl = apiBaseUrl
-                settings.apiKey = apiKey
-                settings.modelName = modelName
-                settings.apiFormat = apiFormat
-                settings.aiCustomPrompt = aiCustomPrompt
-                settings.intervalMinutes = intervalMinutes.toIntOrNull() ?: 3
-                settings.confidenceThreshold = confidenceThreshold
-                settings.consecutiveViolations = consecutiveViolations.toIntOrNull() ?: 2
-                settings.whitelist = whitelist
-                settings.enforcementMode = enforcementMode
-                settings.themeMode = themeMode
-                settings.tokenSavingEnabled = tokenSavingEnabled
-                settings.screenHashDedupEnabled = screenHashDedup
-                settings.screenTextPrefilterEnabled = screenTextPrefilter
-                settings.decisionCacheEnabled = decisionCacheEnabled
-                settings.adaptiveIntervalEnabled = adaptiveInterval
-                settings.dailyCallLimit = dailyCallLimit.toIntOrNull() ?: 120
-                tokenBudget.dailyCallLimit = settings.dailyCallLimit
-                // AI 检出娱乐后的锁机配置
-                settings.lockMinutesOnViolation = aiLockMinutes.coerceIn(1, 480)
-                settings.aiLockStrength = aiLockStrength
-                settings.aiAlertEnabled = aiAlertEnabled
-                settings.aiAlertDelaySeconds = aiAlertDelaySeconds.coerceIn(0, 120)
-                saved = true
-                onSave()
+                if (settings.settingsEditCount > 0) {
+                    // 二次修改：先答题验证
+                    showVerifyDialog = true
+                } else {
+                    doSave()
+                }
             },
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(16.dp),
@@ -548,6 +622,75 @@ fun SettingsScreen(onSave: () -> Unit) {
                 color = Color(0xFF4CAF50),
                 fontSize = 13.sp,
                 modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+        }
+
+        // ── 二次修改答题验证对话框 ────────────────────────────────
+        if (showVerifyDialog) {
+            AlertDialog(
+                onDismissRequest = { showVerifyDialog = false },
+                title = { Text("修改设置需先答题") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "为防止设置被随意篡改，每次修改前请先回答一道题：",
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = verifyQuestion.question,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White
+                        )
+                        OutlinedTextField(
+                            value = verifyAnswer,
+                            onValueChange = { verifyAnswer = it; verifyError = null },
+                            label = { Text("你的答案") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        verifyError?.let {
+                            Text(
+                                text = it,
+                                fontSize = 12.sp,
+                                color = Color(0xFFF44336)
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val ok = challengeGenerator.isAnswerCorrect(
+                                verifyAnswer, verifyQuestion.answer
+                            )
+                            if (ok) {
+                                showVerifyDialog = false
+                                verifyAnswer = ""
+                                doSave()
+                            } else {
+                                verifyError = "回答错误，请重试"
+                            }
+                        }
+                    ) {
+                        Text("验证并保存")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showVerifyDialog = false
+                            verifyAnswer = ""
+                            verifyError = null
+                        }
+                    ) {
+                        Text("取消", color = Color.White.copy(alpha = 0.5f))
+                    }
+                },
+                containerColor = Color(0xFF241F27),
+                shape = RoundedCornerShape(20.dp)
             )
         }
 
@@ -686,25 +829,35 @@ fun EnforcementModeSelector(
     ) {
         Settings.EnforcementMode.entries.forEach { mode ->
             val (label, icon) = when (mode) {
-                Settings.EnforcementMode.LOCK -> "强制锁机" to Icons.Default.Lock
-                Settings.EnforcementMode.EXIT -> "强制退出" to Icons.Default.ExitToApp
-                Settings.EnforcementMode.WARN -> "仅警告" to Icons.Default.Notifications
+                Settings.EnforcementMode.LOCK -> "全局锁机" to Icons.Default.Lock
+                Settings.EnforcementMode.APP_BLOCK -> "仅锁该软件" to Icons.Default.Block
+                Settings.EnforcementMode.WARN -> "仅提醒" to Icons.Default.Notifications
             }
             val isSelected = mode == selected
 
             FilterChip(
                 selected = isSelected,
                 onClick = { onSelect(mode) },
-                label = { Text(label) },
+                label = { Text(label, fontSize = 12.sp) },
                 leadingIcon = {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 },
                 modifier = Modifier.weight(1f)
             )
         }
     }
+    Spacer(Modifier.height(6.dp))
+    Text(
+        text = when (selected) {
+            Settings.EnforcementMode.LOCK -> "检测到娱乐后全屏锁机，需答题或等时间结束才能继续使用手机"
+            Settings.EnforcementMode.APP_BLOCK -> "检测到娱乐后只封锁该应用：打开即被挡住，退出后其他应用不受影响，封锁时长见下方设置"
+            Settings.EnforcementMode.WARN -> "只弹横幅提醒，不锁机"
+        },
+        fontSize = 11.sp,
+        color = Color.White.copy(alpha = 0.5f)
+    )
 }
