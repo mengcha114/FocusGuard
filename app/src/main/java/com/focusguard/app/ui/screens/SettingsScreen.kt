@@ -112,7 +112,9 @@ fun SettingsScreen(onSave: () -> Unit) {
                 "通义千问" to Triple("openai", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-vl-plus"),
                 "DeepSeek" to Triple("openai", "https://api.deepseek.com/v1", "deepseek-chat"),
                 "Claude" to Triple("anthropic", "https://api.anthropic.com", "claude-3-5-sonnet-latest"),
-                "Gemini" to Triple("gemini", "https://generativelanguage.googleapis.com", "gemini-1.5-flash")
+                "Gemini" to Triple("gemini", "https://generativelanguage.googleapis.com", "gemini-1.5-flash"),
+                // 自定义 API：不覆盖用户已填内容，仅按 OpenAI 兼容协议发送
+                "自定义 API" to Triple("openai", "", "")
             )
             presets.chunked(2).forEach { rowPresets ->
                 Row(
@@ -122,9 +124,12 @@ fun SettingsScreen(onSave: () -> Unit) {
                     rowPresets.forEach { (name, cfg) ->
                         OutlinedButton(
                             onClick = {
-                                apiBaseUrl = cfg.second
-                                modelName = cfg.third
                                 apiFormat = cfg.first
+                                if (cfg.second.isNotBlank()) {
+                                    apiBaseUrl = cfg.second
+                                    modelName = cfg.third
+                                }
+                                // 自定义 API：保持已填地址/模型，仅切换协议
                             },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),
@@ -137,47 +142,10 @@ fun SettingsScreen(onSave: () -> Unit) {
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "GLM/千问/DeepSeek 为 OpenAI 兼容格式；Claude 走 /v1/messages；Gemini 走 generateContent",
+                text = "GLM/千问/DeepSeek 为 OpenAI 兼容格式；Claude 走 /v1/messages；Gemini 走 generateContent；自定义 API 默认按 OpenAI 兼容协议发送",
                 fontSize = 10.sp,
                 color = Color.White.copy(alpha = 0.4f)
             )
-
-            Spacer(Modifier.height(8.dp))
-
-            // ── Kimi 一键填充 ──────────────────────────────
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2332))
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        "Kimi 视觉模型推荐配置",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF8AB4F8)
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "API 地址：https://api.moonshot.cn/v1\n" +
-                            "可用模型：kimi-k3 / moonshot-v1-8k-vision-preview / moonshot-v1-32k-vision-preview / kimi-k2.6 / kimi-k2.7-code\n" +
-                            "注意：Kimi 的 temperature 为固定值，应用已适配（不传该参数）",
-                        fontSize = 11.sp,
-                        lineHeight = 17.sp,
-                        color = Color.White.copy(alpha = 0.65f)
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    TextButton(
-                        onClick = {
-                            apiBaseUrl = "https://api.moonshot.cn/v1"
-                            modelName = "moonshot-v1-8k-vision-preview"
-                        },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("一键填入 Kimi 配置", color = Color(0xFF8AB4F8), fontSize = 13.sp)
-                    }
-                }
-            }
 
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
