@@ -258,7 +258,7 @@ class MainActivity : ComponentActivity() {
                 if (!enhancer.connect(this)) {
                     Toast.makeText(
                         this,
-                        "未检测到 Dhizuku：请先安装 Dhizuku 并激活为设备所有者（需 Shizuku 支持），再回来授权",
+                        "未检测到 Dhizuku（${enhancer.lastError}）：请先安装 Dhizuku 并激活为设备所有者（需 Shizuku 支持），再回来授权",
                         Toast.LENGTH_LONG
                     ).show()
                     return
@@ -271,7 +271,7 @@ class MainActivity : ComponentActivity() {
                         if (ok) {
                             "Lock Task 已启用：锁机将进入系统级防退出，任何手势都无法退出"
                         } else {
-                            "启用 Lock Task 失败，请重试"
+                            "启用 Lock Task 失败：${enhancer.lastError}"
                         },
                         Toast.LENGTH_LONG
                     ).show()
@@ -286,7 +286,7 @@ class MainActivity : ComponentActivity() {
                                     if (ok) {
                                         "Dhizuku 已授权，Lock Task 已启用：锁机将无法通过手势退出"
                                     } else {
-                                        "Dhizuku 已授权，但加入 Lock Task 白名单失败，请重试"
+                                        "Dhizuku 已授权，但加入 Lock Task 白名单失败：${enhancer.lastError}"
                                     },
                                     Toast.LENGTH_LONG
                                 ).show()

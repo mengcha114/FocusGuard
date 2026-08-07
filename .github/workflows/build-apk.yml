@@ -27,10 +27,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       # 本机生成的 gradle-wrapper.properties 指向腾讯镜像（国内快），
-      # 但 GitHub 服务器在海外，官方源更稳，这里换回去
+      # 但 GitHub 服务器在海外，官方源更稳，这里换回去（版本号用通配，升级 wrapper 无需改这里）
       - name: 修正 Gradle 下载源
         run: |
-          sed -i 's|https\\://mirrors.tencent.com/gradle/gradle-8.7-bin.zip|https\\://services.gradle.org/distributions/gradle-8.7-bin.zip|' gradle/wrapper/gradle-wrapper.properties
+          sed -i 's|https\\://mirrors.tencent.com/gradle/gradle-.*-bin.zip|https\\://services.gradle.org/distributions/gradle-8.11.1-bin.zip|' gradle/wrapper/gradle-wrapper.properties
           grep distributionUrl gradle/wrapper/gradle-wrapper.properties
 
       # local.properties 里的 sdk.dir 是开发机路径，CI 环境不需要它

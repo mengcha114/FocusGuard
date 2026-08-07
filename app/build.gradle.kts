@@ -5,14 +5,14 @@ plugins {
 
 android {
     namespace = "com.focusguard.app"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.3.1"
+        versionCode = 6
+        versionName = "1.3.2"
     }
 
     // 固定签名：仓库内置 keystore，任何机器/任何次构建签名都一致，
@@ -110,8 +110,8 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
     // Dhizuku：共享 Device Owner 权限 → Lock Task 系统级防退出
-    // 注：2.5+ 要求 compileSdk 36+，本项目 compileSdk 34，故锁定 2.4
-    implementation("io.github.iamr0s:Dhizuku-API:2.4")
+    // 2.5.4 与新版 Dhizuku 服务器 AIDL 兼容（2.4 是 2023 年的旧接口）
+    implementation("io.github.iamr0s:Dhizuku-API:2.5.4")
     // 反射隐藏 API（构造 Dhizuku 包装后的 DevicePolicyManager）
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
 

@@ -28,11 +28,9 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass
  * 2. [isPermissionGranted]：Dhizuku 是否已授权本应用
  * 3. [ensureReady]：连接 + 已授权 + 包装 DPM 构造完成 → Lock Task 可用
  *
- * 早期实现把「已授权」当作 [connect] 的前置条件，导致首次授权前
- * 流程直接短路——用户永远无法发起授权请求，UI 永远显示"未授权"。
- *
  * ## 降级
  * 任一步骤失败都返回 false，上层回退到覆盖层 + 无障碍方案，功能不中断。
+ * 失败的具体原因会通过 [lastError] 暴露，供 Toast/日志展示，便于定位。
  */
 object DhizukuEnhancer {
 
@@ -51,27 +49,42 @@ object DhizukuEnhancer {
     @Volatile
     private var initialized = false
 
+    /** 最近一次失败原因（排查用，Toast 展示）。 */
+    @Volatile
+    var lastError: String = ""
+        private set
+
     /** 完整就绪：连接 + 授权 + 包装 DPM 可用。Lock Task 可用的唯一判据。 */
     fun isReady(): Boolean = initialized && wrappedDpm != null && ownerComponent != null
 
     /**
      * 建立 Dhizuku 连接（幂等）。
      * 只要求 Dhizuku 已安装并激活为 Device Owner，**不要求已授权本应用**。
+     * 支持 Android 8.0+（Dhizuku 官方支持范围，Lock Task 需要 API 21+）。
      */
     fun connect(context: Context): Boolean {
         if (connected) return true
         return try {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
-            if (!HiddenApiBypass.setHiddenApiExemptions("")) return false
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                lastError = "系统版本过低（需 Android 8.0+）"
+                return false
+            }
+            if (!HiddenApiBypass.setHiddenApiExemptions("")) {
+                lastError = "隐藏 API 豁免失败"
+                return false
+            }
             if (!Dhizuku.init(context.applicationContext)) {
-                Log.d(TAG, "Dhizuku 未安装或未激活为 Device Owner")
+                lastError = "Dhizuku 未安装或未激活为设备所有者"
+                Log.d(TAG, lastError)
                 return false
             }
             connected = true
+            lastError = ""
             Log.d(TAG, "Dhizuku 连接成功")
             true
         } catch (e: Throwable) {
-            Log.w(TAG, "Dhizuku 连接失败：${e.message}")
+            lastError = "连接异常：${e.message}"
+            Log.w(TAG, "Dhizuku 连接失败", e)
             connected = false
             false
         }
@@ -81,7 +94,8 @@ object DhizukuEnhancer {
     fun isPermissionGranted(): Boolean = try {
         connected && Dhizuku.isPermissionGranted()
     } catch (e: Throwable) {
-        Log.w(TAG, "查询 Dhizuku 授权状态失败：${e.message}")
+        lastError = "查询授权状态异常：${e.message}"
+        Log.w(TAG, "查询 Dhizuku 授权状态失败", e)
         false
     }
 
@@ -93,20 +107,32 @@ object DhizukuEnhancer {
         if (isReady()) return true
         try {
             if (!connect(context)) return false
-            if (!isPermissionGranted()) return false
+            if (!isPermissionGranted()) {
+                lastError = "未获得 Dhizuku 授权"
+                return false
+            }
 
-            val dpm = buildWrappedDpm(context) ?: return false
-            // 通过包装后的 DPM 查询 Device Owner（调用被转发到 Dhizuku 服务器执行）。
-            // getDeviceOwnerComponentOnAnyUser 是 @hide 方法（不在 android.jar stub），
-            // 运行时反射调用（HiddenApiBypass 已放行非 SDK 接口）。
-            val owner = queryDeviceOwner(dpm) ?: return false
+            val dpm = buildWrappedDpm(context)
+            if (dpm == null) return false
+
+            // 2.5.4 提供公开的 getOwnerComponent()（init 时已记录 Device Owner 组件）
+            val owner = try {
+                Dhizuku.getOwnerComponent()
+            } catch (e: Throwable) {
+                lastError = "获取 Device Owner 组件失败：${e.message}"
+                Log.w(TAG, lastError)
+                null
+            } ?: return false
+
             wrappedDpm = dpm
             ownerComponent = owner
             initialized = true
+            lastError = ""
             Log.d(TAG, "Dhizuku 增强已就绪，owner=$owner")
             return true
         } catch (e: Throwable) {
-            Log.w(TAG, "Dhizuku 就绪检查失败：${e.message}")
+            lastError = "就绪检查异常：${e.message}"
+            Log.w(TAG, "Dhizuku 就绪检查失败", e)
             initialized = false
             return false
         }
@@ -126,7 +152,7 @@ object DhizukuEnhancer {
                 false
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Dhizuku 状态检查失败：${e.message}")
+            Log.w(TAG, "Dhizuku 状态检查失败", e)
             false
         }
     }
@@ -134,7 +160,7 @@ object DhizukuEnhancer {
     /**
      * 构造包装后的 DevicePolicyManager：
      * 1. 取本应用的 DevicePolicyManager（其 mService 就是系统 device_policy binder）
-     * 2. 反射取 mService 字段
+     * 2. 反射取 mService 字段（HiddenApiBypass 已放行）
      * 3. 用 [com.rosan.dhizuku.api.Dhizuku.binderWrapper] 包装 → 后续所有 DPM 调用
      *    被转发到 Dhizuku 服务器进程执行（以 Device Owner 身份）
      */
@@ -144,7 +170,13 @@ object DhizukuEnhancer {
             val manager = app.getSystemService(Context.DEVICE_POLICY_SERVICE)
                 as DevicePolicyManager
 
-            val field = DevicePolicyManager::class.java.getDeclaredField("mService")
+            val field = try {
+                DevicePolicyManager::class.java.getDeclaredField("mService")
+            } catch (e: NoSuchFieldException) {
+                lastError = "反射 mService 字段失败（系统版本差异）：${e.message}"
+                Log.w(TAG, lastError)
+                return null
+            }
             field.isAccessible = true
             val oldInterface = field[manager] as android.os.IInterface
 
@@ -154,18 +186,8 @@ object DhizukuEnhancer {
             field[manager] = newInterface
             manager
         } catch (e: Throwable) {
-            Log.w(TAG, "构造包装 DPM 失败：${e.message}")
-            null
-        }
-    }
-
-    /** 反射调用隐藏方法 DevicePolicyManager.getDeviceOwnerComponentOnAnyUser()。 */
-    private fun queryDeviceOwner(dpm: DevicePolicyManager): ComponentName? {
-        return try {
-            dpm.javaClass.getMethod("getDeviceOwnerComponentOnAnyUser")
-                .invoke(dpm) as? ComponentName
-        } catch (e: Throwable) {
-            Log.w(TAG, "查询 Device Owner 失败：${e.message}")
+            lastError = "构造包装 DPM 失败：${e.message}"
+            Log.w(TAG, "构造包装 DPM 失败", e)
             null
         }
     }
@@ -177,7 +199,8 @@ object DhizukuEnhancer {
             stub.getMethod("asInterface", IBinder::class.java)
                 .invoke(null, binder)
         } catch (e: Throwable) {
-            Log.w(TAG, "反射 IDevicePolicyManager.Stub.asInterface 失败：${e.message}")
+            lastError = "反射 IDevicePolicyManager.Stub.asInterface 失败：${e.message}"
+            Log.w(TAG, lastError)
             null
         }
     }
@@ -203,7 +226,8 @@ object DhizukuEnhancer {
                 }
             })
         } catch (e: Throwable) {
-            Log.w(TAG, "请求 Dhizuku 授权失败：${e.message}")
+            lastError = "请求授权异常：${e.message}"
+            Log.w(TAG, "请求 Dhizuku 授权失败", e)
             onResult(false)
         }
     }
@@ -215,10 +239,12 @@ object DhizukuEnhancer {
             val dpm = wrappedDpm ?: return false
             val comp = ownerComponent ?: return false
             dpm.setLockTaskPackages(comp, arrayOf(context.packageName))
+            lastError = ""
             Log.d(TAG, "已把 ${context.packageName} 加入 Lock Task 白名单")
             return true
         } catch (e: Throwable) {
-            Log.w(TAG, "授权 Lock Task 失败：${e.message}")
+            lastError = "setLockTaskPackages 调用失败：${e.message}"
+            Log.w(TAG, "授权 Lock Task 失败", e)
             return false
         }
     }
@@ -229,7 +255,8 @@ object DhizukuEnhancer {
         return try {
             dpm.isLockTaskPermitted(packageName)
         } catch (e: Throwable) {
-            Log.w(TAG, "查询 Lock Task 权限失败：${e.message}")
+            lastError = "查询 Lock Task 权限异常：${e.message}"
+            Log.w(TAG, "查询 Lock Task 权限失败", e)
             false
         }
     }
