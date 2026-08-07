@@ -23,7 +23,7 @@ import com.focusguard.app.ai.AiClient
 import com.focusguard.app.ai.ChatMessage
 import com.focusguard.app.data.LogStore
 import com.focusguard.app.data.Settings
-import com.jeziellago.compose.markdown.MarkdownText
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -383,12 +383,15 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                             color = Color.White.copy(alpha = 0.7f)
                         )
                     } else {
-                        // AI 消息：Markdown 渲染
+                        // AI 消息：Markdown 渲染（compose-markdown 开源库）
                         MarkdownText(
                             markdown = msg.text,
                             modifier = Modifier,
-                            color = Color.White,
-                            fontSize = 14.sp
+                            style = LocalTextStyle.current.copy(
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp
+                            )
                         )
                     }
                 }
