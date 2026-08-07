@@ -163,15 +163,17 @@ class AiClient {
                             .put("role", if (it.role == "user") "user" else "assistant")
                             .put("content", it.content)
                     }
-                    JSONObject().apply {
-                        put("model", modelName)
-                        if (system.isNotBlank()) put("system", system)
-                        put("messages", JSONArray().apply { msgs.forEach { put(it) } })
-                        put("max_tokens", 1024)
-                    ), "${baseUrl.trimEnd('/')}/v1/messages", mapOf(
-                        "x-api-key" to apiKey,
-                        "anthropic-version" to "2023-06-01",
-                        "Content-Type" to "application/json"
+                    Triple(
+                        JSONObject().apply {
+                            put("model", modelName)
+                            if (system.isNotBlank()) put("system", system)
+                            put("messages", JSONArray().apply { msgs.forEach { put(it) } })
+                            put("max_tokens", 1024)
+                        }, "${baseUrl.trimEnd('/')}/v1/messages", mapOf(
+                            "x-api-key" to apiKey,
+                            "anthropic-version" to "2023-06-01",
+                            "Content-Type" to "application/json"
+                        )
                     )
                 }
                 "gemini" -> {
@@ -180,28 +182,32 @@ class AiClient {
                             .put("role", if (it.role == "user") "user" else "model")
                             .put("parts", JSONArray().put(JSONObject().put("text", it.content)))
                     }
-                    JSONObject().apply {
-                        put("contents", JSONArray().apply { contents.forEach { put(it) } })
-                        put(
-                            "generationConfig",
-                            JSONObject().put("maxOutputTokens", 1024)
+                    Triple(
+                        JSONObject().apply {
+                            put("contents", JSONArray().apply { contents.forEach { put(it) } })
+                            put(
+                                "generationConfig",
+                                JSONObject().put("maxOutputTokens", 1024)
+                            )
+                        }, "${baseUrl.trimEnd('/')}/v1beta/models/${modelName}:generateContent", mapOf(
+                            "x-goog-api-key" to apiKey,
+                            "Content-Type" to "application/json"
                         )
-                    ), "${baseUrl.trimEnd('/')}/v1beta/models/${modelName}:generateContent", mapOf(
-                        "x-goog-api-key" to apiKey,
-                        "Content-Type" to "application/json"
                     )
                 }
                 else -> {
                     val msgs = messages.map {
                         JSONObject().put("role", it.role).put("content", it.content)
                     }
-                    JSONObject().apply {
-                        put("model", modelName)
-                        put("messages", JSONArray().apply { msgs.forEach { put(it) } })
-                        put("max_tokens", 1024)
-                    ), "${baseUrl.trimEnd('/')}/chat/completions", mapOf(
-                        "Authorization" to "Bearer $apiKey",
-                        "Content-Type" to "application/json"
+                    Triple(
+                        JSONObject().apply {
+                            put("model", modelName)
+                            put("messages", JSONArray().apply { msgs.forEach { put(it) } })
+                            put("max_tokens", 1024)
+                        }, "${baseUrl.trimEnd('/')}/chat/completions", mapOf(
+                            "Authorization" to "Bearer $apiKey",
+                            "Content-Type" to "application/json"
+                        )
                     )
                 }
             }

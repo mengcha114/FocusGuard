@@ -42,6 +42,22 @@ object AlertNotifier {
         message: String,
         countdownSeconds: Int = 0
     ) {
+        // ── 核心：像锁机页一样**直接拉起全屏提醒窗口** ──────
+        // 通知横幅 / Full-Screen Intent 都依赖通知渠道与系统权限
+        // （Android 14+ 的 USE_FULL_SCREEN_INTENT 默认拒绝），不可靠。
+        // 由前台服务直接 startActivity 弹全屏窗口，与锁机页同一机制，必达。
+        try {
+            com.focusguard.app.enforce.AlertActivity.show(
+                context = context,
+                title = title,
+                message = message,
+                countdownSeconds = countdownSeconds
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "直接弹窗失败（可能非前台），退回通知：${e.message}")
+        }
+
+        // ── 兜底：同时发一条高优先级通知（横幅） ──────────
         try {
             val pendingIntent = PendingIntent.getActivity(
                 context,
