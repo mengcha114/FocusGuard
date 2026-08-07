@@ -87,7 +87,7 @@
             android:name=".enforce.AlertActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:theme="@style/Theme.FocusGuard.Block"
+            android:theme="@style/Theme.FocusGuard.Alert"
             android:launchMode="singleTop"
             android:taskAffinity="" />
 

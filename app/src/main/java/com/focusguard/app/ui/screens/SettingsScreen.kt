@@ -124,12 +124,24 @@ fun SettingsScreen(onSave: () -> Unit) {
                     rowPresets.forEach { (name, cfg) ->
                         OutlinedButton(
                             onClick = {
-                                apiFormat = cfg.first
-                                if (cfg.second.isNotBlank()) {
+                                // 切换前：先把当前输入框内容保存为"我的自定义配置"，
+                                // 这样切走再切回「自定义 API」不会丢
+                                if (apiBaseUrl.isNotBlank()) {
+                                    settings.customApiBaseUrl = apiBaseUrl
+                                    settings.customApiModel = modelName
+                                }
+                                if (cfg.second.isBlank()) {
+                                    // 「自定义 API」：恢复之前保存的自定义配置
+                                    apiFormat = "openai"
+                                    if (settings.customApiBaseUrl.isNotBlank()) {
+                                        apiBaseUrl = settings.customApiBaseUrl
+                                        modelName = settings.customApiModel
+                                    }
+                                } else {
+                                    apiFormat = cfg.first
                                     apiBaseUrl = cfg.second
                                     modelName = cfg.third
                                 }
-                                // 自定义 API：保持已填地址/模型，仅切换协议
                             },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),

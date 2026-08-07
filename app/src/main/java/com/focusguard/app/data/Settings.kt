@@ -38,6 +38,10 @@ class Settings(context: Context) {
         // 自定义锁机箴言（每行一条）
         private const val KEY_CUSTOM_MOTTOS = "custom_mottos"
 
+        // 自定义 API 配置（预设切换时保留用户填写的地址与模型）
+        private const val KEY_CUSTOM_API_BASE_URL = "custom_api_base_url"
+        private const val KEY_CUSTOM_API_MODEL = "custom_api_model"
+
         // Token 节约系统开关
         private const val KEY_TOKEN_SAVING_ENABLED = "token_saving_enabled"
         private const val KEY_SCREEN_HASH_DEDUP = "screen_hash_dedup"
@@ -194,6 +198,20 @@ class Settings(context: Context) {
     var customMottos: String
         get() = prefs.getString(KEY_CUSTOM_MOTTOS, "") ?: ""
         set(value) = prefs.edit().putString(KEY_CUSTOM_MOTTOS, value).apply()
+
+    /**
+     * 自定义 API 地址与模型。
+     *
+     * 用户手动填写的自定义配置会保存在这里；点击厂商预设会先把
+     * 当前输入保存进来，再点「自定义 API」时恢复显示，切换预设不丢内容。
+     */
+    var customApiBaseUrl: String
+        get() = prefs.getString(KEY_CUSTOM_API_BASE_URL, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CUSTOM_API_BASE_URL, value).apply()
+
+    var customApiModel: String
+        get() = prefs.getString(KEY_CUSTOM_API_MODEL, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CUSTOM_API_MODEL, value).apply()
 
     // ── Token 节约系统 ───────────────────────────────────────────────
 

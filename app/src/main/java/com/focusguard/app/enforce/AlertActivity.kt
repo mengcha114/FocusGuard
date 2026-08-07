@@ -8,6 +8,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -128,34 +129,38 @@ private fun AlertCard(
     onDismiss: () -> Unit,
     onOpenApp: () -> Unit
 ) {
+    // 轻遮罩（约 35% 黑）：能看到原画面但明显变暗，不强制全屏打断
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xB3000000)),
+            .background(Color(0x59000000))
+            .clickable(enabled = false) { },
         contentAlignment = Alignment.Center
     ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 28.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F1B24))
+                .padding(horizontal = 32.dp),
+            shape = RoundedCornerShape(26.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF201B2A)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 24.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(13.dp)
             ) {
+                // 图标：紫渐变圆角块 + 外圈光晕
                 Box(
                     modifier = Modifier
-                        .size(64.dp)
+                        .size(70.dp)
                         .background(
                             Brush.verticalGradient(
                                 listOf(Color(0xFF8B7CF6), Color(0xFF5E4FD0))
                             ),
-                            RoundedCornerShape(20.dp)
+                            RoundedCornerShape(22.dp)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
@@ -163,7 +168,7 @@ private fun AlertCard(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(30.dp)
+                        modifier = Modifier.size(32.dp)
                     )
                 }
 
@@ -180,18 +185,25 @@ private fun AlertCard(
                         text = message,
                         fontSize = 14.sp,
                         lineHeight = 21.sp,
-                        color = Color.White.copy(alpha = 0.75f),
+                        color = Color.White.copy(alpha = 0.78f),
                         textAlign = TextAlign.Center
                     )
                 }
 
                 if (countdownSeconds > 0) {
-                    Text(
-                        text = "⏳ $countdownSeconds 秒后将自动锁机，现在切回学习即可避免",
-                        fontSize = 12.sp,
-                        color = Color(0xFFFFB74D),
-                        textAlign = TextAlign.Center
-                    )
+                    // 倒计时徽章
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color(0xFFFFB74D).copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            text = "⏳ $countdownSeconds 秒后将自动锁机，现在切回学习即可避免",
+                            fontSize = 12.sp,
+                            color = Color(0xFFFFB74D),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(4.dp))
