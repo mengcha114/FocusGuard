@@ -130,6 +130,8 @@ class LockScreenActivity : ComponentActivity() {
                 lockState = lockState,
                 onStartChallenge = { count -> startChallenge(count) },
                 onUnlocked = {
+                    // 先退出系统级 Lock Task，再释放锁机
+                    com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
                     lockState.releaseLock()
                     LockGuardService.stop(applicationContext)
                     finish()
@@ -159,11 +161,13 @@ class LockScreenActivity : ComponentActivity() {
             pendingPause = false
             lockState.startPause()
             Log.d(TAG, "答题成功，获得 ${lockState.pauseMinutes} 分钟暂停")
-            // 暂停期间锁机页退到后台，让用户自由使用；
-            // 守护服务会在暂停结束后自动把锁机页拉回来。
+            // 暂停期间退出系统级 Lock Task，让用户自由使用；
+            // 守护服务会在暂停结束后自动把锁机页拉回来并重新进入 Lock Task。
+            com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
             moveTaskToBack(true)
         } else {
             Log.d(TAG, "答题成功，解除锁机")
+            com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
             lockState.releaseLock()
             LockGuardService.stop(applicationContext)
             finish()
@@ -195,6 +199,14 @@ class LockScreenActivity : ComponentActivity() {
         }
         // 每次回到前台重新应用沉浸模式（部分 ROM 会重置系统栏状态）
         applyImmersiveMode()
+
+        // Dhizuku 增强：应封锁时进入系统级 Lock Task（Home/上滑/最近任务全部失效）；
+        // 暂停/番茄钟休息阶段退出 Lock Task，让用户自由使用。
+        if (lockState.shouldBlockNow) {
+            com.focusguard.app.enhance.LockTaskEnhancer.enter(this)
+        } else {
+            com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
+        }
     }
 
     override fun onPause() {
@@ -236,6 +248,9 @@ class LockScreenActivity : ComponentActivity() {
         super.onDestroy()
         if (instance === this) instance = null
         foreground = false
+        // 兜底退出 Lock Task（正常路径已在 unlock/暂停时退出；
+        // 若因锁机到期 finish 等路径遗漏，这里保证系统不被锁死）
+        com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
         Log.d(TAG, "锁机页已销毁（守护服务会在需要时重新拉起）")
         // 这里绝不自行 startActivity：
         // 用已销毁的 Activity 作为 Context 拉起自己会造成崩溃循环。
@@ -264,6 +279,10 @@ private fun LockScreenContent(
 
     // 统一的每秒刷新：时钟、倒计时、番茄钟阶段、暂停状态
     LaunchedEffect(Unit) {
+        // 追踪番茄钟工作/休息阶段切换 → 同步进出系统级 Lock Task
+        val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+        var lastWorkPhase = lockState.pomodoroIsWorkPhase
+
         while (lockState.isLocked) {
             kotlinx.coroutines.delay(1000L)
             nowMillis = System.currentTimeMillis()
@@ -280,6 +299,15 @@ private fun LockScreenContent(
                     if (finished) break
                     isWorkPhase = lockState.pomodoroIsWorkPhase
                     phaseSeconds = lockState.pomodoroRemainingSeconds
+                }
+                // 阶段切换：休息→工作 重新进入 Lock Task；工作→休息 释放
+                if (isWorkPhase != lastWorkPhase && activity != null) {
+                    if (isWorkPhase) {
+                        com.focusguard.app.enhance.LockTaskEnhancer.enter(activity)
+                    } else {
+                        com.focusguard.app.enhance.LockTaskEnhancer.exit(activity)
+                    }
+                    lastWorkPhase = isWorkPhase
                 }
             }
         }

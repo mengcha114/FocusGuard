@@ -11,8 +11,8 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.3.0"
     }
 
     // 固定签名：仓库内置 keystore，任何机器/任何次构建签名都一致，
@@ -104,7 +104,16 @@ dependencies {
 
     // WorkManager：守护看门狗（进程被杀后仍能被系统唤起重启守护服务）
     implementation("androidx.work:work-runtime-ktx:2.9.0")
-    
+
+    // ── Shizuku / Dhizuku 高级权限增强（可选，无授权时自动降级） ──
+    // Shizuku：免 Root 以 shell 身份执行命令（自动授权使用情况/电池优化白名单）
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+    // Dhizuku：共享 Device Owner 权限 → Lock Task 系统级防退出
+    implementation("io.github.iamr0s:Dhizuku-API:2.6.0")
+    // 反射隐藏 API（构造 Dhizuku 包装后的 DevicePolicyManager）
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
+
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

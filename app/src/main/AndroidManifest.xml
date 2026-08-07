@@ -34,6 +34,9 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- Shizuku 管理器 / Dhizuku（高级权限增强，可选） -->
+        <package android:name="moe.shizuku.manager" />
+        <package android:name="com.rosan.dhizuku" />
     </queries>
 
     <application
@@ -45,6 +48,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.FocusGuard"
         tools:targetApi="34">
+
+        <!-- Shizuku：binder 接收与授权回调（Shizuku API 必需） -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!-- 日志导出 FileProvider -->
         <provider

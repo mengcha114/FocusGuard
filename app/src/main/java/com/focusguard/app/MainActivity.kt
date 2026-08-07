@@ -234,6 +234,49 @@ class MainActivity : ComponentActivity() {
                 }
                 settingsPageLauncher.launch(intent)
             }
+            "shizuku" -> {
+                val enhancer = com.focusguard.app.enhance.ShizukuEnhancer
+                if (!enhancer.isAvailable()) {
+                    Toast.makeText(
+                        this,
+                        "未检测到 Shizuku。请先安装 Shizuku 并启动（https://shizuku.rikka.app），再回来授权",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+                enhancer.requestPermission()
+                // 授权后立即自愈：使用情况访问 + 电池优化白名单
+                android.os.Handler(mainLooper).postDelayed({
+                    if (enhancer.isReady()) {
+                        enhancer.selfHeal(this)
+                        Toast.makeText(this, "Shizuku 已连接，权限自愈完成", Toast.LENGTH_SHORT).show()
+                    }
+                }, 1500)
+            }
+            "dhizuku" -> {
+                val enhancer = com.focusguard.app.enhance.DhizukuEnhancer
+                if (!enhancer.init(this)) {
+                    Toast.makeText(
+                        this,
+                        "Dhizuku 不可用：请先安装 Dhizuku 并激活为设备所有者（需 Shizuku 支持），再回来授权",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return
+                }
+                enhancer.requestPermission(this) { granted ->
+                    if (granted) {
+                        val ok = enhancer.grantLockTask(this)
+                        val msg = if (ok) {
+                            "Dhizuku 已授权，锁机将进入系统级防退出模式（无法上滑/Home 退出）"
+                        } else {
+                            "Dhizuku 已授权，但加入 Lock Task 白名单失败"
+                        }
+                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(this, "Dhizuku 授权被拒绝或取消", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
     }
 

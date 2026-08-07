@@ -99,6 +99,23 @@ fun PermissionSetupScreen(
                 icon = Icons.Default.BatteryChargingFull,
                 isGranted = PermissionChecker.isBatteryOptimizationIgnored(context),
                 isRequired = false
+            ),
+            // ── 高级增强（可选，Shizuku/Dhizuku） ──
+            PermissionItem(
+                key = "shizuku",
+                title = "Shizuku 权限自愈（可选）",
+                description = "免 Root 提权。授权后自动开启「使用情况访问」与电池优化白名单，权限被 ROM 重置也能自愈",
+                icon = Icons.Default.Bolt,
+                isGranted = com.focusguard.app.enhance.ShizukuEnhancer.isReady(),
+                isRequired = false
+            ),
+            PermissionItem(
+                key = "dhizuku",
+                title = "Dhizuku 系统级防退出（可选·最强）",
+                description = "授权后锁机进入系统 Lock Task 模式：Home/上滑/最近任务全部被系统禁用，任何手势都无法退出",
+                icon = Icons.Default.Security,
+                isGranted = com.focusguard.app.enhance.DhizukuEnhancer.isReady(),
+                isRequired = false
             )
         )
     }

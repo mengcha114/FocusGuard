@@ -122,6 +122,16 @@ class LockGuardService : Service() {
         lockState = LockState(this)
         usageRuleStore = UsageRuleStore(this)
         Log.d(TAG, "锁机守护服务已创建")
+
+        // Shizuku 权限自愈（可选增强，静默失败）：
+        // 服务每次启动时尝试自动授权使用情况访问 + 电池优化白名单
+        Thread {
+            try {
+                com.focusguard.app.enhance.ShizukuEnhancer.selfHeal(applicationContext)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Shizuku 自愈失败（可忽略）：${e.message}")
+            }
+        }.start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
