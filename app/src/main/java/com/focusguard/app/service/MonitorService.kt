@@ -472,10 +472,13 @@ class MonitorService : Service() {
         val outcome = try {
             activePipeline.detect(mediaProjection)
         } catch (e: kotlinx.coroutines.CancellationException) {
-            // 仅当协程确实被取消（服务停止/被杀）时向上传播；
-            // 若协程仍活跃（个别库抛的"假取消"，如 TimeoutCancellationException），
+            // 协程真正被取消（服务停止/被杀）→ 静默向上传播，不记录假错误。
+            // 注意：判断要反过来——此前写成 isActive 时 rethrow，导致
+            // 真正的取消被当成"检测异常：StandaloneCoroutine was cancelled"
+            // 记入日志（误导排查）。
+            if (!kotlin.coroutines.coroutineContext.isActive) throw e
+            // 协程仍活跃的"假取消"（个别库抛的 TimeoutCancellationException）
             // 按普通异常记录，避免整个检测循环被误杀
-            if (kotlin.coroutines.coroutineContext.isActive) throw e
             Log.e(TAG, "检测流程异常（假取消）", e)
             DetectionOutcome(
                 classification = "NEUTRAL",

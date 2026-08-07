@@ -39,6 +39,7 @@ private data class ChatMsg(val role: String, val text: String, val time: String)
  *    的日志 reason），让用户能在对话里看到 AI 之前说过的话，并继续聊下去。
  * 2. **检测日志**：保留原有的完整检测日志（含 AI 诊断与崩溃日志）。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiChatScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current

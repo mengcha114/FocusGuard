@@ -168,7 +168,7 @@ class AiClient {
                         if (system.isNotBlank()) put("system", system)
                         put("messages", JSONArray().apply { msgs.forEach { put(it) } })
                         put("max_tokens", 1024)
-                    } to "${baseUrl.trimEnd('/')}/v1/messages" to mapOf(
+                    ), "${baseUrl.trimEnd('/')}/v1/messages", mapOf(
                         "x-api-key" to apiKey,
                         "anthropic-version" to "2023-06-01",
                         "Content-Type" to "application/json"
@@ -186,7 +186,7 @@ class AiClient {
                             "generationConfig",
                             JSONObject().put("maxOutputTokens", 1024)
                         )
-                    } to "${baseUrl.trimEnd('/')}/v1beta/models/${modelName}:generateContent" to mapOf(
+                    ), "${baseUrl.trimEnd('/')}/v1beta/models/${modelName}:generateContent", mapOf(
                         "x-goog-api-key" to apiKey,
                         "Content-Type" to "application/json"
                     )
@@ -199,7 +199,7 @@ class AiClient {
                         put("model", modelName)
                         put("messages", JSONArray().apply { msgs.forEach { put(it) } })
                         put("max_tokens", 1024)
-                    } to "${baseUrl.trimEnd('/')}/chat/completions" to mapOf(
+                    ), "${baseUrl.trimEnd('/')}/chat/completions", mapOf(
                         "Authorization" to "Bearer $apiKey",
                         "Content-Type" to "application/json"
                     )
