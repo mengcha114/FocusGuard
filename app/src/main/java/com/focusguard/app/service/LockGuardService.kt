@@ -262,10 +262,13 @@ class LockGuardService : Service() {
                 context = applicationContext,
                 lockState = lockState,
                 onStartChallenge = {
-                    // 覆盖层上点击"答题解锁"：先隐藏覆盖层，再拉起锁机页
-                    // （锁机页包含答题/朋友辅助/暂停等完整解锁交互）
-                    try { LockOverlayManager.hide() } catch (_: Exception) {}
-                    LockScreenActivity.show(applicationContext)
+                    // 覆盖层按钮：按解锁强度直接进入解锁流程
+                    // （强度 1/2 直接开答题页——若绕道锁机页，guardTick 可能在
+                    //  锁机页显示前重新盖住覆盖层，表现为"点了没反应"）
+                    com.focusguard.app.enforce.LockScreenActivity.startChallengeFromOverlay(
+                        applicationContext,
+                        lockState
+                    )
                 }
             )
         } catch (e: Exception) {

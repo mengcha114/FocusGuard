@@ -23,34 +23,31 @@ import com.focusguard.app.data.LockState
  *
  * ## 为什么需要这个
  * Activity 的锁机页存在一个无法回避的软肋：小窗（Picture-in-Picture / 浮动窗口）
- * 的 z-order 天然高于普通 Activity。用户在支持小窗的 ROM 上，只需把任意 App
- * 切到小窗，就能在锁机页上方操作，相当于无视锁机。
+ * 的 z-order 天然高于普通 Activity。TYPE_APPLICATION_OVERLAY 窗口是 App 能申请的
+ * 最高 z-order，盖住小窗/分屏，且不受"清后台"影响。
  *
- * TYPE_APPLICATION_OVERLAY 窗口（需要 SYSTEM_ALERT_WINDOW 权限）是
- * Android 上 App 能申请的最高 z-order：
- * - 覆盖所有普通 Activity（包括小窗、分屏）
- * - 不受"清后台"影响——View 属于服务进程，进程活着覆盖层就活着
+ * ## 线程模型（重要）
+ * WindowManager 的 addView / removeViewImmediate **必须在主线程**执行。
+ * 本管理器所有窗口操作统一 post 到主线程 Handler 串行执行；
+ * show/hide 可被任意线程调用（守护协程、Activity 回调），内部保证线程安全。
  *
- * ## 为什么不用 Compose（重要教训）
- * 早期版本用 ComposeView 渲染覆盖层，在 WindowManager 直挂的 View 上
- * 崩溃：`ViewTreeLifecycleOwner not found`（Compose 1.6 的 WindowRecomposer
- * 需要在 view 层级上找到 LifecycleOwner，而 WindowManager View 没有
- * Activity window 上下文）。覆盖层 UI 极简（图标+倒计时+按钮），
- * 传统 View 完全胜任且零框架依赖，不再冒崩溃风险。
+ * ## 为什么不用 Compose（教训）
+ * 早期用 ComposeView 渲染覆盖层，在 WindowManager 直挂的 View 上崩溃：
+ * `ViewTreeLifecycleOwner not found`（Compose WindowRecomposer 需要 Activity
+ * 窗口上下文）。覆盖层 UI 极简，传统 View 零框架依赖。
  *
- * ## 设计约束
- * 1. 仅在锁机期间（shouldBlockNow）显示，守护服务在解锁/暂停时调用 [hide]
- * 2. 覆盖层 NOT_FOCUSABLE：不抢焦点、不挡输入法
- * 3. 按钮点击回调由调用方注入（拉起锁机页/答题页）
- *
- * ## 权限降级
- * 未授权 SYSTEM_ALERT_WINDOW 时静默不启动，Activity + 无障碍防线仍有效。
+ * ## 防竞态
+ * [HIDE_COOLDOWN_MS]：hide 后短暂拒绝重新 show——否则"按钮→hide→guardTick
+ * 立即重 show"会把锁机页/答题页盖住，表现为"点了没反应"。
  */
 object LockOverlayManager {
 
     private const val TAG = "LockOverlayManager"
 
-    /** 覆盖层是否当前可见。 */
+    /** hide 后拒绝重新 show 的冷却时长：防"按钮→hide→guardTick 立即重 show"竞态。 */
+    private const val HIDE_COOLDOWN_MS = 1200L
+
+    /** 覆盖层是否当前可见（主线程维护，volatile 供任意线程读取）。 */
     @Volatile
     var isShowing: Boolean = false
         private set
@@ -62,55 +59,64 @@ object LockOverlayManager {
 
     private val uiHandler = Handler(Looper.getMainLooper())
     private var clockRunnable: Runnable? = null
+    private var lastHideAt = 0L
 
     /**
-     * 显示覆盖层（幂等，已显示时不重复添加）。
+     * 显示覆盖层（幂等）。任意线程可调用；窗口操作在内部切到主线程执行。
      *
-     * @param context 任意 Context，内部转为 ApplicationContext
-     * @param lockState 当前锁机状态，覆盖层每秒刷新剩余时间
-     * @param onStartChallenge 点击"答题解锁"按钮时的回调
+     * @param context 任意 Context
+     * @param lockState 当前锁机状态，覆盖层每秒刷新剩余时间；按钮按解锁强度显示
+     * @param onStartChallenge 点击解锁按钮时的回调（主线程回调）
      */
-    @Synchronized
     fun show(
         context: Context,
         lockState: LockState,
         onStartChallenge: () -> Unit
     ) {
         if (isShowing) return
+        val now = System.currentTimeMillis()
+        if (now - lastHideAt < HIDE_COOLDOWN_MS) {
+            Log.d(TAG, "覆盖层冷却中，跳过本次显示")
+            return
+        }
         if (!Settings.canDrawOverlays(context)) {
             Log.w(TAG, "缺少 SYSTEM_ALERT_WINDOW 权限，覆盖层不启动（Activity 防线仍有效）")
             return
         }
+        uiHandler.post {
+            if (isShowing) return@post
+            try {
+                val appContext = context.applicationContext
+                val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        try {
-            val appContext = context.applicationContext
-            val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                val root = FrameLayout(appContext).apply {
+                    setBackgroundColor(0xE8000000.toInt())
+                }
+                root.addView(buildContent(appContext, lockState, onStartChallenge))
 
-            val root = FrameLayout(appContext).apply {
-                setBackgroundColor(0xE8000000.toInt())
+                wm.addView(root, buildLayoutParams())
+
+                windowManager = wm
+                overlayRoot = root
+                currentLockState = lockState
+                isShowing = true
+                startClock()
+                Log.d(TAG, "覆盖层已显示")
+            } catch (e: Exception) {
+                Log.e(TAG, "显示覆盖层失败：${e.message}")
+                cleanupOnMain()
             }
-            root.addView(buildContent(appContext, onStartChallenge))
-
-            wm.addView(root, buildLayoutParams())
-
-            windowManager = wm
-            overlayRoot = root
-            currentLockState = lockState
-            isShowing = true
-            startClock()
-            Log.d(TAG, "覆盖层已显示")
-        } catch (e: Exception) {
-            Log.e(TAG, "显示覆盖层失败：${e.message}")
-            cleanup()
         }
     }
 
-    /** 隐藏并销毁覆盖层。 */
-    @Synchronized
+    /** 隐藏并销毁覆盖层。任意线程可调用。 */
     fun hide() {
-        if (!isShowing) return
-        cleanup()
-        Log.d(TAG, "覆盖层已隐藏")
+        uiHandler.post {
+            if (!isShowing) return@post
+            lastHideAt = System.currentTimeMillis()
+            cleanupOnMain()
+            Log.d(TAG, "覆盖层已隐藏")
+        }
     }
 
     // ── 内容构建（纯传统 View） ──────────────────────────────
@@ -118,7 +124,11 @@ object LockOverlayManager {
     private fun dp(context: Context, value: Int): Int =
         (value * context.resources.displayMetrics.density).toInt()
 
-    private fun buildContent(context: Context, onStartChallenge: () -> Unit): View {
+    private fun buildContent(
+        context: Context,
+        lockState: LockState,
+        onStartChallenge: () -> Unit
+    ): View {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -166,18 +176,33 @@ object LockOverlayManager {
         }
         container.addView(hint, matchWrap())
 
-        // 答题解锁按钮
-        val button = Button(context).apply {
-            text = "答题解锁"
-            textSize = 15f
-            setTextColor(Color.parseColor("#D0BCFF"))
-            setBackgroundColor(Color.TRANSPARENT)
-            isAllCaps = false
-            setOnClickListener {
-                onStartChallenge()
+        // 解锁按钮：按强度显示（强度 4 不可提前解锁，不显示按钮）
+        if (lockState.unlockStrength < 4) {
+            val buttonText = when (lockState.unlockStrength) {
+                3 -> "去解锁"
+                else -> "答题解锁"
             }
+            val button = Button(context).apply {
+                text = buttonText
+                textSize = 15f
+                setTextColor(Color.parseColor("#D0BCFF"))
+                setBackgroundColor(Color.TRANSPARENT)
+                isAllCaps = false
+                setOnClickListener {
+                    onStartChallenge()
+                }
+            }
+            container.addView(button, matchWrap())
+        } else {
+            val noUnlock = TextView(context).apply {
+                text = "本次锁机不可提前解锁，请等待时间结束"
+                textSize = 12f
+                setTextColor(Color.parseColor("#C6786F"))
+                gravity = Gravity.CENTER
+                setPadding(0, dp(context, 12), 0, 0)
+            }
+            container.addView(noUnlock, matchWrap())
         }
-        container.addView(button, matchWrap())
 
         return container
     }
@@ -215,18 +240,13 @@ object LockOverlayManager {
         }
     }
 
-    // ── 倒计时刷新（Handler 每秒） ──────────────────────────
+    // ── 倒计时刷新（主线程 Handler，每秒） ────────────────────
 
     private fun startClock() {
         val runnable = object : Runnable {
             override fun run() {
                 val ls = currentLockState ?: return
                 val t = timeText ?: return
-                if (!ls.isLocked) {
-                    // 锁机已结束：交给守护服务统一隐藏（这里兜底）
-                    uiHandler.postDelayed(this, 1000L)
-                    return
-                }
                 val secs = ls.remainingSeconds
                 val h = secs / 3600
                 val m = (secs % 3600) / 60
@@ -240,7 +260,8 @@ object LockOverlayManager {
         uiHandler.post(runnable)
     }
 
-    private fun cleanup() {
+    /** 必须在主线程调用。 */
+    private fun cleanupOnMain() {
         clockRunnable?.let { uiHandler.removeCallbacks(it) }
         clockRunnable = null
         currentLockState = null

@@ -83,6 +83,33 @@ class LockScreenActivity : ComponentActivity() {
 
         /** 兼容旧调用点：语义与 [show] 相同（都是置顶而非重建）。 */
         fun reassert(context: Context) = show(context)
+
+        /**
+         * 覆盖层按钮的统一解锁入口（供 LockGuardService 回调）。
+         *
+         * 按解锁强度分流：
+         * - 强度 1/2：直接启动答题页（绕开锁机页，避免 guardTick 在锁机页
+         *   显示前重新盖住覆盖层的竞态——"点了没反应"的根因）
+         * - 强度 3（朋友辅助）：需要锁机页的密文输入界面，先隐藏覆盖层再拉起锁机页
+         * - 强度 4：覆盖层不显示按钮，不会走到这里
+         */
+        fun startChallengeFromOverlay(context: Context, lockState: LockState) {
+            try {
+                LockOverlayManager.hide()
+            } catch (e: Exception) {
+                Log.w(TAG, "隐藏覆盖层失败：${e.message}")
+            }
+            when (lockState.unlockStrength) {
+                3 -> show(context)
+                else -> {
+                    val required = if (lockState.unlockStrength == 2) 5 else 1
+                    UnlockChallengeActivity.show(
+                        context.applicationContext,
+                        required
+                    )
+                }
+            }
+        }
     }
 
     private lateinit var lockState: LockState
@@ -256,23 +283,10 @@ class LockScreenActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         foreground = false
-
-        // 上滑/切后台瞬间立即拉起覆盖层（不等守护巡检，0 延迟堵住破解窗口）。
-        // 答题页打开时排除（覆盖层会挡住输入法）。
-        try {
-            if (lockState.shouldBlockNow && !UnlockChallengeActivity.active) {
-                com.focusguard.app.enforce.LockOverlayManager.show(
-                    context = applicationContext,
-                    lockState = lockState,
-                    onStartChallenge = {
-                        com.focusguard.app.enforce.LockOverlayManager.hide()
-                        LockScreenActivity.show(applicationContext)
-                    }
-                )
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "onPause 拉起覆盖层失败：${e.message}")
-        }
+        // 注意：这里**不再**直接拉起覆盖层。
+        // 早期实现为"0 延迟堵破解窗口"在 onPause 里 addView 覆盖层，
+        // 用户反复上滑-回来时造成高频窗口增删 → 主线程卡死（倒计时停、按钮无响应）。
+        // 覆盖层统一由 LockGuardService 巡检（≤300ms）拉起，窗口期可接受。
     }
 
     /**
