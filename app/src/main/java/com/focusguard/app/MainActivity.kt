@@ -19,8 +19,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.focusguard.app.data.Settings as AppSettings
 import com.focusguard.app.ui.screens.*
@@ -139,36 +141,80 @@ class MainActivity : ComponentActivity() {
                 } else {
                     Scaffold(
                         bottomBar = {
+                            // 动态选中：根据当前导航目的地高亮对应标签
+                            // （此前 selected 写死为 true/false，点击后阴影不移动）
+                            val navBackStackEntry by navController.currentBackStackEntryAsState()
+                            val currentRoute = navBackStackEntry?.destination?.route
                             NavigationBar {
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.Home, contentDescription = null) },
                                     label = { Text("主页") },
-                                    selected = true,
-                                    onClick = { navController.navigate("home") }
+                                    selected = currentRoute == "home",
+                                    onClick = {
+                                        navController.navigate("home") {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
                                 )
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.Apps, contentDescription = null) },
                                     label = { Text("应用管控") },
-                                    selected = false,
-                                    onClick = { navController.navigate("apps") }
+                                    selected = currentRoute == "apps",
+                                    onClick = {
+                                        navController.navigate("apps") {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
                                 )
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.Lock, contentDescription = null) },
                                     label = { Text("锁机") },
-                                    selected = false,
-                                    onClick = { navController.navigate("timer_lock") }
+                                    selected = currentRoute == "timer_lock",
+                                    onClick = {
+                                        navController.navigate("timer_lock") {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
                                 )
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.List, contentDescription = null) },
                                     label = { Text("日志") },
-                                    selected = false,
-                                    onClick = { navController.navigate("logs") }
+                                    selected = currentRoute == "logs",
+                                    onClick = {
+                                        navController.navigate("logs") {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
                                 )
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.Settings, contentDescription = null) },
                                     label = { Text("设置") },
-                                    selected = false,
-                                    onClick = { navController.navigate("settings") }
+                                    selected = currentRoute == "settings",
+                                    onClick = {
+                                        navController.navigate("settings") {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
                                 )
                             }
                         }

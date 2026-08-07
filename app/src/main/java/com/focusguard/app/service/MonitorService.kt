@@ -266,40 +266,50 @@ class MonitorService : Service() {
             var msUntilNextDetection = currentDetectionDelayMs()
 
             while (isActive) {
-                delay(USAGE_TICK_MS)
-                if (!isActive) break
+                // 整个循环体加保护：任何环节抛异常（部分 ROM 的 queryUsageStats、
+                // startActivity 等）都会终止协程 → 检测永久停止 → "开启守护后
+                // 卡住、不弹日志"。异常记录后继续循环。
+                try {
+                    delay(USAGE_TICK_MS)
+                    if (!isActive) break
 
-                // 锁机兜底：锁机状态激活但锁机页不在前台（被最近任务/滑动销毁、
-                // 进程被杀后服务重建）时，自动重新拉起锁机页
-                enforceLockReassert()
+                    // 锁机兜底：锁机状态激活但锁机页不在前台（被最近任务/滑动销毁、
+                    // 进程被杀后服务重建）时，自动重新拉起锁机页
+                    enforceLockReassert()
 
-                // 每个 tick 都累计使用时长并检查是否触发闸门
-                when (val verdict = usageTick()) {
-                    is UsageTracker.Verdict.ShouldHardBlock -> {
-                        handleHardBlock(verdict)
-                        // 已封锁，本轮不必再花 token 做 AI 检测
-                        msUntilNextDetection = currentDetectionDelayMs()
-                        continue
-                    }
-                    is UsageTracker.Verdict.ShouldDetect -> {
-                        // 越过触发阈值，立刻转入检测模式而不等原定周期
-                        if (!usageTriggeredDetection) {
-                            usageTriggeredDetection = true
-                            Log.d(
-                                TAG,
-                                "${verdict.packageName} 使用 ${verdict.usedMinutes} 分钟" +
-                                    "（阈值 ${verdict.triggerMinutes}），开始 AI 检测"
-                            )
-                            msUntilNextDetection = 0L
+                    // 每个 tick 都累计使用时长并检查是否触发闸门
+                    when (val verdict = usageTick()) {
+                        is UsageTracker.Verdict.ShouldHardBlock -> {
+                            handleHardBlock(verdict)
+                            // 已封锁，本轮不必再花 token 做 AI 检测
+                            msUntilNextDetection = currentDetectionDelayMs()
+                            continue
                         }
+                        is UsageTracker.Verdict.ShouldDetect -> {
+                            // 越过触发阈值，立刻转入检测模式而不等原定周期
+                            if (!usageTriggeredDetection) {
+                                usageTriggeredDetection = true
+                                Log.d(
+                                    TAG,
+                                    "${verdict.packageName} 使用 ${verdict.usedMinutes} 分钟" +
+                                        "（阈值 ${verdict.triggerMinutes}），开始 AI 检测"
+                                )
+                                msUntilNextDetection = 0L
+                            }
+                        }
+                        UsageTracker.Verdict.Idle -> usageTriggeredDetection = false
                     }
-                    UsageTracker.Verdict.Idle -> usageTriggeredDetection = false
-                }
 
-                msUntilNextDetection -= USAGE_TICK_MS
-                if (msUntilNextDetection <= 0) {
-                    performDetection(isManualTest = false)
-                    msUntilNextDetection = currentDetectionDelayMs()
+                    msUntilNextDetection -= USAGE_TICK_MS
+                    if (msUntilNextDetection <= 0) {
+                        performDetection(isManualTest = false)
+                        msUntilNextDetection = currentDetectionDelayMs()
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // 真正的协程取消（服务停止）→ 正常退出循环
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "巡检循环异常（已恢复，继续检测）：${e.message}")
                 }
             }
         }
@@ -390,8 +400,17 @@ class MonitorService : Service() {
         val outcome = try {
             activePipeline.detect(mediaProjection)
         } catch (e: kotlinx.coroutines.CancellationException) {
-            // 协程取消（服务停止/被杀）是正常流程，不记录假错误
-            throw e
+            // 仅当协程确实被取消（服务停止/被杀）时向上传播；
+            // 若协程仍活跃（个别库抛的"假取消"，如 TimeoutCancellationException），
+            // 按普通异常记录，避免整个检测循环被误杀
+            if (kotlin.coroutines.coroutineContext.isActive) throw e
+            Log.e(TAG, "检测流程异常（假取消）", e)
+            DetectionOutcome(
+                classification = "NEUTRAL",
+                confidence = 0f,
+                reason = "检测异常：${e.message}",
+                source = DetectionSource.ERROR
+            )
         } catch (e: Exception) {
             Log.e(TAG, "检测流程异常", e)
             DetectionOutcome(
