@@ -63,26 +63,26 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(
                         imageVector = if (serviceRunning) Icons.Default.Shield else Icons.Default.Security,
                         contentDescription = null,
-                        modifier = Modifier.size(64.dp),
+                        modifier = Modifier.size(40.dp),
                         tint = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = if (serviceRunning) "守护中" else "已暂停",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
+                        text = if (serviceRunning) "守护中" else "已暂停",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
                         text = if (serviceRunning) "AI 正在监控您的专注状态" else "点击下方按钮开始守护",
-                        fontSize = 14.sp,
+                        fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.7f)
                     )
 
@@ -115,6 +115,7 @@ fun HomeScreen(
             }
         }
 
+
         // Stats row
         item {
             Row(
@@ -145,12 +146,7 @@ fun HomeScreen(
             }
         }
 
-        // ── 备忘录（显眼位置） ──────────────────────────────
-        item {
-            MemoCard()
-        }
-
-        // Action buttons
+        // Action buttons（放在显眼位置，不被备忘录压到下面）
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -205,6 +201,11 @@ fun HomeScreen(
                     Text("测试识别", fontSize = 16.sp)
                 }
             }
+        }
+
+        // ── 备忘录 ──────────────────────────────────────────────
+        item {
+            MemoCard()
         }
 
         // Recent logs
@@ -411,7 +412,7 @@ private fun MemoCard() {
                     color = Color.White.copy(alpha = 0.4f)
                 )
             } else {
-                memos.take(4).forEachIndexed { index, memo ->
+                memos.take(2).forEachIndexed { index, memo ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -433,9 +434,9 @@ private fun MemoCard() {
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
-                    if (index == 3 && memos.size > 4) {
+                    if (index == 1 && memos.size > 2) {
                         Text(
-                            text = "…还有 ${memos.size - 4} 条",
+                            text = "…还有 ${memos.size - 2} 条",
                             fontSize = 11.sp,
                             color = Color.White.copy(alpha = 0.35f)
                         )

@@ -220,29 +220,45 @@ class AiClient {
                 .post(body.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
-            client.newCall(request).execute().use { resp ->
-                val respBody = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) {
-                    recordDiagnostic("对话 HTTP ${resp.code} 响应=${respBody.take(200)}")
-                    return@withContext "请求失败（${resp.code}）：${respBody.take(120)}"
-                }
-                val text = when (apiFormat) {
-                    "anthropic" -> JSONObject(respBody)
-                        .optJSONArray("content")?.optJSONObject(0)?.optString("text")
-                    "gemini" -> JSONObject(respBody)
-                        .optJSONArray("candidates")?.optJSONObject(0)
-                        ?.optJSONObject("content")?.optJSONArray("parts")
-                        ?.optJSONObject(0)?.optString("text")
-                    else -> JSONObject(respBody)
-                        .optJSONArray("choices")?.optJSONObject(0)
-                        ?.optJSONObject("message")?.optString("content")
-                }.orEmpty()
-                if (text.isBlank()) {
-                    "（AI 未返回内容，请确认模型支持文本对话）"
-                } else {
-                    text
+            // 网络失败（超时/断连）自动重试一次，临时抖动可恢复
+            var lastError: String? = null
+            repeat(2) { attempt ->
+                try {
+                    val result = client.newCall(request).execute().use { resp ->
+                        val respBody = resp.body?.string().orEmpty()
+                        if (!resp.isSuccessful) {
+                            recordDiagnostic("对话 HTTP ${resp.code} 响应=${respBody.take(200)}")
+                            return@withContext "请求失败（${resp.code}）：${respBody.take(120)}"
+                        }
+                        when (apiFormat) {
+                            "anthropic" -> JSONObject(respBody)
+                                .optJSONArray("content")?.optJSONObject(0)?.optString("text")
+                            "gemini" -> JSONObject(respBody)
+                                .optJSONArray("candidates")?.optJSONObject(0)
+                                ?.optJSONObject("content")?.optJSONArray("parts")
+                                ?.optJSONObject(0)?.optString("text")
+                            else -> JSONObject(respBody)
+                                .optJSONArray("choices")?.optJSONObject(0)
+                                ?.optJSONObject("message")?.optString("content")
+                        }.orEmpty()
+                    }
+                    return@withContext if (result.isBlank()) {
+                        "（AI 未返回内容，请确认模型支持文本对话）"
+                    } else {
+                        result
+                    }
+                } catch (e: Exception) {
+                    lastError = e.message
+                    if (attempt == 0) {
+                        Log.w(TAG, "对话网络失败（${e.message}），重试一次")
+                        recordDiagnostic("对话网络失败重试")
+                        kotlinx.coroutines.delay(1000L)
+                    }
                 }
             }
+            Log.e(TAG, "对话失败", lastError?.let { RuntimeException(it) } ?: RuntimeException("unknown"))
+            recordDiagnostic("对话失败 $lastError")
+            "请求失败：$lastError"
         } catch (e: Exception) {
             Log.e(TAG, "对话失败", e)
             recordDiagnostic("对话失败 ${e.message}")

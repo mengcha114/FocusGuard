@@ -89,40 +89,42 @@ fun AiChatScreen() {
                     )
                 }
             }
-            // Tab 切换
-            SingleChoiceSegmentedButtonRow {
-                SegmentedButton(
+            // Tab 切换（TabRow：空间充足，图标与文字互不遮挡）
+            TabRow(
+                selectedTabIndex = tab,
+                containerColor = Color.Transparent,
+                contentColor = Color(0xFFD0BCFF)
+            ) {
+                Tab(
                     selected = tab == 0,
                     onClick = { tab = 0 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Color(0xFF4F378B)
-                    )
-                ) {
-                    Icon(
-                        Icons.Default.Chat,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text("对话", fontSize = 12.sp)
-                }
-                SegmentedButton(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Chat,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text("对话", fontSize = 13.sp)
+                        }
+                    }
+                )
+                Tab(
                     selected = tab == 1,
                     onClick = { tab = 1 },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Color(0xFF4F378B)
-                    )
-                ) {
-                    Icon(
-                        Icons.Default.List,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text("日志", fontSize = 12.sp)
-                }
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.List,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text("日志", fontSize = 13.sp)
+                        }
+                    }
+                )
             }
         }
 
@@ -218,16 +220,27 @@ fun AiChatScreen() {
                                         it.text
                                     )
                                 }
-                                val fullHistory = buildList {
-                                    add(
-                                        ChatMessage(
-                                            "system",
-                                            "你是专注卫士的 AI 助手，回答简短、友好、有耐心，使用中文。\n" +
-                                                "你拥有 lock_phone 工具：当用户请求锁机、自律、管住自己、限制使用手机时，" +
-                                                "在你的回复末尾单独输出一行 __LOCK__:<分钟数>（例如 __LOCK__:30 表示锁机 30 分钟），" +
-                                                "应用会自动执行锁机。其余情况不要输出该标记。"
-                                        )
+                                // 系统提示词：复用设置里的提醒风格 + 注入备忘录 + 锁机工具协议
+                                val memoList = com.focusguard.app.data.MemoStore(context).getAll()
+                                val systemText = buildString {
+                                    append("你是专注卫士的 AI 助手，回答简短、友好、有耐心，使用中文。")
+                                    if (settings.aiCustomPrompt.isNotBlank()) {
+                                        append("\n用户设定的提醒风格：")
+                                        append(settings.aiCustomPrompt)
+                                        append("（与检测娱乐时的提醒保持一致）")
+                                    }
+                                    append(
+                                        "\n你拥有 lock_phone 工具：当用户请求锁机、自律、管住自己、限制使用手机时，" +
+                                            "在你的回复末尾单独输出一行 __LOCK__:<分钟数>（例如 __LOCK__:30 表示锁机 30 分钟），" +
+                                            "应用会自动执行锁机。其余情况不要输出该标记。"
                                     )
+                                    if (memoList.isNotEmpty()) {
+                                        append("\n用户的备忘录（用户询问待办时可查看并提醒）：\n- ")
+                                        append(memoList.joinToString("\n- "))
+                                    }
+                                }
+                                val fullHistory = buildList {
+                                    add(ChatMessage("system", systemText))
                                     addAll(history)
                                 }
                                 val reply = aiClient.chat(
@@ -256,12 +269,16 @@ fun AiChatScreen() {
                             listState.animateScrollToItem(messages.size - 1)
                         }
                     },
-                    modifier = Modifier.size(52.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.size(56.dp),
+                    shape = RoundedCornerShape(18.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF)),
                     enabled = !sending
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "发送")
+                    Icon(
+                        Icons.Default.Send,
+                        contentDescription = "发送",
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
             }
         }

@@ -487,6 +487,17 @@ class MainActivity : ComponentActivity() {
         syncPermissionFlags()
         permissionRefreshTick++
 
+        // 自愈：守护"显示开着"但检测循环已停（心跳停止）→ 尝试复活
+        try {
+            if (com.focusguard.app.service.MonitorService.isRunning &&
+                !com.focusguard.app.service.MonitorService.isLoopAlive()
+            ) {
+                com.focusguard.app.service.MonitorService.resurrect(this)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "复活守护失败：${e.message}")
+        }
+
         // 回到前台时再检查一次锁机状态：
         // 覆盖"应用已在后台 → 锁机开始 → 用户切回主界面"的场景
         try {

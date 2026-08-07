@@ -51,6 +51,7 @@ class MonitorService : Service() {
         private const val ACTION_START = "com.focusguard.app.START"
         private const val ACTION_STOP = "com.focusguard.app.STOP"
         private const val ACTION_TEST = "com.focusguard.app.TEST"
+        private const val ACTION_RESURRECT = "com.focusguard.app.RESURRECT"
 
         /** 使用时长闸门的采样间隔（毫秒）。比 AI 检测间隔密得多，才能及时拦截。 */
         const val USAGE_TICK_MS = 15_000L
@@ -123,6 +124,19 @@ class MonitorService : Service() {
         fun requestImmediateCheck(context: Context) {
             context.startService(Intent(context, MonitorService::class.java).apply {
                 action = ACTION_TEST
+            })
+        }
+
+        /**
+         * 复活检测循环（自愈用）。
+         *
+         * 主页检测到「守护开着但循环已停」（心跳停止更新）时调用：
+         * 若 MediaProjection 仍有效则直接重启循环；投影已失效则走
+         * 重建分支发"点击恢复"通知。
+         */
+        fun resurrect(context: Context) {
+            context.startService(Intent(context, MonitorService::class.java).apply {
+                action = ACTION_RESURRECT
             })
         }
     }
@@ -200,6 +214,17 @@ class MonitorService : Service() {
             }
             ACTION_STOP -> stopMonitoring()
             ACTION_TEST -> serviceScope.launch { performDetection(isManualTest = true) }
+            // 自愈：检测循环意外停止但投影仍有效 → 重启循环
+            ACTION_RESURRECT -> {
+                Log.d(TAG, "收到复活指令（循环是否存活=${monitorJob?.isActive == true}）")
+                if (pipeline != null && monitorJob?.isActive != true) {
+                    startMonitoringLoop()
+                    Log.d(TAG, "检测循环已复活")
+                } else if (pipeline == null) {
+                    Log.w(TAG, "投影已失效，无法复活（等待重新授权）")
+                    notifyNeedReauth()
+                }
+            }
             // 系统在资源紧张时杀掉服务后重建（START_STICKY）：
             // MediaProjection 授权无法自动重放，此时不做检测，
             // 但锁机状态仍由 LockState 持久化 + LockScreenActivity 兜底，
