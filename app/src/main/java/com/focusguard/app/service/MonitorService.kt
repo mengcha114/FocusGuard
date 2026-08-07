@@ -65,6 +65,41 @@ class MonitorService : Service() {
         var lastOutcome: DetectionOutcome? = null
             private set
 
+        /**
+         * 巡检循环心跳时间戳（每 15 秒更新一次）。
+         *
+         * 用于排查"守护显示开着但不出日志"：若 isRunning=true 却
+         * lastTickAt 长时间不变，说明循环已死（协程被取消/异常吞掉），
+         * 而不是 AI 接口的问题。主页会显示这个状态。
+         */
+        @Volatile
+        var lastTickAt: Long = 0L
+            private set
+
+        /** 最近一次真正执行 AI 检测的时间戳。 */
+        @Volatile
+        var lastDetectionAt: Long = 0L
+            private set
+
+        /** 巡检循环是否活着（心跳在 3 个 tick 周期内）。 */
+        fun isLoopAlive(): Boolean =
+            lastTickAt > 0 && System.currentTimeMillis() - lastTickAt < USAGE_TICK_MS * 3
+
+        /** 诊断文本：给用户看的守护健康状态。 */
+        fun healthText(): String {
+            if (!isRunning) return "守护未运行"
+            val now = System.currentTimeMillis()
+            val tickAgo = if (lastTickAt == 0L) -1 else ((now - lastTickAt) / 1000)
+            val detectAgo = if (lastDetectionAt == 0L) -1 else ((now - lastDetectionAt) / 1000)
+            return buildString {
+                append("巡检心跳：")
+                append(if (tickAgo < 0) "尚未开始" else "${tickAgo}s 前")
+                append(" · AI 检测：")
+                append(if (detectAgo < 0) "尚未执行" else "${detectAgo}s 前")
+                if (!isLoopAlive()) append(" ⚠️ 循环已停止")
+            }
+        }
+
         fun startService(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, MonitorService::class.java).apply {
                 action = ACTION_START
@@ -113,6 +148,9 @@ class MonitorService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var monitorJob: Job? = null
     private var consecutiveViolations = 0
+
+    /** 提醒→锁机 宽限期任务（用户切回学习可免锁）。 */
+    private var gracePeriodJob: Job? = null
 
     /** MediaProjection 被系统或用户回收时同步停止服务，避免无声空转。 */
     private val projectionCallback = object : MediaProjection.Callback() {
@@ -300,9 +338,13 @@ class MonitorService : Service() {
                         UsageTracker.Verdict.Idle -> usageTriggeredDetection = false
                     }
 
+                    // 心跳：证明循环还活着（排查"守护开着但不检测"用）
+                    lastTickAt = System.currentTimeMillis()
+
                     msUntilNextDetection -= USAGE_TICK_MS
                     if (msUntilNextDetection <= 0) {
                         performDetection(isManualTest = false)
+                        lastDetectionAt = System.currentTimeMillis()
                         msUntilNextDetection = currentDetectionDelayMs()
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
@@ -436,17 +478,24 @@ class MonitorService : Service() {
                     // 手动测试只报告结果，不真的锁机
                     "WARN"
                 } else {
-                    val performed = enforcer.enforce(settings.enforcementMode, outcome.reason)
-                    if (settings.enforcementMode != Settings.EnforcementMode.WARN) {
-                        lockState.startLock(settings.lockMinutesOnViolation, "AI")
-                    }
-                    performed
+                    enforceWithAlert(outcome)
                 }
             } else {
+                // 未达连续次数：只弹提醒，不锁机（提前给用户信号）
+                if (settings.aiAlertEnabled) {
+                    AlertNotifier.alertEntertainment(
+                        context = this,
+                        title = "⚠️ 检测到娱乐行为",
+                        message = outcome.reason,
+                        countdownSeconds = 0
+                    )
+                }
                 "WARN"
             }
         } else if (outcome.source != DetectionSource.ERROR) {
             consecutiveViolations = 0
+            // 已回到学习/中性状态：撤掉之前的提醒横幅
+            AlertNotifier.cancelAlert(this)
         }
 
         logStore.addLog(
@@ -461,6 +510,94 @@ class MonitorService : Service() {
         )
 
         updateNotification(outcome)
+    }
+
+    /**
+     * 达到执法条件时的处理：先弹横幅提醒 + 宽限期，再真正锁机。
+     *
+     * 宽限期内用户切回学习类应用即可免锁——由 [gracePeriodJob] 复检前台应用。
+     * 关闭"提醒后锁机"或宽限秒数为 0 时立即锁机（旧行为）。
+     */
+    private fun enforceWithAlert(outcome: DetectionOutcome): String {
+        val delaySeconds = if (settings.aiAlertEnabled) settings.aiAlertDelaySeconds else 0
+
+        if (delaySeconds <= 0) {
+            AlertNotifier.alertEntertainment(
+                context = this,
+                title = "🔒 已锁机",
+                message = outcome.reason
+            )
+            return doEnforce(outcome)
+        }
+
+        // 弹提醒 + 倒计时说明
+        AlertNotifier.alertEntertainment(
+            context = this,
+            title = "⚠️ 检测到娱乐行为",
+            message = outcome.reason,
+            countdownSeconds = delaySeconds
+        )
+
+        // 宽限期结束后复检：仍在娱乐 → 锁机；已收手 → 免锁
+        gracePeriodJob?.cancel()
+        gracePeriodJob = serviceScope.launch {
+            try {
+                delay(delaySeconds * 1000L)
+                // 复检前台应用类别：已切到学习/中性应用则放行
+                val fg = AppClassifier.classifyForegroundApp(this@MonitorService, categoryStore)
+                val stillEntertainment = fg == null ||
+                    AppClassifier.classifyByAppInfo(fg) != "STUDY_WORK"
+
+                if (!stillEntertainment) {
+                    Log.d(TAG, "宽限期内已切回学习状态，免除锁机")
+                    AlertNotifier.cancelAlert(this@MonitorService)
+                    logStore.addLog(
+                        DetectionLog(
+                            classification = "STUDY_WORK",
+                            confidence = 1f,
+                            reason = "宽限期内主动切回学习状态，免除锁机",
+                            action = "NONE",
+                            source = DetectionSource.APP_CATEGORY.name,
+                            appLabel = fg?.label.orEmpty()
+                        )
+                    )
+                    return@launch
+                }
+
+                Log.d(TAG, "宽限期结束仍在娱乐，执行锁机")
+                AlertNotifier.alertEntertainment(
+                    context = this@MonitorService,
+                    title = "🔒 已锁机",
+                    message = outcome.reason
+                )
+                doEnforce(outcome)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 服务停止，正常退出
+            } catch (e: Exception) {
+                Log.w(TAG, "宽限期处理异常：${e.message}")
+            }
+        }
+        return "WARN"
+    }
+
+    /** 真正执行执法动作（锁机 / 退出 / 警告）。 */
+    private fun doEnforce(outcome: DetectionOutcome): String {
+        val performed = enforcer.enforce(settings.enforcementMode, outcome.reason)
+        if (settings.enforcementMode != Settings.EnforcementMode.WARN) {
+            lockState.startLock(settings.lockMinutesOnViolation, "AI")
+            // 应用设置里配置的 AI 执法解锁强度
+            lockState.unlockStrength = settings.aiLockStrength
+            // 强度 3（朋友辅助）需要生成密文
+            if (settings.aiLockStrength == 3) {
+                try {
+                    lockState.setupFriendChallenge()
+                } catch (e: Exception) {
+                    Log.w(TAG, "生成朋友辅助密文失败，退回答题解锁：${e.message}")
+                    lockState.unlockStrength = 1
+                }
+            }
+        }
+        return performed
     }
 
     private fun updateNotification(outcome: DetectionOutcome) {

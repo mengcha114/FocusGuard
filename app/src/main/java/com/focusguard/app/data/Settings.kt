@@ -24,6 +24,11 @@ class Settings(context: Context) {
         private const val KEY_LOCK_MINUTES_ON_VIOLATION = "lock_minutes_on_violation"
         private const val KEY_UNLOCK_QUESTION_COUNT = "unlock_question_count"
 
+        // AI 执法锁机默认参数
+        private const val KEY_AI_LOCK_STRENGTH = "ai_lock_strength"
+        private const val KEY_AI_ALERT_ENABLED = "ai_alert_enabled"
+        private const val KEY_AI_ALERT_DELAY_SECONDS = "ai_alert_delay_seconds"
+
         // Token 节约系统开关
         private const val KEY_TOKEN_SAVING_ENABLED = "token_saving_enabled"
         private const val KEY_SCREEN_HASH_DEDUP = "screen_hash_dedup"
@@ -123,6 +128,31 @@ class Settings(context: Context) {
     var unlockQuestionCount: Int
         get() = prefs.getInt(KEY_UNLOCK_QUESTION_COUNT, 2)
         set(value) = prefs.edit().putInt(KEY_UNLOCK_QUESTION_COUNT, value).apply()
+
+    // ── AI 执法锁机默认参数 ──────────────────────────────────────
+
+    /**
+     * AI 判定娱乐后自动锁机的解锁强度（1-4）：
+     * 1=答对 1 题；2=连对 5 题；3=朋友辅助；4=不可提前解锁。
+     * 默认 1（AI 执法是被动触发，不宜过严）。
+     */
+    var aiLockStrength: Int
+        get() = prefs.getInt(KEY_AI_LOCK_STRENGTH, 1)
+        set(value) = prefs.edit().putInt(KEY_AI_LOCK_STRENGTH, value.coerceIn(1, 4)).apply()
+
+    /**
+     * 检测到娱乐时先弹横幅提醒（IMPORTANCE_HIGH 通知），
+     * 延迟 [aiAlertDelaySeconds] 秒后才真正锁机，给用户主动收手的机会。
+     * 默认开启。
+     */
+    var aiAlertEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AI_ALERT_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_AI_ALERT_ENABLED, value).apply()
+
+    /** 提醒到锁机的宽限秒数（0 = 立即锁机）。默认 15 秒。 */
+    var aiAlertDelaySeconds: Int
+        get() = prefs.getInt(KEY_AI_ALERT_DELAY_SECONDS, 15)
+        set(value) = prefs.edit().putInt(KEY_AI_ALERT_DELAY_SECONDS, value.coerceIn(0, 120)).apply()
 
     // ── Token 节约系统 ───────────────────────────────────────────────
 

@@ -38,6 +38,12 @@ fun SettingsScreen(onSave: () -> Unit) {
     var themeMode by remember { mutableStateOf(settings.themeMode) }
     var dailyCallLimit by remember { mutableStateOf(settings.dailyCallLimit.toString()) }
 
+    // AI 检出娱乐后的锁机设置
+    var aiLockMinutes by remember { mutableIntStateOf(settings.lockMinutesOnViolation) }
+    var aiLockStrength by remember { mutableIntStateOf(settings.aiLockStrength) }
+    var aiAlertEnabled by remember { mutableStateOf(settings.aiAlertEnabled) }
+    var aiAlertDelaySeconds by remember { mutableIntStateOf(settings.aiAlertDelaySeconds) }
+
     // Token 节约系统开关
     var tokenSavingEnabled by remember { mutableStateOf(settings.tokenSavingEnabled) }
     var screenHashDedup by remember { mutableStateOf(settings.screenHashDedupEnabled) }
@@ -303,6 +309,100 @@ fun SettingsScreen(onSave: () -> Unit) {
             EnforcementModeSelector(selected = enforcementMode, onSelect = { enforcementMode = it })
         }
 
+        // ── AI 检出娱乐后的锁机设置 ────────────────────────────────
+        SettingsSection(title = "AI 锁机设置", icon = Icons.Default.Lock) {
+            Text(
+                text = "AI 判定娱乐并达到连续次数后，按下面的配置自动锁机",
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.5f)
+            )
+            Spacer(Modifier.height(12.dp))
+
+            // 锁机时长
+            Text("锁机时长：$aiLockMinutes 分钟", fontSize = 13.sp, color = Color.White)
+            Slider(
+                value = aiLockMinutes.toFloat(),
+                onValueChange = { aiLockMinutes = it.toInt() },
+                valueRange = 5f..120f,
+                steps = 22
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 解锁强度
+            Text("解锁强度", fontSize = 13.sp, color = Color.White)
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                (1..4).forEach { level ->
+                    FilterChip(
+                        selected = aiLockStrength == level,
+                        onClick = { aiLockStrength = level },
+                        label = { Text("$level 级", fontSize = 12.sp) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = when (aiLockStrength) {
+                    1 -> "1 级：答对 1 道题即可解锁"
+                    2 -> "2 级：需连续答对 5 道高难度题"
+                    3 -> "3 级：朋友辅助——需朋友解密凯撒密文告知密码"
+                    else -> "4 级：无法提前解锁，只能等时间结束"
+                },
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.5f)
+            )
+
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            Spacer(Modifier.height(10.dp))
+
+            // 锁机前提醒
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("锁机前弹出提醒", fontSize = 14.sp, color = Color.White)
+                    Text(
+                        text = "像微信那样弹横幅提示，给你主动收手的机会",
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.45f)
+                    )
+                }
+                Switch(checked = aiAlertEnabled, onCheckedChange = { aiAlertEnabled = it })
+            }
+
+            if (aiAlertEnabled) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = if (aiAlertDelaySeconds == 0) {
+                        "宽限时间：立即锁机"
+                    } else {
+                        "宽限时间：$aiAlertDelaySeconds 秒"
+                    },
+                    fontSize = 13.sp,
+                    color = Color.White
+                )
+                Slider(
+                    value = aiAlertDelaySeconds.toFloat(),
+                    onValueChange = { aiAlertDelaySeconds = it.toInt() },
+                    valueRange = 0f..120f,
+                    steps = 23
+                )
+                Text(
+                    text = "宽限期内切回学习/工作应用即可免除本次锁机",
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.45f)
+                )
+            }
+        }
+
         // ── 界面主题 ──────────────────────────────────────────────
         SettingsSection(title = "界面主题", icon = Icons.Default.Palette) {
             Row(
@@ -427,6 +527,11 @@ fun SettingsScreen(onSave: () -> Unit) {
                 settings.adaptiveIntervalEnabled = adaptiveInterval
                 settings.dailyCallLimit = dailyCallLimit.toIntOrNull() ?: 120
                 tokenBudget.dailyCallLimit = settings.dailyCallLimit
+                // AI 检出娱乐后的锁机配置
+                settings.lockMinutesOnViolation = aiLockMinutes.coerceIn(1, 480)
+                settings.aiLockStrength = aiLockStrength
+                settings.aiAlertEnabled = aiAlertEnabled
+                settings.aiAlertDelaySeconds = aiAlertDelaySeconds.coerceIn(0, 120)
                 saved = true
                 onSave()
             },

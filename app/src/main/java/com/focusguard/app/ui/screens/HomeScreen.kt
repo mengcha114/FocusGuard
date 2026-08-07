@@ -85,6 +85,32 @@ fun HomeScreen(
                         fontSize = 14.sp,
                         color = Color.White.copy(alpha = 0.7f)
                     )
+
+                    // ── 守护健康诊断 ──────────────────────────
+                    // 排查"守护开着但不出日志"：显示巡检心跳与上次 AI 检测时间。
+                    // 心跳超过 60 秒未更新说明检测循环已死，会红字告警。
+                    if (serviceRunning) {
+                        var healthTick by remember { mutableIntStateOf(0) }
+                        LaunchedEffect(Unit) {
+                            while (true) {
+                                kotlinx.coroutines.delay(2000L)
+                                healthTick++
+                            }
+                        }
+                        val health = remember(healthTick) {
+                            com.focusguard.app.service.MonitorService.healthText()
+                        }
+                        val alive = remember(healthTick) {
+                            com.focusguard.app.service.MonitorService.isLoopAlive()
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = health,
+                            fontSize = 11.sp,
+                            color = if (alive) Color.White.copy(alpha = 0.55f)
+                                    else Color(0xFFFFCDD2)
+                        )
+                    }
                 }
             }
         }

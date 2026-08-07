@@ -15,8 +15,19 @@ import java.util.Locale
 class FocusGuardApp : Application() {
 
     companion object {
+        /** 常驻服务通知渠道（静默，IMPORTANCE_LOW）。 */
         const val CHANNEL_ID = "focus_guard_service"
+
+        /**
+         * 提醒通知渠道（IMPORTANCE_HIGH）——像微信/QQ 那样弹出横幅 + 提示音。
+         * 用于"检测到娱乐"这类需要用户立刻注意的消息。
+         */
+        const val ALERT_CHANNEL_ID = "focus_guard_alert"
+
         const val NOTIFICATION_ID = 1001
+
+        /** 娱乐提醒通知 id（每次覆盖同一条，不堆积）。 */
+        const val ALERT_NOTIFICATION_ID = 1005
 
         private const val TAG = "FocusGuardApp"
         private const val CRASH_FILE = "crash_log.txt"
@@ -80,7 +91,10 @@ class FocusGuardApp : Application() {
     }
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
+        val manager = getSystemService(NotificationManager::class.java)
+
+        // 常驻服务通知：静默，不打扰
+        val serviceChannel = NotificationChannel(
             CHANNEL_ID,
             getString(R.string.notification_channel_name),
             NotificationManager.IMPORTANCE_LOW
@@ -88,7 +102,21 @@ class FocusGuardApp : Application() {
             description = getString(R.string.notification_channel_desc)
             setShowBadge(false)
         }
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        manager.createNotificationChannel(serviceChannel)
+
+        // 提醒通知：IMPORTANCE_HIGH 才会像微信/QQ 那样弹出横幅（Heads-up）
+        val alertChannel = NotificationChannel(
+            ALERT_CHANNEL_ID,
+            "专注提醒",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "检测到娱乐行为时弹出提醒"
+            setShowBadge(true)
+            enableVibration(true)
+            vibrationPattern = longArrayOf(0, 220, 120, 220)
+            enableLights(true)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        }
+        manager.createNotificationChannel(alertChannel)
     }
 }

@@ -9,6 +9,14 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,10 +24,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -382,12 +393,14 @@ private fun LockScreenContent(
     val isPomodoro = lockState.lockSource == "POMODORO"
     val motto = remember { MotivationalQuotes.random() }
 
+    // 进度环基准：首次进入时的剩余时间即为本段总时长
+    var totalSeconds by remember { mutableIntStateOf(lockState.remainingSeconds.coerceAtLeast(1)) }
+
     // 在 Composable 作用域取 Activity 引用（LaunchedEffect 内不能调 LocalContext.current）
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
 
     // 统一的每秒刷新：时钟、倒计时、番茄钟阶段、暂停状态
     LaunchedEffect(Unit) {
-        // 追踪番茄钟工作/休息阶段切换 → 同步进出系统级 Lock Task
         var lastWorkPhase = lockState.pomodoroIsWorkPhase
 
         while (lockState.isLocked) {
@@ -406,6 +419,8 @@ private fun LockScreenContent(
                     if (finished) break
                     isWorkPhase = lockState.pomodoroIsWorkPhase
                     phaseSeconds = lockState.pomodoroRemainingSeconds
+                    // 新阶段开始：重置进度环基准
+                    totalSeconds = phaseSeconds.coerceAtLeast(1)
                 }
                 // 阶段切换：休息→工作 重新进入 Lock Task；工作→休息 释放
                 if (isWorkPhase != lastWorkPhase && activity != null) {
@@ -421,210 +436,431 @@ private fun LockScreenContent(
         onUnlocked()
     }
 
-    val accent = when {
-        isPausing -> Color(0xFF4CAF50)
-        isPomodoro && !isWorkPhase -> Color(0xFF4CAF50)
-        else -> Color(0xFF7C4DFF)
+    // ── 配色：按状态切换主色调 ────────────────────────
+    val isRelaxed = isPausing || (isPomodoro && !isWorkPhase)
+    val accent = if (isRelaxed) Color(0xFF34D399) else Color(0xFF8B7CF6)
+    val accentSoft = if (isRelaxed) Color(0xFF6EE7B7) else Color(0xFFB4A5FF)
+
+    // 呼吸光效：主色光晕缓慢明暗，让静态界面有生命感
+    val glowAlpha by rememberInfiniteTransition(label = "glow").animateFloat(
+        initialValue = 0.10f,
+        targetValue = 0.26f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2600, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowAlpha"
+    )
+
+    val shownSeconds = when {
+        isPausing -> pauseSeconds
+        isPomodoro -> phaseSeconds
+        else -> remainingSeconds
     }
+    val progress = if (totalSeconds <= 0) 0f
+        else (shownSeconds.toFloat() / totalSeconds).coerceIn(0f, 1f)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(Color(0xFF0D0D12), Color(0xFF17151C))
+                    colors = listOf(
+                        Color(0xFF0A0A0F),
+                        Color(0xFF121018),
+                        Color(0xFF0D0B12)
+                    )
                 )
             )
     ) {
+        // 顶部主色光晕（呼吸）
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(420.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(accent.copy(alpha = glowAlpha), Color.Transparent),
+                        center = androidx.compose.ui.geometry.Offset(540f, 220f),
+                        radius = 780f
+                    )
+                )
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 28.dp, vertical = 40.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── 时钟与日期 ──────────────────────────────
+            // ── 顶栏：时钟 + 日期 ─────────────────────────
             val timeFormat = remember {
                 java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
             }
             val dateFormat = remember {
-                java.text.SimpleDateFormat("yyyy年M月d日 EEEE", java.util.Locale.getDefault())
+                java.text.SimpleDateFormat("M月d日 EEEE", java.util.Locale.getDefault())
             }
             Text(
                 text = timeFormat.format(java.util.Date(nowMillis)),
-                fontSize = 46.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Light,
+                letterSpacing = 3.sp,
+                color = Color.White.copy(alpha = 0.92f)
             )
-            Spacer(Modifier.height(4.dp))
             Text(
                 text = dateFormat.format(java.util.Date(nowMillis)),
-                fontSize = 14.sp,
-                color = Color.White.copy(alpha = 0.55f)
+                fontSize = 12.sp,
+                letterSpacing = 1.sp,
+                color = Color.White.copy(alpha = 0.4f)
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            // ── 状态胶囊 ─────────────────────────────────
+            StatusPill(
+                text = when {
+                    isPausing -> "暂停中 · 可自由使用"
+                    isPomodoro && isWorkPhase -> "番茄钟 · 专注阶段"
+                    isPomodoro -> "番茄钟 · 休息阶段"
+                    lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
+                    else -> "专注锁定中"
+                },
+                accent = accent,
+                locked = !isRelaxed
             )
 
             Spacer(Modifier.height(26.dp))
 
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(52.dp)
+            // ── 核心：环形进度 + 倒计时 ───────────────────
+            CountdownRing(
+                progress = progress,
+                seconds = shownSeconds,
+                label = if (isPausing) "暂停剩余" else "锁定剩余",
+                accent = accent,
+                accentSoft = accentSoft
             )
-            Spacer(Modifier.height(14.dp))
-            Text(
-                text = "专注卫士",
-                fontSize = 23.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = when {
-                    isPausing -> "暂停中 · 可自由使用"
-                    isPomodoro && isWorkPhase -> "番茄钟专注阶段 · 设备已锁定"
-                    isPomodoro -> "番茄钟休息阶段 · 可自由使用"
-                    else -> "设备已锁定，请专心工作学习"
-                },
-                fontSize = 14.sp,
-                color = Color.White.copy(alpha = 0.6f),
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(22.dp))
-
-            // ── 励志语录 ────────────────────────────────
-            Surface(
-                color = Color.White.copy(alpha = 0.05f),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text(
-                    text = "「$motto」",
-                    fontSize = 13.sp,
-                    color = Color.White.copy(alpha = 0.68f),
-                    textAlign = TextAlign.Center,
-                    lineHeight = 20.sp,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                )
-            }
-
-            Spacer(Modifier.height(22.dp))
-
-            // ── 倒计时 ──────────────────────────────────
-            val shownSeconds = when {
-                isPausing -> pauseSeconds
-                isPomodoro -> phaseSeconds
-                else -> remainingSeconds
-            }
-            val h = shownSeconds / 3600
-            val m = (shownSeconds % 3600) / 60
-            val s = shownSeconds % 60
-            val timeText = if (h > 0) {
-                "%02d:%02d:%02d".format(h, m, s)
-            } else {
-                "%02d:%02d".format(m, s)
-            }
-
-            Surface(color = Color(0xFF1F1B24), shape = RoundedCornerShape(20.dp)) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 30.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = if (isPausing) "暂停剩余" else "锁定剩余",
-                        fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.4f)
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = timeText,
-                        fontSize = 48.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isPausing) Color(0xFF81C784) else Color(0xFFFF6B6B)
-                    )
-                }
-            }
 
             if (isPomodoro) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = "剩余 ${lockState.pomodoroRoundsLeft} 轮 · 今日已完成 ${lockState.pomodoroCompletedToday} 个",
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.5f)
-                )
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MiniStat("剩余轮次", "${lockState.pomodoroRoundsLeft}", accent)
+                    MiniStat("今日完成", "${lockState.pomodoroCompletedToday}", accent)
+                }
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(26.dp))
 
-            // ── 解锁区（暂停中隐藏，避免重复操作） ──────
-            if (!isPausing) {
-                when (lockState.unlockStrength) {
-                    4 -> Text(
-                        text = "本次锁机不可提前解锁，请等待时间结束",
-                        fontSize = 13.sp,
-                        color = Color(0xFFC6786F),
-                        textAlign = TextAlign.Center
+            // ── 励志语录卡 ────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color.White.copy(alpha = 0.045f))
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+            ) {
+                Column {
+                    Text(
+                        text = "今日箴言",
+                        fontSize = 10.sp,
+                        letterSpacing = 2.sp,
+                        color = accentSoft.copy(alpha = 0.75f),
+                        fontWeight = FontWeight.Medium
                     )
-                    3 -> FriendUnlockSection(
-                        cipher = lockState.friendCipher,
-                        shift = lockState.friendShift,
-                        onVerified = onUnlocked
-                    )
-                    2 -> UnlockButtonWithHint(
-                        hint = "需连续答对 5 道高难度题才能解锁",
-                        buttonText = "开始挑战（5 题）",
-                        onClick = { onStartChallenge(5) }
-                    )
-                    else -> UnlockButtonWithHint(
-                        hint = "答对 1 道高难度计算题即可解锁",
-                        buttonText = "挑战答题解锁",
-                        onClick = { onStartChallenge(1) }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = motto,
+                        fontSize = 14.sp,
+                        lineHeight = 22.sp,
+                        color = Color.White.copy(alpha = 0.8f)
                     )
                 }
+            }
 
-                // ── 暂停申请 ────────────────────────────
-                if (lockState.pauseEnabled) {
-                    Spacer(Modifier.height(22.dp))
-                    if (lockState.canPause) {
-                        Text(
-                            text = "可申请暂停：剩余 $pauseLeft 次，每次 ${lockState.pauseMinutes} 分钟",
-                            fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.45f),
-                            textAlign = TextAlign.Center
+            Spacer(Modifier.height(20.dp))
+
+            // ── 解锁区（暂停中隐藏，避免重复操作） ────────
+            if (!isPausing) {
+                UnlockCard(accent = accent, accentSoft = accentSoft) {
+                    when (lockState.unlockStrength) {
+                        4 -> LockedForeverHint()
+                        3 -> FriendUnlockSection(
+                            cipher = lockState.friendCipher,
+                            shift = lockState.friendShift,
+                            onVerified = onUnlocked
                         )
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(
+                        2 -> UnlockButtonWithHint(
+                            hint = "需连续答对 5 道高难度题才能解锁",
+                            buttonText = "开始挑战 · 5 题",
+                            accent = accent,
+                            onClick = { onStartChallenge(5) }
+                        )
+                        else -> UnlockButtonWithHint(
+                            hint = "答对 1 道计算题即可解锁",
+                            buttonText = "答题解锁",
+                            accent = accent,
+                            onClick = { onStartChallenge(1) }
+                        )
+                    }
+                }
+
+                // ── 暂停申请 ──────────────────────────────
+                if (lockState.pauseEnabled) {
+                    Spacer(Modifier.height(14.dp))
+                    if (lockState.canPause) {
+                        TextButton(
                             onClick = { onStartChallenge(-1) },
-                            shape = RoundedCornerShape(14.dp)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("答题申请暂停", color = Color(0xFF8AB4F8))
+                            Text(
+                                text = "答题申请暂停（剩 $pauseLeft 次 · 每次 ${lockState.pauseMinutes} 分钟）",
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontSize = 12.sp
+                            )
                         }
                     } else {
                         Text(
                             text = "暂停次数已用完（共 ${lockState.pauseQuota} 次）",
-                            fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.35f)
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.3f)
                         )
                     }
                 }
             }
+
+            Spacer(Modifier.height(10.dp))
         }
     }
 }
 
+/** 状态胶囊：小圆点 + 文字，锁定态用主色，放松态用绿色。 */
 @Composable
-private fun UnlockButtonWithHint(hint: String, buttonText: String, onClick: () -> Unit) {
+private fun StatusPill(text: String, accent: Color, locked: Boolean) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(accent.copy(alpha = 0.13f))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (locked) Icons.Default.Lock else Icons.Default.LockOpen,
+            contentDescription = null,
+            tint = accent,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 0.5.sp,
+            color = accent
+        )
+    }
+}
+
+/**
+ * 环形倒计时。
+ *
+ * 用 Canvas 画双层圆弧（底轨 + 进度弧），进度弧带渐变扫描色，
+ * 中心叠加时间数字。这是整个锁机页的视觉焦点。
+ */
+@Composable
+private fun CountdownRing(
+    progress: Float,
+    seconds: Int,
+    label: String,
+    accent: Color,
+    accentSoft: Color
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(600, easing = FastOutSlowInEasing),
+        label = "ringProgress"
+    )
+
+    Box(
+        modifier = Modifier.size(238.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+            val stroke = 12.dp.toPx()
+            val inset = stroke / 2 + 6.dp.toPx()
+            val arcSize = androidx.compose.ui.geometry.Size(
+                size.width - inset * 2,
+                size.height - inset * 2
+            )
+            val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
+
+            // 底轨
+            drawArc(
+                color = Color.White.copy(alpha = 0.07f),
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = stroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+            )
+
+            // 进度弧（剩余时间比例）
+            drawArc(
+                brush = Brush.sweepGradient(listOf(accentSoft, accent, accentSoft)),
+                startAngle = -90f,
+                sweepAngle = 360f * animatedProgress,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = stroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+            )
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = label,
+                fontSize = 10.sp,
+                letterSpacing = 2.sp,
+                color = Color.White.copy(alpha = 0.38f)
+            )
+            Spacer(Modifier.height(6.dp))
+
+            val h = seconds / 3600
+            val m = (seconds % 3600) / 60
+            val s = seconds % 60
+            Text(
+                text = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s),
+                fontSize = if (h > 0) 40.sp else 50.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                color = Color.White
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = if (h > 0) "时 分 秒" else "分 秒",
+                fontSize = 9.sp,
+                letterSpacing = 3.sp,
+                color = Color.White.copy(alpha = 0.28f)
+            )
+        }
+    }
+}
+
+/** 番茄钟小统计块。 */
+@Composable
+private fun MiniStat(label: String, value: String, accent: Color) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.White.copy(alpha = 0.05f))
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = accent)
+        Text(label, fontSize = 10.sp, color = Color.White.copy(alpha = 0.4f))
+    }
+}
+
+/** 解锁区容器卡片：统一边框与内边距，让解锁交互聚焦。 */
+@Composable
+private fun UnlockCard(
+    accent: Color,
+    accentSoft: Color,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.White.copy(alpha = 0.04f))
+            .padding(18.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "解锁方式",
+                fontSize = 10.sp,
+                letterSpacing = 2.sp,
+                fontWeight = FontWeight.Medium,
+                color = accentSoft.copy(alpha = 0.75f)
+            )
+            Spacer(Modifier.height(12.dp))
+            content()
+        }
+    }
+}
+
+/** 强度 4：不可提前解锁的提示。 */
+@Composable
+private fun LockedForeverHint() {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            imageVector = Icons.Default.Shield,
+            contentDescription = null,
+            tint = Color(0xFFEF9A9A),
+            modifier = Modifier.size(26.dp)
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "本次锁机不可提前解锁",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFFEF9A9A)
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "请等待倒计时结束",
+            fontSize = 12.sp,
+            color = Color.White.copy(alpha = 0.4f),
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun UnlockButtonWithHint(
+    hint: String,
+    buttonText: String,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Text(
             text = hint,
-            fontSize = 13.sp,
-            color = Color.White.copy(alpha = 0.45f),
+            fontSize = 12.sp,
+            color = Color.White.copy(alpha = 0.5f),
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(14.dp))
-        OutlinedButton(onClick = onClick, shape = RoundedCornerShape(14.dp)) {
-            Text(buttonText, color = Color(0xFFD0BCFF))
+        Button(
+            onClick = onClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            shape = RoundedCornerShape(15.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.9f))
+        ) {
+            Text(
+                text = buttonText,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
         }
     }
 }
