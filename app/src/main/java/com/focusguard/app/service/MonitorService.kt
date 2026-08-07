@@ -157,6 +157,17 @@ class MonitorService : Service() {
         override fun onStop() {
             Log.w(TAG, "MediaProjection 已被系统停止")
             stopMonitoring()
+            // 提示用户恢复：打开应用会自动重新授权（后台无法自动恢复投影）
+            try {
+                com.focusguard.app.service.AlertNotifier.alert(
+                    this@MonitorService,
+                    "AI 守护已中断",
+                    "屏幕录制授权被系统回收，打开专注卫士将自动恢复检测",
+                    id = 1007
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "发送恢复提醒失败：${e.message}")
+            }
         }
     }
 
@@ -281,13 +292,25 @@ class MonitorService : Service() {
             mediaProjection?.unregisterCallback(projectionCallback)
         } catch (_: Exception) {
         }
-        screenCapturer?.close()
-        mediaProjection?.stop()
+        try {
+            screenCapturer?.close()
+        } catch (e: Exception) {
+            Log.w(TAG, "关闭截屏器失败：${e.message}")
+        }
+        try {
+            mediaProjection?.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "停止投影失败（已停止则忽略）：${e.message}")
+        }
 
         screenCapturer = null
         mediaProjection = null
         pipeline = null
 
+        // 状态复位必须在 try 之外：
+        // 此前 mediaProjection.stop() 在部分 ROM 上抛异常会中断本函数，
+        // isRunning 保持 true、界面显示"守护中"，但检测循环已死——
+        // 主页表现为"巡检心跳停在 xx 秒前"。
         settings.serviceRunning = false
         isRunning = false
 
@@ -384,9 +407,9 @@ class MonitorService : Service() {
         val sched = scheduler
         if (settings.adaptiveIntervalEnabled && sched != null) {
             // 用当前倍率 × 最新基准间隔（倍率上限已温和化为 2x）
-            val mult = sched.currentMultiplier()
-            return (currentInterval * 60_000L * mult)
-                .coerceAtLeast(currentInterval * 30_000L)
+            val mult = sched.currentMultiplier().toDouble()
+            val delayMs = (currentInterval * 60_000L * mult).toLong()
+            return delayMs.coerceAtLeast(currentInterval * 30_000L)
         }
         return currentInterval * 60_000L
     }
