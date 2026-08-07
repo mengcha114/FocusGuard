@@ -216,13 +216,28 @@ class DetectionPipeline(
             }
 
             // ── L7 视觉大模型 ─────────────────────────
+            // 把备忘录未完成事项注入提示词：检测到娱乐时，
+            // 让模型在提醒语里引用待办（如"你还有 xxx 没做呢"）
+            val memoText = runCatching {
+                com.focusguard.app.data.MemoStore(context).getAll()
+                    .take(5)
+                    .joinToString("\n- ", prefix = "- ")
+            }.getOrDefault("")
+            val effectivePrompt = buildString {
+                append(settings.aiCustomPrompt)
+                if (memoText.isNotBlank()) {
+                    append("\n\n用户的待办事项（检测到娱乐时，在提醒语里引用还没做完的事，鼓励用户去做）：\n")
+                    append(memoText)
+                }
+            }
+
             val aiResult = aiClient.analyzeScreen(
                 imageBytes = capture.jpegBytes,
                 baseUrl = settings.apiBaseUrl,
                 apiKey = currentApiKey,
                 modelName = settings.modelName,
                 whitelist = settings.whitelist,
-                customPrompt = settings.aiCustomPrompt,
+                customPrompt = effectivePrompt,
                 apiFormat = settings.apiFormat
             )
             tokenBudget.recordCall()

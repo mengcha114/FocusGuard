@@ -26,6 +26,12 @@ data class AiResult(
     var networkFailed: Boolean = false
 )
 
+/** 对话消息（AI 对话页用）。role: system/user/assistant。 */
+data class ChatMessage(
+    val role: String,
+    val content: String
+)
+
 /**
  * 视觉大模型客户端。
  *
@@ -130,6 +136,111 @@ class AiClient {
             contentOnly
         } else {
             withTools
+        }
+    }
+
+    /**
+     * 文本对话（AI 对话页用）。
+     *
+     * 复用当前配置的模型与协议（openai / anthropic / gemini），
+     * 发送纯文本消息，返回 AI 回复文本。失败时返回错误说明（供直接展示）。
+     */
+    suspend fun chat(
+        messages: List<ChatMessage>,
+        baseUrl: String,
+        apiKey: String,
+        modelName: String,
+        apiFormat: String = "openai"
+    ): String = withContext(Dispatchers.IO) {
+        try {
+            // ── 按协议构造请求体与 URL ──────────────────
+            val (body, url, headers) = when (apiFormat) {
+                "anthropic" -> {
+                    val system = messages.filter { it.role == "system" }
+                        .joinToString("\n") { it.content }
+                    val msgs = messages.filter { it.role != "system" }.map {
+                        JSONObject()
+                            .put("role", if (it.role == "user") "user" else "assistant")
+                            .put("content", it.content)
+                    }
+                    JSONObject().apply {
+                        put("model", modelName)
+                        if (system.isNotBlank()) put("system", system)
+                        put("messages", JSONArray().apply { msgs.forEach { put(it) } })
+                        put("max_tokens", 1024)
+                    } to "${baseUrl.trimEnd('/')}/v1/messages" to mapOf(
+                        "x-api-key" to apiKey,
+                        "anthropic-version" to "2023-06-01",
+                        "Content-Type" to "application/json"
+                    )
+                }
+                "gemini" -> {
+                    val contents = messages.filter { it.role != "system" }.map {
+                        JSONObject()
+                            .put("role", if (it.role == "user") "user" else "model")
+                            .put("parts", JSONArray().put(JSONObject().put("text", it.content)))
+                    }
+                    JSONObject().apply {
+                        put("contents", JSONArray().apply { contents.forEach { put(it) } })
+                        put(
+                            "generationConfig",
+                            JSONObject().put("maxOutputTokens", 1024)
+                        )
+                    } to "${baseUrl.trimEnd('/')}/v1beta/models/${modelName}:generateContent" to mapOf(
+                        "x-goog-api-key" to apiKey,
+                        "Content-Type" to "application/json"
+                    )
+                }
+                else -> {
+                    val msgs = messages.map {
+                        JSONObject().put("role", it.role).put("content", it.content)
+                    }
+                    JSONObject().apply {
+                        put("model", modelName)
+                        put("messages", JSONArray().apply { msgs.forEach { put(it) } })
+                        put("max_tokens", 1024)
+                    } to "${baseUrl.trimEnd('/')}/chat/completions" to mapOf(
+                        "Authorization" to "Bearer $apiKey",
+                        "Content-Type" to "application/json"
+                    )
+                }
+            }
+
+            recordDiagnostic("对话 模型=$modelName 协议=$apiFormat")
+
+            val builder = Request.Builder().url(url)
+            headers.forEach { (k, v) -> builder.addHeader(k, v) }
+            val request = builder
+                .post(body.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            client.newCall(request).execute().use { resp ->
+                val respBody = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    recordDiagnostic("对话 HTTP ${resp.code} 响应=${respBody.take(200)}")
+                    return@withContext "请求失败（${resp.code}）：${respBody.take(120)}"
+                }
+                val text = when (apiFormat) {
+                    "anthropic" -> JSONObject(respBody)
+                        .optJSONArray("content")?.optJSONObject(0)?.optString("text")
+                    "gemini" -> JSONObject(respBody)
+                        .optJSONArray("candidates")?.optJSONObject(0)
+                        ?.optJSONObject("content")?.optJSONArray("parts")
+                        ?.optJSONObject(0)?.optString("text")
+                    else -> JSONObject(respBody)
+                        .optJSONArray("choices")?.optJSONObject(0)
+                        ?.optJSONObject("message")?.optString("content")
+                }.orEmpty()
+                if (text.isBlank()) {
+                    "（AI 未返回内容，请确认模型支持文本对话）"
+                } else {
+                    text
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "对话失败", e)
+            recordDiagnostic("对话失败 ${e.message}")
+            "请求失败：${e.message}"
         }
     }
 

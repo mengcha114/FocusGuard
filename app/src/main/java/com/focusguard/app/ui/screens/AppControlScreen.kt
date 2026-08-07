@@ -308,6 +308,15 @@ private fun AppEditSheet(
     var maxMinutes by remember { mutableStateOf(existingRule?.hardBlockMinutes?.toString() ?: "") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
+    // 防篡改答题验证（首次免费，之后每次保存规则都要答题）
+    var showVerify by remember { mutableStateOf(false) }
+    var verifyQuestion by remember {
+        mutableStateOf<com.focusguard.app.challenge.ChallengeQuestion?>(null)
+    }
+    var verifyAnswer by remember { mutableStateOf("") }
+    var verifyError by remember { mutableStateOf<String?>(null) }
+    var pendingRule by remember { mutableStateOf<AppUsageRule?>(null) }
+
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF1C1B1F)) {
         Column(
             modifier = Modifier
@@ -421,7 +430,19 @@ private fun AppEditSheet(
                                         hardBlockMinutes = hard
                                     )
                                 } else null
-                                onSaved(selectedCategory, rule)
+                                // 防篡改：首次配置免费，之后每次保存需答题验证
+                                val settings = com.focusguard.app.data.Settings(context)
+                                if (settings.settingsEditCount > 0) {
+                                    pendingRule = rule
+                                    verifyQuestion =
+                                        com.focusguard.app.challenge.ChallengeGenerator().generate(2)
+                                    verifyAnswer = ""
+                                    verifyError = null
+                                    showVerify = true
+                                } else {
+                                    settings.settingsEditCount = settings.settingsEditCount + 1
+                                    onSaved(selectedCategory, rule)
+                                }
                             }
                         }
                     },
@@ -430,6 +451,64 @@ private fun AppEditSheet(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F378B))
                 ) { Text("保存") }
             }
+        }
+
+        // ── 修改规则答题验证对话框 ────────────────────────
+        if (showVerify) {
+            AlertDialog(
+                onDismissRequest = { showVerify = false },
+                title = { Text("修改规则需先答题") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "为防止限制被随意篡改，请先回答一道题：",
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = verifyQuestion?.question ?: "",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White
+                        )
+                        OutlinedTextField(
+                            value = verifyAnswer,
+                            onValueChange = { verifyAnswer = it; verifyError = null },
+                            label = { Text("你的答案") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        verifyError?.let {
+                            Text(it, fontSize = 12.sp, color = Color(0xFFF44336))
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val q = verifyQuestion
+                            val gen = com.focusguard.app.challenge.ChallengeGenerator()
+                            if (q != null && gen.isAnswerCorrect(verifyAnswer, q.answer)) {
+                                com.focusguard.app.data.Settings(context).settingsEditCount =
+                                    com.focusguard.app.data.Settings(context).settingsEditCount + 1
+                                showVerify = false
+                                verifyAnswer = ""
+                                onSaved(selectedCategory, pendingRule)
+                            } else {
+                                verifyError = "回答错误，请重试"
+                            }
+                        }
+                    ) { Text("验证并保存") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showVerify = false }) {
+                        Text("取消", color = Color.White.copy(alpha = 0.5f))
+                    }
+                },
+                containerColor = Color(0xFF241F27),
+                shape = RoundedCornerShape(20.dp)
+            )
         }
     }
 }

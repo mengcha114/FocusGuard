@@ -145,6 +145,11 @@ fun HomeScreen(
             }
         }
 
+        // ── 备忘录（显眼位置） ──────────────────────────────
+        item {
+            MemoCard()
+        }
+
         // Action buttons
         item {
             Row(
@@ -352,5 +357,172 @@ fun LogItem(
                 )
             }
         }
+    }
+}
+
+/** 备忘录卡片：显眼展示未完成事项，点击弹出编辑对话框。 */
+@Composable
+private fun MemoCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val memoStore = remember { com.focusguard.app.data.MemoStore(context) }
+    var memos by remember { mutableStateOf(memoStore.getAll()) }
+    var showEdit by remember { mutableStateOf(false) }
+    var newMemo by remember { mutableStateOf("") }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2438))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = Color(0xFFD0BCFF),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "备忘录",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
+                Text(
+                    text = if (memos.isEmpty()) "暂无待办" else "共 ${memos.size} 条",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.45f)
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            if (memos.isEmpty()) {
+                Text(
+                    text = "添加待办事项，AI 锁机提醒时会引用它们督促你",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.4f)
+                )
+            } else {
+                memos.take(4).forEachIndexed { index, memo ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF7C4DFF).copy(alpha = 0.6f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = memo,
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                    if (index == 3 && memos.size > 4) {
+                        Text(
+                            text = "…还有 ${memos.size - 4} 条",
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.35f)
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(
+                onClick = { showEdit = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("管理备忘录", color = Color(0xFFD0BCFF), fontSize = 13.sp)
+            }
+        }
+    }
+
+    // ── 备忘录编辑对话框 ─────────────────────────────
+    if (showEdit) {
+        AlertDialog(
+            onDismissRequest = { showEdit = false },
+            title = { Text("备忘录") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 现有条目（可删除）
+                    if (memos.isEmpty()) {
+                        Text(
+                            text = "还没有待办事项",
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.4f)
+                        )
+                    } else {
+                        memos.forEachIndexed { index, memo ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "• $memo",
+                                    fontSize = 13.sp,
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(
+                                    onClick = {
+                                        memoStore.removeAt(index)
+                                        memos = memoStore.getAll()
+                                    }
+                                ) {
+                                    Text("删除", color = Color(0xFFF44336), fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = newMemo,
+                        onValueChange = { newMemo = it },
+                        label = { Text("新增待办事项") },
+                        placeholder = { Text("例如：完成数学作业第三章") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newMemo.isNotBlank()) {
+                            memoStore.add(newMemo)
+                            newMemo = ""
+                            memos = memoStore.getAll()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F378B))
+                ) { Text("添加") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEdit = false }) {
+                    Text("完成", color = Color.White.copy(alpha = 0.5f))
+                }
+            },
+            containerColor = Color(0xFF241F27),
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 }

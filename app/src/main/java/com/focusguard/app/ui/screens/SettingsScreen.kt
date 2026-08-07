@@ -151,7 +151,7 @@ fun SettingsScreen(onSave: () -> Unit) {
             OutlinedTextField(
                 value = aiCustomPrompt, onValueChange = { aiCustomPrompt = it },
                 label = { Text("AI 提醒风格（可选）") },
-                placeholder = { Text("例如：检测到玩游戏时，用妈妈的口吻调侃我两句，给我点情绪价值") },
+                placeholder = { Text("例如：检测到娱乐时，用猫娘的口吻撒娇提醒我休息（留空则不设置风格）") },
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
                 minLines = 3
             )

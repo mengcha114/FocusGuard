@@ -14,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -73,6 +74,14 @@ class MainActivity : ComponentActivity() {
 
     /** 本次冷启动是否已尝试过自动恢复守护（避免重复弹授权框）。 */
     private var autoReauthAttempted = false
+
+    /** 停止守护前的答题验证状态（防误停/防被监管对象随意停止）。 */
+    private var showStopVerify by mutableStateOf(false)
+    private var stopVerifyQuestion by mutableStateOf(
+        com.focusguard.app.challenge.ChallengeGenerator().generate(2)
+    )
+    private var stopVerifyAnswer by mutableStateOf("")
+    private var stopVerifyError by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -189,8 +198,8 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                                 NavigationBarItem(
-                                    icon = { Icon(Icons.Default.List, contentDescription = null) },
-                                    label = { Text("日志") },
+                                    icon = { Icon(Icons.Default.Chat, contentDescription = null) },
+                                    label = { Text("AI 对话") },
                                     selected = currentRoute == "logs",
                                     onClick = {
                                         navController.navigate("logs") {
@@ -228,7 +237,7 @@ class MainActivity : ComponentActivity() {
                                 HomeScreen(
                                     serviceRunning = serviceRunning,
                                     onStartGuard = { startGuard() },
-                                    onStopGuard = { stopGuard() },
+                                    onStopGuard = { requestStopGuard() },
                                     onTestDetection = { testDetection() }
                                 )
                             }
@@ -236,7 +245,7 @@ class MainActivity : ComponentActivity() {
                                 AppControlScreen()
                             }
                             composable("logs") {
-                                LogScreen()
+                                com.focusguard.app.ui.screens.AiChatScreen()
                             }
                             composable("settings") {
                                 SettingsScreen(
@@ -252,6 +261,61 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+
+            // ── 停止守护答题验证对话框 ────────────────────
+            if (showStopVerify) {
+                AlertDialog(
+                    onDismissRequest = { showStopVerify = false },
+                    title = { Text("停止守护需先答题") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "为防止守护被随意停止，请先回答一道题：",
+                                fontSize = 13.sp,
+                                color = Color.White.copy(alpha = 0.6f)
+                            )
+                            Text(
+                                text = stopVerifyQuestion.question,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White
+                            )
+                            OutlinedTextField(
+                                value = stopVerifyAnswer,
+                                onValueChange = { stopVerifyAnswer = it; stopVerifyError = null },
+                                label = { Text("你的答案") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            stopVerifyError?.let {
+                                Text(it, fontSize = 12.sp, color = Color(0xFFF44336))
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (com.focusguard.app.challenge.ChallengeGenerator()
+                                        .isAnswerCorrect(stopVerifyAnswer, stopVerifyQuestion.answer)
+                                ) {
+                                    showStopVerify = false
+                                    stopGuard()
+                                } else {
+                                    stopVerifyError = "回答错误，请重试"
+                                }
+                            }
+                        ) { Text("验证并停止") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showStopVerify = false }) {
+                            Text("取消", color = Color.White.copy(alpha = 0.5f))
+                        }
+                    },
+                    containerColor = Color(0xFF241F27),
+                    shape = RoundedCornerShape(20.dp)
+                )
             }
         }
     }
@@ -380,18 +444,35 @@ class MainActivity : ComponentActivity() {
         screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
     }
 
+    /**
+     * 停止守护入口：先答题验证（防止被监管对象随意停止守护）。
+     * 答对后真正停止。
+     */
+    private fun requestStopGuard() {
+        stopVerifyQuestion = com.focusguard.app.challenge.ChallengeGenerator().generate(2)
+        stopVerifyAnswer = ""
+        stopVerifyError = null
+        showStopVerify = true
+    }
+
     private fun stopGuard() {
         appSettings.serviceRunning = false
         serviceRunning = false
         com.focusguard.app.service.MonitorService.stopService(this)
     }
 
+    /**
+     * 「立即检测」按钮：
+     * - 守护未运行 → 直接开始守护（弹屏幕录制授权）
+     * - 守护运行中 → 立即触发一次检测，结果 Toast 提示（详情见 AI 对话页）
+     */
     private fun testDetection() {
         if (!com.focusguard.app.service.MonitorService.isRunning) {
-            Toast.makeText(this, "请先开始守护，再执行测试识别", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "守护未运行，正在开启…", Toast.LENGTH_SHORT).show()
+            startGuard()
             return
         }
-        Toast.makeText(this, "正在测试识别，结果将出现在日志中", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "已触发检测，结果稍后出现在 AI 对话页", Toast.LENGTH_SHORT).show()
         com.focusguard.app.service.MonitorService.requestImmediateCheck(this)
     }
 

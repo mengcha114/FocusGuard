@@ -16,7 +16,7 @@ package com.focusguard.app.token
 class AdaptiveScheduler(private val baseMinutes: Int) {
 
     companion object {
-        private const val MAX_MULTIPLIER = 4f
+        private const val MAX_MULTIPLIER = 2f
         private const val MIN_MULTIPLIER = 0.5f
         /** 连续几次学习判定后开始放宽间隔。 */
         private const val CALM_STREAK_THRESHOLD = 2

@@ -376,12 +376,19 @@ class MonitorService : Service() {
     }
 
     /** 当前应等待的检测间隔，自适应开启时由调度器决定。 */
-    private fun currentDetectionDelayMs(): Long {        val sched = scheduler
-        return if (settings.adaptiveIntervalEnabled && sched != null) {
-            sched.nextDelaySeconds() * 1000L
-        } else {
-            settings.intervalMinutes.coerceAtLeast(1) * 60_000L
+    private fun currentDetectionDelayMs(): Long {
+        // 每次都读取最新设置的间隔——用户改完设置立即生效，
+        // 不需要重启守护（此前用服务启动时的旧值，改设置后仍按旧间隔检测，
+        // 表现为"设了 1 分钟却 3-4 分钟才检测一次"）
+        val currentInterval = settings.intervalMinutes.coerceAtLeast(1)
+        val sched = scheduler
+        if (settings.adaptiveIntervalEnabled && sched != null) {
+            // 用当前倍率 × 最新基准间隔（倍率上限已温和化为 2x）
+            val mult = sched.currentMultiplier()
+            return (currentInterval * 60_000L * mult)
+                .coerceAtLeast(currentInterval * 30_000L)
         }
+        return currentInterval * 60_000L
     }
 
     /**
@@ -508,6 +515,13 @@ class MonitorService : Service() {
                 appLabel = outcome.appLabel
             )
         )
+
+        // 自适应调度反馈：学习→逐步放宽间隔（最多 2x），娱乐→立刻加密
+        try {
+            scheduler?.onResult(outcome.classification)
+        } catch (e: Exception) {
+            Log.w(TAG, "自适应反馈失败：${e.message}")
+        }
 
         updateNotification(outcome)
     }
