@@ -104,7 +104,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     // AI 对话 Markdown 渲染（借鉴开源 compose-markdown 实现）
-    implementation("com.github.jeziellago:compose-markdown:0.5.0")
+    implementation("com.github.jeziellago:compose-markdown:0.5.8")
 
     // ── Shizuku / Dhizuku 高级权限增强（可选，无授权时自动降级） ──
     // Shizuku：免 Root 以 shell 身份执行命令（自动授权使用情况/电池优化白名单）

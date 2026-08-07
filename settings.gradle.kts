@@ -10,6 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // compose-markdown（AI 对话 Markdown 渲染）发布在 JitPack
+        maven("https://jitpack.io")
     }
 }
 
