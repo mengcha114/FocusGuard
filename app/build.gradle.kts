@@ -11,8 +11,8 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     // 固定签名：仓库内置 keystore，任何机器/任何次构建签名都一致，
@@ -81,6 +81,8 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    // 覆盖层 ComposeView 在非 Activity 上下文需要手动提供 SavedStateRegistryOwner
+    implementation("androidx.savedstate:savedstate:1.2.1")
     
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")

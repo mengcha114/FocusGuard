@@ -120,3 +120,15 @@ fun FocusGuardTheme(
         content = content
     )
 }
+
+/**
+ * 覆盖层（WindowManager View）专用主题包装——始终用深色紫配色，
+ * 与 LockScreenActivity 锁机页视觉风格保持一致。
+ */
+@Composable
+fun FocusGuardOverlayTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = DarkPurpleScheme,
+        content = content
+    )
+}

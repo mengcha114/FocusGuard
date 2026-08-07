@@ -202,6 +202,25 @@ class LockScreenActivity : ComponentActivity() {
         foreground = false
     }
 
+    /**
+     * 用户尝试上滑/按 Home 离开锁机页时的即时拦截。
+     *
+     * 这里不调 startActivity（后台 Activity 启动受平台限制，且会闪烁），
+     * 而是让前台守护服务立刻巡检拉起。配合 LockGuardService 的
+     * TYPE_APPLICATION_OVERLAY 覆盖层，锁机页被切走后 1 秒内
+     * 覆盖层会盖住整个屏幕（含桌面/小窗），用户无法操作任何内容。
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        Log.d(TAG, "检测到上滑/Home 手势，锁机页即将离开前台")
+        // 尽力触发守护巡检（无需等待下一个 600ms tick）
+        try {
+            LockGuardService.ensureRunning(applicationContext)
+        } catch (e: Exception) {
+            Log.w(TAG, "触发守护巡检失败：${e.message}")
+        }
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         // 失焦通常意味着通知栏被拉下 → 立即收起。

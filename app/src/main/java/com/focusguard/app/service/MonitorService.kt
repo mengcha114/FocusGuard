@@ -433,14 +433,36 @@ class MonitorService : Service() {
 
         val text = when {
             outcome == null -> getString(R.string.notification_text)
-            outcome.classification == "ENTERTAINMENT" -> "检测到娱乐行为：${outcome.reason}"
-            outcome.classification == "STUDY_WORK" -> "状态良好：${outcome.reason}"
-            else -> outcome.reason.ifBlank { getString(R.string.notification_text) }
+            else -> buildString {
+                append("判断：")
+                append(
+                    when (outcome.classification) {
+                        "ENTERTAINMENT" -> "娱乐"
+                        "STUDY_WORK" -> "学习/工作"
+                        else -> "中性"
+                    }
+                )
+                append("（${(outcome.confidence * 100).toInt()}%）")
+                if (outcome.appLabel.isNotBlank()) {
+                    append(" · ")
+                    append(outcome.appLabel)
+                }
+                append("\n来源：")
+                append(outcome.source.name)
+                if (outcome.reason.isNotBlank()) {
+                    append(" · ")
+                    append(outcome.reason.replace('\n', ' ').take(80))
+                }
+            }
         }
 
         return Notification.Builder(this, FocusGuardApp.CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(text)
+            .setStyle(
+                android.app.Notification.BigTextStyle()
+                    .bigText(text)
+            )
             .setSmallIcon(R.drawable.ic_shield)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

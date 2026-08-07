@@ -14,6 +14,7 @@ import com.focusguard.app.MainActivity
 import com.focusguard.app.R
 import com.focusguard.app.data.LockState
 import com.focusguard.app.enforce.AppBlockActivity
+import com.focusguard.app.enforce.LockOverlayManager
 import com.focusguard.app.enforce.LockScreenActivity
 import com.focusguard.app.enforce.UnlockChallengeActivity
 import com.focusguard.app.usage.UsageRuleStore
@@ -210,6 +211,29 @@ class LockGuardService : Service() {
         }
     }
 
+    /**
+     * 确保覆盖层在锁机期间可见。
+     * - 有 SYSTEM_ALERT_WINDOW 权限：显示 TYPE_APPLICATION_OVERLAY 覆盖，盖住小窗
+     * - 无权限：静默跳过，Activity + 无障碍防线仍有效
+     */
+    private fun ensureOverlay() {
+        if (LockOverlayManager.isShowing) return
+        try {
+            LockOverlayManager.show(
+                context = applicationContext,
+                lockState = lockState,
+                onStartChallenge = {
+                    // 覆盖层上点击"答题解锁"：先隐藏覆盖层，再拉起锁机页
+                    // （锁机页包含答题/朋友辅助/暂停等完整解锁交互）
+                    try { LockOverlayManager.hide() } catch (_: Exception) {}
+                    LockScreenActivity.show(applicationContext)
+                }
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "启动覆盖层失败（权限未授权或已有实例）：${e.message}")
+        }
+    }
+
     /** 单次守护巡检。 */
     private fun guardTick() {
         val now = System.currentTimeMillis()
@@ -217,17 +241,33 @@ class LockGuardService : Service() {
 
         // ── A. 锁机守护 ─────────────────────────────
         if (lockState.isLocked && lockState.shouldBlockNow) {
-            // 答题流程活跃时绝对放行：否则输入法被顶掉 → 闪退
-            if (UnlockChallengeActivity.active) return
+            // 答题流程活跃时绝对放行：隐藏覆盖层，否则会挡住答题页输入
+            if (UnlockChallengeActivity.active) {
+                if (LockOverlayManager.isShowing) LockOverlayManager.hide()
+                return
+            }
 
-            // 锁机页已在前台 → 正常
-            if (LockScreenActivity.foreground) return
+            // 锁机页在前台 → 无需覆盖层，正常交互
+            if (LockScreenActivity.foreground) {
+                if (LockOverlayManager.isShowing) LockOverlayManager.hide()
+                return
+            }
+
+            // 锁机页不在前台（被上滑/销毁/切后台）：
+            // 立即用 TYPE_APPLICATION_OVERLAY 覆盖层堵住桌面/小窗/最近任务，
+            // 同时把锁机页拉回前台；锁机页回来后覆盖层自动隐藏。
+            ensureOverlay()
 
             if (now - lastLockReassertAt < REASSERT_COOLDOWN_MS) return
             lastLockReassertAt = now
             Log.d(TAG, "锁机中但锁机页不在前台（前台=$foreground），拉起锁机页")
             LockScreenActivity.show(applicationContext)
             return
+        }
+
+        // 锁机结束或暂停 → 撤销覆盖层
+        if (LockOverlayManager.isShowing) {
+            LockOverlayManager.hide()
         }
 
         // ── B. 应用硬封锁守护 ───────────────────────
@@ -263,6 +303,8 @@ class LockGuardService : Service() {
         isRunning = false
         guardJob?.cancel()
         scope.cancel()
+        // 服务销毁时撤销覆盖层，避免残留
+        try { LockOverlayManager.hide() } catch (_: Exception) {}
         Log.d(TAG, "锁机守护被销毁（用户主动停止=$stoppedByUser）")
 
         if (stoppedByUser) return

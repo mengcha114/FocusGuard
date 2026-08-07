@@ -21,26 +21,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.challenge.ChallengeGenerator
-import com.focusguard.app.challenge.ChallengeQuestion
-import com.focusguard.app.data.Settings
 import kotlinx.coroutines.launch
 
 /**
- * 解锁挑战答题界面。
+ * 解锁挑战答题界面（纯本地题库，零网络依赖）。
  *
- * 关键设计（针对"锁机无法答题"问题）：
- *
- * 1. **本地题目立即渲染**：进入界面就用本地生成的题目，
- *    绝不先等网络。之前的实现调用 AI 出题（最长 40 秒超时），
- *    API 异常（如 401）或网络差时用户会永远卡在"AI 正在出题中…"，
- *    根本无法答题解锁——这是致命缺陷。
- *
- * 2. **AI 题目作为可选升级**：本地题目显示后，后台异步尝试取 AI 题目；
- *    成功则替换（用户尚未作答时），失败则完全无感知。
- *
- * 3. **容错判分**：使用 [ChallengeGenerator.isAnswerCorrect]，
- *    容忍全角逗号、千分位、空格、单位后缀等差异。
- *    旧实现用严格字符串相等，答对了也可能被判错。
+ * 关键设计：
+ * 1. 题目全部由 [ChallengeGenerator] 本地即时生成，进入界面立刻可答，
+ *    不再有"AI 正在出题中…"的等待与失败风险。
+ * 2. 难度随目标题数自动提升：单题解锁用中等难度，
+ *    连对 5 题模式用困难难度，避免"5 道简单题"形同虚设。
+ * 3. 判分走归一化比对，容忍千分位、全角标点、单位后缀。
  */
 @Composable
 fun UnlockChallengeScreen(
@@ -48,75 +39,28 @@ fun UnlockChallengeScreen(
     requiredCorrect: Int = 2
 ) {
     val context = LocalContext.current
-    val settings = remember { Settings(context) }
     val generator = remember { ChallengeGenerator() }
     val scope = rememberCoroutineScope()
 
     val targetCorrectCount = remember { requiredCorrect.coerceAtLeast(1) }
+    // 题数越多，单题难度越高：1 题=中等，>=3 题=困难
+    val difficulty = remember { if (targetCorrectCount >= 3) 3 else 2 }
 
-    // 立刻用本地题目初始化——保证界面一进来就能答题
-    var currentQuestion by remember { mutableStateOf(generator.generateLocalQuestion()) }
+    var currentQuestion by remember { mutableStateOf(generator.generate(difficulty)) }
     var userAnswer by remember { mutableStateOf("") }
     var currentCorrectCount by remember { mutableIntStateOf(0) }
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
-    var aiUpgrading by remember { mutableStateOf(false) }
-    /** 题目序号，用于取消过期的 AI 请求结果。 */
-    var questionSeq by remember { mutableIntStateOf(0) }
+    var switching by remember { mutableStateOf(false) }
 
-    /** 换新题：先本地出题立即可答，再异步尝试 AI 题目替换。 */
     fun nextQuestion() {
-        questionSeq += 1
-        val seq = questionSeq
         userAnswer = ""
-        currentQuestion = generator.generateLocalQuestion()
-
-        // AI 题目仅在配置了密钥时尝试，且失败完全静默
-        if (settings.apiKey.isNotBlank()) {
-            aiUpgrading = true
-            scope.launch {
-                val aiQuestion = runCatching {
-                    generator.generateQuestion(
-                        baseUrl = settings.apiBaseUrl,
-                        apiKey = settings.apiKey,
-                        modelName = settings.modelName
-                    )
-                }.getOrNull()
-                // 序号变了说明用户已经换题/答完，丢弃这次结果
-                if (seq == questionSeq) {
-                    if (aiQuestion != null && aiQuestion.question.isNotBlank() &&
-                        userAnswer.isBlank()
-                    ) {
-                        currentQuestion = aiQuestion
-                    }
-                    aiUpgrading = false
-                }
-            }
-        }
-    }
-
-    // 首次进入也尝试升级为 AI 题目（本地题目已经可答，不阻塞）
-    LaunchedEffect(Unit) {
-        if (settings.apiKey.isNotBlank()) {
-            aiUpgrading = true
-            val seq = questionSeq
-            val aiQuestion = runCatching {
-                generator.generateQuestion(
-                    baseUrl = settings.apiBaseUrl,
-                    apiKey = settings.apiKey,
-                    modelName = settings.modelName
-                )
-            }.getOrNull()
-            if (seq == questionSeq && aiQuestion != null &&
-                aiQuestion.question.isNotBlank() && userAnswer.isBlank()
-            ) {
-                currentQuestion = aiQuestion
-            }
-            aiUpgrading = false
-        }
+        feedbackMessage = null
+        currentQuestion = generator.generate(difficulty)
     }
 
     fun submit() {
+        if (switching) return
         val question = currentQuestion
         val correct = generator.isAnswerCorrect(userAnswer, question.answer)
         if (correct) {
@@ -126,17 +70,26 @@ fun UnlockChallengeScreen(
             } else {
                 feedbackMessage = "回答正确！还需 ${targetCorrectCount - currentCorrectCount} 题"
                 isError = false
-                nextQuestion()
+                switching = true
+                scope.launch {
+                    kotlinx.coroutines.delay(900L)
+                    nextQuestion()
+                    switching = false
+                }
             }
         } else {
-            // 答错：给出正确答案与解析，进度不清零（避免过度惩罚导致永远解不开）
-            feedbackMessage = "回答错误。正确答案：${question.answer}" +
-                if (question.explanation.isNotBlank()) "\n解析：${question.explanation}" else ""
+            feedbackMessage = buildString {
+                append("回答错误。正确答案：${question.answer}")
+                if (question.explanation.isNotBlank()) {
+                    append("\n解析：${question.explanation}")
+                }
+            }
             isError = true
+            switching = true
             scope.launch {
-                kotlinx.coroutines.delay(2600L)
-                feedbackMessage = null
+                kotlinx.coroutines.delay(2800L)
                 nextQuestion()
+                switching = false
             }
         }
     }
@@ -181,8 +134,15 @@ fun UnlockChallengeScreen(
                 )
             }
 
+            LinearProgressIndicator(
+                progress = { currentCorrectCount.toFloat() / targetCorrectCount },
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF4CAF50),
+                trackColor = Color.White.copy(alpha = 0.08f)
+            )
+
             Text(
-                text = "答对 $targetCorrectCount 题即可解锁。答错会给出正确答案并自动换题，进度不会清零。",
+                text = "答对 $targetCorrectCount 题即可解锁。答错会给出答案与解析并自动换题，进度不清零。",
                 fontSize = 12.sp,
                 color = Color.White.copy(alpha = 0.6f)
             )
@@ -205,21 +165,14 @@ fun UnlockChallengeScreen(
                             color = Color(0xFF7C4DFF),
                             fontWeight = FontWeight.Bold
                         )
-                        if (aiUpgrading) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(12.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color(0xFF7C4DFF)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    "尝试获取 AI 题目…",
-                                    fontSize = 10.sp,
-                                    color = Color.White.copy(alpha = 0.35f)
-                                )
-                            }
-                        }
+                        Text(
+                            text = when (difficulty) {
+                                3 -> "难度：困难"
+                                else -> "难度：中等"
+                            },
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.35f)
+                        )
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(
@@ -240,6 +193,7 @@ fun UnlockChallengeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 singleLine = true,
+                enabled = !switching,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Text
                 )
@@ -280,7 +234,7 @@ fun UnlockChallengeScreen(
             // ── 操作按钮 ──────────────────────────────
             Button(
                 onClick = { submit() },
-                enabled = userAnswer.isNotBlank(),
+                enabled = userAnswer.isNotBlank() && !switching,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
@@ -290,15 +244,20 @@ fun UnlockChallengeScreen(
                     disabledContainerColor = Color(0xFF2A2A2E)
                 )
             ) {
-                Text("提交答案", fontSize = 17.sp)
+                Text(if (switching) "准备下一题…" else "提交答案", fontSize = 17.sp)
             }
 
             OutlinedButton(
-                onClick = { feedbackMessage = null; nextQuestion() },
+                onClick = { nextQuestion() },
+                enabled = !switching,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
                 Spacer(Modifier.width(6.dp))
                 Text("换一题", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
             }

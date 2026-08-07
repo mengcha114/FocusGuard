@@ -171,12 +171,17 @@ class AiClient {
     }
 
     /** 定义 classify_screen 函数工具。 */
-    private fun buildClassifyTools(): JSONArray = JSONArray().apply {
+    private fun buildClassifyTools(customPrompt: String = ""): JSONArray = JSONArray().apply {
         put(JSONObject().apply {
             put("type", "function")
             put("function", JSONObject().apply {
                 put("name", "classify_screen")
-                put("description", "判断手机屏幕内容属于学习工作、娱乐还是中性")
+                put("description", buildString {
+                    append("判断手机屏幕内容属于学习工作、娱乐还是中性")
+                    if (customPrompt.isNotBlank()) {
+                        append("。用户额外要求：$customPrompt")
+                    }
+                })
                 put("parameters", JSONObject().apply {
                     put("type", "object")
                     put("properties", JSONObject().apply {
@@ -284,7 +289,7 @@ class AiClient {
             // 思考模型即使 content 为空，也会正常调用工具，
             // 结果从 tool_calls[].function.arguments 读取，必然可解析。
             if (withTools) {
-                put("tools", buildClassifyTools())
+                put("tools", buildClassifyTools(customPrompt))
                 put("tool_choice", JSONObject().apply {
                     put("type", "function")
                     put("function", JSONObject().apply { put("name", "classify_screen") })
@@ -468,12 +473,16 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
 
                     // 部分模型（如 Kimi K2.x 思考模型）把最终答案放在 reasoning_content 里，
                     // content 可能为空字符串；两者都取来拼在一起解析。
+                    // 注意：思考内容可能极长（几百到几千字），只取**末尾 500 字**参与解析——
+                    // 结论与 JSON 通常位于思考末尾，截断后既保留答案又避免浪费解析时间。
                     val content = buildString {
                         append(message.optString("content").orEmpty().trim())
                         val reasoning = message.optString("reasoning_content").orEmpty().trim()
                         if (reasoning.isNotEmpty()) {
+                            val tail = if (reasoning.length > 500) reasoning.takeLast(500)
+                            else reasoning
                             append('\n')
-                            append(reasoning)
+                            append(tail)
                         }
                     }
                     content to (json.optJSONObject("usage")?.optInt("total_tokens", 0) ?: 0)
@@ -525,6 +534,9 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
         }.toFloat()
         val reason = result.optString("r")
             .ifBlank { result.optString("reason", "") }
+            // 防御：模型有时把思考过程整个塞进 r 字段，只保留前面 120 字
+            .replace('\n', ' ')
+            .take(120)
 
         val totalTokens = rawJson.optJSONObject("usage")?.optInt("total_tokens", 0) ?: 0
 
