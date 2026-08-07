@@ -72,10 +72,12 @@ object DhizukuEnhancer {
             }
 
             val dpm = buildWrappedDpm(context) ?: return false
+            // 通过包装后的 DPM 查询 Device Owner（调用被转发到 Dhizuku 服务器执行）
+            val owner = dpm.getDeviceOwnerComponentOnAnyUser() ?: return false
             wrappedDpm = dpm
-            ownerComponent = Dhizuku.getOwnerComponent()
+            ownerComponent = owner
             initialized = true
-            Log.d(TAG, "Dhizuku 增强已就绪，owner=${Dhizuku.getOwnerPackageName()}")
+            Log.d(TAG, "Dhizuku 增强已就绪，owner=$owner")
             return true
         } catch (e: Throwable) {
             Log.w(TAG, "Dhizuku 初始化失败：${e.message}")
@@ -86,17 +88,15 @@ object DhizukuEnhancer {
 
     /**
      * 构造包装后的 DevicePolicyManager：
-     * 1. 用 Dhizuku 的包上下文拿 DevicePolicyManager（其 mService 是真实系统 binder）
+     * 1. 取本应用的 DevicePolicyManager（其 mService 就是系统 device_policy binder）
      * 2. 反射取 mService 字段
-     * 3. 用 [Dhizuku.binderWrapper] 包装 → 后续所有 DPM 调用被转发到
-     *    Dhizuku 服务器进程执行（以 Device Owner 身份）
+     * 3. 用 [com.rosan.dhizuku.api.Dhizuku.binderWrapper] 包装 → 后续所有 DPM 调用
+     *    被转发到 Dhizuku 服务器进程执行（以 Device Owner 身份）
      */
     private fun buildWrappedDpm(context: Context): DevicePolicyManager? {
         return try {
             val app = context.applicationContext
-            val ownerPkg = Dhizuku.getOwnerComponent().packageName
-            val ownerContext = app.createPackageContext(ownerPkg, Context.CONTEXT_IGNORE_SECURITY)
-            val manager = ownerContext.getSystemService(Context.DEVICE_POLICY_SERVICE)
+            val manager = app.getSystemService(Context.DEVICE_POLICY_SERVICE)
                 as DevicePolicyManager
 
             val field = DevicePolicyManager::class.java.getDeclaredField("mService")

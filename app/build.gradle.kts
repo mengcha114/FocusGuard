@@ -110,7 +110,8 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
     // Dhizuku：共享 Device Owner 权限 → Lock Task 系统级防退出
-    implementation("io.github.iamr0s:Dhizuku-API:2.6.0")
+    // 注：2.5+ 要求 compileSdk 36+，本项目 compileSdk 34，故锁定 2.4
+    implementation("io.github.iamr0s:Dhizuku-API:2.4")
     // 反射隐藏 API（构造 Dhizuku 包装后的 DevicePolicyManager）
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
 
