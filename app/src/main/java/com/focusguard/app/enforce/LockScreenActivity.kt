@@ -391,12 +391,13 @@ private fun LockScreenContent(
     var pauseLeft by remember { mutableIntStateOf(lockState.pauseQuota - lockState.pauseUsed) }
 
     val isPomodoro = lockState.lockSource == "POMODORO"
-    // 箴言：优先用用户自定义（每行一条，随机取），否则用内置库
-    val motto = remember {
+    // 箴言：优先用用户自定义（每行一条，随机取），否则用内置库。
+    // 注意：LocalContext.current 是 @Composable 属性，必须在 Composable
+    // 作用域取值，不能放进 remember 的 lambda（非 @Composable 上下文）。
+    val mottoContext = androidx.compose.ui.platform.LocalContext.current
+    val motto = remember(mottoContext) {
         val custom = runCatching {
-            com.focusguard.app.data.Settings(
-                androidx.compose.ui.platform.LocalContext.current
-            ).customMottos
+            com.focusguard.app.data.Settings(mottoContext).customMottos
         }.getOrDefault("")
         val customList = custom.lines()
             .map { it.trim() }

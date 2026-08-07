@@ -644,7 +644,7 @@ r 字段规则（非常重要）：
     private fun parseFunctionCallText(text: String, totalTokens: Int): AiResult? {
         val pattern = Regex(
             """classify_screen\s*\(\s*c\s*=\s*"?([A-Za-z_]+)"?\s*,\s*p\s*=\s*"?([0-9]*\.?[0-9]+)"?\s*,\s*r\s*=\s*"([^"]*)"\s*\)""",
-            RegexOption.IGNORE_CASE or RegexOption.DOT_MATCHES_ALL
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
         )
         val match = pattern.find(text) ?: return null
 
