@@ -153,16 +153,42 @@ class MonitorService : Service() {
             // 系统在资源紧张时杀掉服务后重建（START_STICKY）：
             // MediaProjection 授权无法自动重放，此时不做检测，
             // 但锁机状态仍由 LockState 持久化 + LockScreenActivity 兜底，
-            // 不会被这次重建绕过。
+            // 不会被这次重建绕过。发通知提醒用户一键恢复。
             null -> {
                 Log.w(TAG, "服务被系统重建（无授权数据），保持运行但等待重新授权")
                 startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null))
+                notifyNeedReauth()
             }
         }
         // START_STICKY：服务被杀后系统会重建。
         // 重建后虽无 MediaProjection 无法检测，但前台服务身份保持，
         // 用户重新点击"开始守护"即可恢复完整功能。
         return START_STICKY
+    }
+
+    /** 检测服务中断（无 MediaProjection）时发通知，点击通知回应用自动重新授权。 */
+    private fun notifyNeedReauth() {
+        try {
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                5,
+                Intent(this, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notification = Notification.Builder(this, FocusGuardApp.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_shield)
+                .setContentTitle("AI 守护已中断")
+                .setContentText("点击打开应用，将自动重新请求屏幕录制授权并恢复检测")
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.notify(1004, notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "发送恢复提醒失败：${e.message}")
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -362,6 +388,9 @@ class MonitorService : Service() {
 
         val outcome = try {
             activePipeline.detect(mediaProjection)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // 协程取消（服务停止/被杀）是正常流程，不记录假错误
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "检测流程异常", e)
             DetectionOutcome(

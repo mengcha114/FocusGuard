@@ -69,6 +69,9 @@ class MainActivity : ComponentActivity() {
     /** 守护服务运行状态（供 Compose 实时刷新按钮样式）。 */
     private var serviceRunning by mutableStateOf(false)
 
+    /** 本次冷启动是否已尝试过自动恢复守护（避免重复弹授权框）。 */
+    private var autoReauthAttempted = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appSettings = AppSettings(this)
@@ -99,6 +102,24 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             // 状态检查失败不能阻塞应用启动
             android.util.Log.w("MainActivity", "锁机状态检查失败：${e.message}")
+        }
+
+        // ── 守护自动恢复 ──────────────────────────────
+        // 曾开启 AI 守护但服务已中断（进程被杀 / MediaProjection 被系统回收）
+        // → 打开应用时自动重新请求屏幕录制授权并恢复检测。
+        // 这是"解锁后不再自动检测"的闭环修复：用户下次打开应用即恢复。
+        try {
+            if (appSettings.serviceRunning &&
+                !com.focusguard.app.service.MonitorService.isRunning &&
+                !autoReauthAttempted
+            ) {
+                autoReauthAttempted = true
+                screenCaptureLauncher.launch(
+                    mediaProjectionManager.createScreenCaptureIntent()
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "自动恢复守护失败：${e.message}")
         }
 
         setContent {

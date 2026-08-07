@@ -38,8 +38,14 @@ class Enforcer(private val context: Context) {
     /** 软件全屏锁机：拉起全屏锁屏页，无需设备管理员。 */
     private fun lockScreen() {
         try {
+            // 关键：必须先启动锁机守护服务 + 看门狗！
+            // 否则 AI 执法弹出的锁机页被上滑销毁后没有任何东西把它拉回
+            // （守护只在手动锁机/开应用时才启动，AI 执法路径此前漏了这一步）
+            com.focusguard.app.service.LockGuardService.ensureRunning(context)
+            com.focusguard.app.service.GuardWatchdogWorker.schedule(context)
+
             LockScreenActivity.show(context)
-            Log.d(TAG, "软件锁机已启动（全屏覆盖）")
+            Log.d(TAG, "软件锁机已启动（全屏覆盖 + 守护已就位）")
         } catch (e: Exception) {
             Log.e(TAG, "拉起锁屏页失败", e)
             exitAndBlock("锁机失败: ${e.message}")

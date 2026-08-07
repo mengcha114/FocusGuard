@@ -134,9 +134,28 @@ class LockScreenActivity : ComponentActivity() {
                     com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
                     lockState.releaseLock()
                     LockGuardService.stop(applicationContext)
+                    notifyGuardInterrupted()
                     finish()
                 }
             )
+        }
+    }
+
+    /** 解锁后发现 AI 守护已中断 → 提示用户打开应用会自动恢复。 */
+    private fun notifyGuardInterrupted() {
+        try {
+            val settings = com.focusguard.app.data.Settings(applicationContext)
+            if (settings.serviceRunning &&
+                !com.focusguard.app.service.MonitorService.isRunning
+            ) {
+                Toast.makeText(
+                    this,
+                    "AI 守护已中断（进程被杀或授权被回收），打开应用将自动恢复检测",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "守护中断提示失败：${e.message}")
         }
     }
 
@@ -170,6 +189,7 @@ class LockScreenActivity : ComponentActivity() {
             com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
             lockState.releaseLock()
             LockGuardService.stop(applicationContext)
+            notifyGuardInterrupted()
             finish()
         }
     }
