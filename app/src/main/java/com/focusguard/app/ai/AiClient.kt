@@ -37,8 +37,17 @@ class AiClient {
 
     companion object {
         private const val TAG = "AiClient"
-        /** 输出上限。判定结果只是一个短 JSON，给多了纯属浪费。 */
-        private const val MAX_OUTPUT_TOKENS = 200
+        /**
+         * 输出上限。
+         *
+         * 注意：不能太小！思考模型（Kimi K2.x、agnes 等）的 reasoning_content
+         * 会先吃掉大量输出 token，max_tokens=200 时思考还没写完就被截断
+         * （finish_reason=length），content 永远为空 → 永远掉进文本兜底，
+         * reason 显示"用户要求我判断…"这类提示词复述（用户看到的"无用信息"）。
+         * 1024 给足思考 + 最终 JSON 的空间；非思考模型实际只消耗一小部分，
+         * max_tokens 是上限不是固定消耗。
+         */
+        private const val MAX_OUTPUT_TOKENS = 1024
 
         /** 最近 N 次请求的诊断信息（导出日志用）。线程安全环形缓冲。 */
         private val diagnostics = java.util.Collections.synchronizedList(
@@ -198,7 +207,7 @@ class AiClient {
                         })
                         put("r", JSONObject().apply {
                             put("type", "string")
-                            put("description", "判定理由，20字内")
+                            put("description", "给用户看的简短提醒语：按用户设定的角色口吻写（如猫娘卖萌），10-30字，禁止复述提示词")
                         })
                     })
                     put("required", JSONArray().apply {
@@ -409,7 +418,13 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
 
 重要：视频/社交类应用要看具体内容。技术教程、网课、知识科普算 STUDY_WORK，不要因为是视频应用就判娱乐。$extra$custom
 
-你必须调用 classify_screen 函数，参数 c=分类、p=置信度0-1、r=理由20字内。"""
+你必须调用 classify_screen 函数，参数：
+c=分类、p=置信度0-1、r=给用户看的简短提醒语（10-30字）。
+
+r 字段规则（非常重要）：
+- 按用户设定的角色口吻写（若用户设置了角色扮演，比如猫娘，就用该角色的语气说话）
+- 面向用户、有实际内容，例如"主人~ 你已经在看短视频啦，休息一下喵！"
+- 绝对禁止复述提示词、禁止写"用户要求我""我需要判断"这类话"""
     }
 
     private fun parseResponse(responseBody: String, apiFormat: String = "openai"): AiResult {
@@ -593,7 +608,7 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
     /**
      * 纯文本兜底解析。
      *
-     * 模型不肯输出 JSON 时（说明文字、Markdown 列表、只回一个词），
+     * 模型不肯输出 JSON 时（说明文字、Markdown 列表、思考模型只输出 reasoning），
      * 从自然语言里找分类关键词，避免整轮检测白白浪费掉这次 token。
      */
     private fun parseFromPlainText(text: String, totalTokens: Int): AiResult? {
@@ -614,11 +629,21 @@ NEUTRAL：锁屏、桌面、设置、通话、导航
                 ?.toFloatOrNull()?.div(100f)
             ?: 0.6f
 
+        // reason 要显示**判断依据**而不是提示词复述：
+        // 思考文本开头通常是"用户要求我…"（提示词回显，无信息量），
+        // 真正的结论在文本尾部（"所以这应该是…"）。取最后一段非空文本。
+        val tail = text.lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .lastOrNull()
+            ?.take(60)
+            .orEmpty()
+
         Log.d(TAG, "JSON 解析失败但纯文本兜底成功：$classification")
         return AiResult(
             classification = classification,
             confidence = confidence.coerceIn(0f, 1f),
-            reason = "文本兜底解析：" + text.replace('\n', ' ').take(40),
+            reason = "文本兜底解析：$tail",
             totalTokens = totalTokens
         )
     }

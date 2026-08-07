@@ -212,6 +212,23 @@ class LockScreenActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         foreground = false
+
+        // 上滑/切后台瞬间立即拉起覆盖层（不等守护巡检，0 延迟堵住破解窗口）。
+        // 答题页打开时排除（覆盖层会挡住输入法）。
+        try {
+            if (lockState.shouldBlockNow && !UnlockChallengeActivity.active) {
+                com.focusguard.app.enforce.LockOverlayManager.show(
+                    context = applicationContext,
+                    lockState = lockState,
+                    onStartChallenge = {
+                        com.focusguard.app.enforce.LockOverlayManager.hide()
+                        LockScreenActivity.show(applicationContext)
+                    }
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "onPause 拉起覆盖层失败：${e.message}")
+        }
     }
 
     /**

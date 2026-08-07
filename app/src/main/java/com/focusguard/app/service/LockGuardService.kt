@@ -56,8 +56,8 @@ class LockGuardService : Service() {
         private const val ACTION_START = "com.focusguard.app.LOCK_GUARD_START"
         private const val ACTION_STOP = "com.focusguard.app.LOCK_GUARD_STOP"
 
-        /** 前台巡检间隔。600ms 兼顾灵敏度与耗电。 */
-        private const val CHECK_INTERVAL_MS = 600L
+        /** 前台巡检间隔。300ms：上滑后覆盖层出现得更快，破解窗口更小。 */
+        private const val CHECK_INTERVAL_MS = 300L
 
         /** 拉起界面的最短间隔，避免刷屏与动画抖动。 */
         private const val REASSERT_COOLDOWN_MS = 1000L
@@ -176,7 +176,9 @@ class LockGuardService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val text = when {
+
+        // 状态行
+        val statusLine = when {
             lockState.isPaused ->
                 "暂停中 · 剩余 ${lockState.pauseRemainingSeconds / 60 + 1} 分钟"
             lockState.isLocked ->
@@ -184,9 +186,36 @@ class LockGuardService : Service() {
             else ->
                 "应用时长守护运行中"
         }
+
+        // 检测行：显示最近一次检测结果（reason 即模型按角色口吻写的提醒语）
+        val detectLine = buildString {
+            val outcome = MonitorService.lastOutcome
+            if (outcome == null) {
+                append("等待首次检测…")
+            } else {
+                val label = when (outcome.classification) {
+                    "ENTERTAINMENT" -> "娱乐"
+                    "STUDY_WORK" -> "学习/工作"
+                    else -> "中性"
+                }
+                append(label)
+                append("（${(outcome.confidence * 100).toInt()}%）")
+                if (outcome.appLabel.isNotBlank()) {
+                    append(" · ")
+                    append(outcome.appLabel)
+                }
+                if (outcome.reason.isNotBlank()) {
+                    append(" · ")
+                    append(outcome.reason.replace('\n', ' ').take(60))
+                }
+            }
+        }
+
+        val full = "$statusLine\n$detectLine"
         return Notification.Builder(this, FocusGuardApp.CHANNEL_ID)
             .setContentTitle("专注卫士 · 守护")
-            .setContentText(text)
+            .setContentText(detectLine)
+            .setStyle(android.app.Notification.BigTextStyle().bigText(full))
             .setSmallIcon(R.drawable.ic_shield)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

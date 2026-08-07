@@ -114,7 +114,9 @@ fun PermissionSetupScreen(
                 title = "Dhizuku 系统级防退出（可选·最强）",
                 description = "授权后锁机进入系统 Lock Task 模式：Home/上滑/最近任务全部被系统禁用，任何手势都无法退出",
                 icon = Icons.Default.Security,
-                isGranted = com.focusguard.app.enhance.DhizukuEnhancer.isReady(),
+                // autoCheck：每次刷新时主动连接 Dhizuku 并检查授权状态（不拉起界面），
+                // 授权后回到本页立即显示为已授权
+                isGranted = com.focusguard.app.enhance.DhizukuEnhancer.autoCheck(context),
                 isRequired = false
             )
         )

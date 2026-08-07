@@ -22,21 +22,25 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass
  * 的 Binder 共享给其他应用；第三方应用把这些 Binder 调用转发到 Dhizuku
  * 服务器进程执行——由于 Dhizuku 是 Device Owner，权限检查通过。
  *
- * ## 对 FocusGuard 的意义
- * Device Owner 可以把任意包加入 Lock Task 白名单
- * （[DevicePolicyManager.setLockTaskPackages]）。白名单内的应用
- * 调用 [android.app.Activity.startLockTask] 后进入**系统级 Kiosk 模式**：
- * - Home / 上滑手势 / 最近任务 **全部被系统禁用**，无法退出
- * - 无需悬浮窗覆盖层、无需无障碍服务，任何第三方手段都破不了
- * 这是"锁机像勒索病毒一样无法退出"的唯一官方实现。
+ * ## 状态机（重要）
+ * 连接与授权是**两个独立阶段**，绝不能绑死：
+ * 1. [connect]：Dhizuku 服务器可达（已安装 + 已激活为 Device Owner）
+ * 2. [isPermissionGranted]：Dhizuku 是否已授权本应用
+ * 3. [ensureReady]：连接 + 已授权 + 包装 DPM 构造完成 → Lock Task 可用
+ *
+ * 早期实现把「已授权」当作 [connect] 的前置条件，导致首次授权前
+ * 流程直接短路——用户永远无法发起授权请求，UI 永远显示"未授权"。
  *
  * ## 降级
- * 未安装 Dhizuku / 未激活 / 未授权时，[init] 返回 false，
- * 上层自动回退到覆盖层 + 无障碍方案，功能不中断。
+ * 任一步骤失败都返回 false，上层回退到覆盖层 + 无障碍方案，功能不中断。
  */
 object DhizukuEnhancer {
 
     private const val TAG = "DhizukuEnhancer"
+
+    /** Dhizuku 服务器连接是否建立（HiddenApiBypass + init 完成）。 */
+    @Volatile
+    private var connected = false
 
     @Volatile
     private var wrappedDpm: DevicePolicyManager? = null
@@ -47,29 +51,49 @@ object DhizukuEnhancer {
     @Volatile
     private var initialized = false
 
-    /** Dhizuku 已初始化、已授权、包装 DPM 可用。 */
+    /** 完整就绪：连接 + 授权 + 包装 DPM 可用。Lock Task 可用的唯一判据。 */
     fun isReady(): Boolean = initialized && wrappedDpm != null && ownerComponent != null
 
     /**
-     * 初始化 Dhizuku 连接并构造包装后的 DevicePolicyManager。
-     * 幂等；失败返回 false（静默降级）。
+     * 建立 Dhizuku 连接（幂等）。
+     * 只要求 Dhizuku 已安装并激活为 Device Owner，**不要求已授权本应用**。
      */
-    fun init(context: Context): Boolean {
-        if (isReady()) return true
-        try {
-            // HiddenApiBypass：放开非 SDK 接口反射限制（后续要反射 mService 字段）
+    fun connect(context: Context): Boolean {
+        if (connected) return true
+        return try {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
             if (!HiddenApiBypass.setHiddenApiExemptions("")) return false
-
-            // 连接 Dhizuku 服务器（要求 Dhizuku 已安装并激活为 Device Owner）
             if (!Dhizuku.init(context.applicationContext)) {
                 Log.d(TAG, "Dhizuku 未安装或未激活为 Device Owner")
                 return false
             }
-            if (!Dhizuku.isPermissionGranted()) {
-                Log.d(TAG, "Dhizuku 已连接但未授权给本应用")
-                return false
-            }
+            connected = true
+            Log.d(TAG, "Dhizuku 连接成功")
+            true
+        } catch (e: Throwable) {
+            Log.w(TAG, "Dhizuku 连接失败：${e.message}")
+            connected = false
+            false
+        }
+    }
+
+    /** 本应用是否已获得 Dhizuku 授权（需先 [connect]）。 */
+    fun isPermissionGranted(): Boolean = try {
+        connected && Dhizuku.isPermissionGranted()
+    } catch (e: Throwable) {
+        Log.w(TAG, "查询 Dhizuku 授权状态失败：${e.message}")
+        false
+    }
+
+    /**
+     * 确保完整就绪（连接 + 授权 + 构造包装 DPM）。
+     * 幂等；未授权时返回 false 但不阻断后续 [requestPermission]。
+     */
+    fun ensureReady(context: Context): Boolean {
+        if (isReady()) return true
+        try {
+            if (!connect(context)) return false
+            if (!isPermissionGranted()) return false
 
             val dpm = buildWrappedDpm(context) ?: return false
             // 通过包装后的 DPM 查询 Device Owner（调用被转发到 Dhizuku 服务器执行）。
@@ -82,9 +106,28 @@ object DhizukuEnhancer {
             Log.d(TAG, "Dhizuku 增强已就绪，owner=$owner")
             return true
         } catch (e: Throwable) {
-            Log.w(TAG, "Dhizuku 初始化失败：${e.message}")
+            Log.w(TAG, "Dhizuku 就绪检查失败：${e.message}")
             initialized = false
             return false
+        }
+    }
+
+    /**
+     * 权限页/状态检查用：尝试连接并在已授权时完成就绪。
+     * 不拉起任何界面，失败静默返回 false。
+     */
+    fun autoCheck(context: Context): Boolean {
+        if (isReady()) return true
+        if (!connect(context)) return false
+        return try {
+            if (Dhizuku.isPermissionGranted()) {
+                ensureReady(context)
+            } else {
+                false
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Dhizuku 状态检查失败：${e.message}")
+            false
         }
     }
 
@@ -140,16 +183,16 @@ object DhizukuEnhancer {
     }
 
     /**
-     * 请求 Dhizuku 授权（会拉起 Dhizuku 的授权界面）。
-     * 结果通过 [onResult] 回调。
+     * 请求 Dhizuku 授权（拉起 Dhizuku 授权界面）。
+     * 前置条件：已 [connect]。结果通过 [onResult] 回调。
      */
     fun requestPermission(context: Context, onResult: (Boolean) -> Unit) {
         try {
-            if (!init(context)) {
+            if (!connect(context)) {
                 onResult(false)
                 return
             }
-            if (Dhizuku.isPermissionGranted()) {
+            if (isPermissionGranted()) {
                 onResult(true)
                 return
             }
@@ -168,7 +211,7 @@ object DhizukuEnhancer {
     /** 把本应用加入 Lock Task 白名单（仅 Device Owner 可调用）。 */
     fun grantLockTask(context: Context): Boolean {
         try {
-            if (!init(context)) return false
+            if (!ensureReady(context)) return false
             val dpm = wrappedDpm ?: return false
             val comp = ownerComponent ?: return false
             dpm.setLockTaskPackages(comp, arrayOf(context.packageName))

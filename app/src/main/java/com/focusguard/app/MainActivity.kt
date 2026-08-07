@@ -255,25 +255,49 @@ class MainActivity : ComponentActivity() {
             }
             "dhizuku" -> {
                 val enhancer = com.focusguard.app.enhance.DhizukuEnhancer
-                if (!enhancer.init(this)) {
+                if (!enhancer.connect(this)) {
                     Toast.makeText(
                         this,
-                        "Dhizuku 不可用：请先安装 Dhizuku 并激活为设备所有者（需 Shizuku 支持），再回来授权",
+                        "未检测到 Dhizuku：请先安装 Dhizuku 并激活为设备所有者（需 Shizuku 支持），再回来授权",
                         Toast.LENGTH_LONG
                     ).show()
                     return
                 }
-                enhancer.requestPermission(this) { granted ->
-                    if (granted) {
-                        val ok = enhancer.grantLockTask(this)
-                        val msg = if (ok) {
-                            "Dhizuku 已授权，锁机将进入系统级防退出模式（无法上滑/Home 退出）"
+                if (enhancer.isPermissionGranted()) {
+                    // 已授权：直接启用 Lock Task
+                    val ok = enhancer.grantLockTask(this)
+                    Toast.makeText(
+                        this,
+                        if (ok) {
+                            "Lock Task 已启用：锁机将进入系统级防退出，任何手势都无法退出"
                         } else {
-                            "Dhizuku 已授权，但加入 Lock Task 白名单失败"
+                            "启用 Lock Task 失败，请重试"
+                        },
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    // 未授权：拉起 Dhizuku 授权界面（连接已建立，这次一定能弹出来）
+                    enhancer.requestPermission(this) { granted ->
+                        runOnUiThread {
+                            if (granted) {
+                                val ok = enhancer.grantLockTask(this)
+                                Toast.makeText(
+                                    this,
+                                    if (ok) {
+                                        "Dhizuku 已授权，Lock Task 已启用：锁机将无法通过手势退出"
+                                    } else {
+                                        "Dhizuku 已授权，但加入 Lock Task 白名单失败，请重试"
+                                    },
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                Toast.makeText(
+                                    this,
+                                    "Dhizuku 授权被拒绝或取消",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
-                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(this, "Dhizuku 授权被拒绝或取消", Toast.LENGTH_SHORT).show()
                     }
                 }
             }

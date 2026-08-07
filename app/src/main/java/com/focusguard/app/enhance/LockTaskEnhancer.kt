@@ -28,7 +28,7 @@ object LockTaskEnhancer {
     fun enter(activity: Activity): Boolean {
         return try {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
-            if (!DhizukuEnhancer.init(activity)) return false
+            if (!DhizukuEnhancer.ensureReady(activity)) return false
 
             if (!DhizukuEnhancer.isLockTaskPermitted(activity.packageName)) {
                 if (!DhizukuEnhancer.grantLockTask(activity)) {
