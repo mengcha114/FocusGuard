@@ -1,30 +1,25 @@
 package com.focusguard.app.enforce
 
 import android.content.Context
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.FrameLayout
-import androidx.compose.ui.platform.ComposeView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.lifecycle.setViewTreeViewModelStoreOwner
-import androidx.savedstate.SavedStateRegistry
-import androidx.savedstate.SavedStateRegistryController
-import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import android.widget.LinearLayout
+import android.widget.TextView
 import com.focusguard.app.data.LockState
-import com.focusguard.app.ui.theme.FocusGuardOverlayTheme
 
 /**
- * TYPE_APPLICATION_OVERLAY 全屏覆盖层管理器。
+ * TYPE_APPLICATION_OVERLAY 全屏覆盖层管理器（纯传统 View 实现）。
  *
  * ## 为什么需要这个
  * Activity 的锁机页存在一个无法回避的软肋：小窗（Picture-in-Picture / 浮动窗口）
@@ -34,18 +29,22 @@ import com.focusguard.app.ui.theme.FocusGuardOverlayTheme
  * TYPE_APPLICATION_OVERLAY 窗口（需要 SYSTEM_ALERT_WINDOW 权限）是
  * Android 上 App 能申请的最高 z-order：
  * - 覆盖所有普通 Activity（包括小窗、分屏）
- * - 覆盖通知栏拉下来的阴影区域（注意：STATUS_BAR 本身仍在最顶，但内容区域能覆盖）
  * - 不受"清后台"影响——View 属于服务进程，进程活着覆盖层就活着
  *
+ * ## 为什么不用 Compose（重要教训）
+ * 早期版本用 ComposeView 渲染覆盖层，在 WindowManager 直挂的 View 上
+ * 崩溃：`ViewTreeLifecycleOwner not found`（Compose 1.6 的 WindowRecomposer
+ * 需要在 view 层级上找到 LifecycleOwner，而 WindowManager View 没有
+ * Activity window 上下文）。覆盖层 UI 极简（图标+倒计时+按钮），
+ * 传统 View 完全胜任且零框架依赖，不再冒崩溃风险。
+ *
  * ## 设计约束
- * 1. 仅在锁机期间（shouldBlockNow）显示，解锁/暂停立即隐藏
- * 2. 覆盖层本身只有一个半透明黑色底 + 一行文字，不拦截触摸，
- *    真正的答题交互仍走 Activity（因为输入法需要依附 Activity Window）
- * 3. Compose 运行在 WindowManager View 上需要一个假的 LifecycleOwner
+ * 1. 仅在锁机期间（shouldBlockNow）显示，守护服务在解锁/暂停时调用 [hide]
+ * 2. 覆盖层 NOT_FOCUSABLE：不抢焦点、不挡输入法
+ * 3. 按钮点击回调由调用方注入（拉起锁机页/答题页）
  *
  * ## 权限降级
- * 若用户未授权 SYSTEM_ALERT_WINDOW，覆盖层静默不启动，
- * Activity + 无障碍双重防线仍然生效，功能不中断。
+ * 未授权 SYSTEM_ALERT_WINDOW 时静默不启动，Activity + 无障碍防线仍有效。
  */
 object LockOverlayManager {
 
@@ -58,14 +57,18 @@ object LockOverlayManager {
 
     private var windowManager: WindowManager? = null
     private var overlayRoot: FrameLayout? = null
-    private var lifecycleOwner: OverlayLifecycleOwner? = null
+    private var timeText: TextView? = null
+    private var currentLockState: LockState? = null
+
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private var clockRunnable: Runnable? = null
 
     /**
      * 显示覆盖层（幂等，已显示时不重复添加）。
      *
      * @param context 任意 Context，内部转为 ApplicationContext
-     * @param lockState 当前锁机状态，传入以便覆盖层读取倒计时文本
-     * @param onStartChallenge 用户点击"去答题"按钮时的回调
+     * @param lockState 当前锁机状态，覆盖层每秒刷新剩余时间
+     * @param onStartChallenge 点击"答题解锁"按钮时的回调
      */
     @Synchronized
     fun show(
@@ -82,33 +85,19 @@ object LockOverlayManager {
         try {
             val appContext = context.applicationContext
             val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            windowManager = wm
 
-            val owner = OverlayLifecycleOwner()
-            owner.start()
-            lifecycleOwner = owner
-
-            val params = buildLayoutParams()
-
-            val root = FrameLayout(appContext)
-            val composeView = ComposeView(appContext).apply {
-                setViewTreeLifecycleOwner(owner)
-                setViewTreeViewModelStoreOwner(owner)
-                setViewTreeSavedStateRegistryOwner(owner)
-                setContent {
-                    FocusGuardOverlayTheme {
-                        LockOverlayContent(
-                            lockState = lockState,
-                            onStartChallenge = onStartChallenge
-                        )
-                    }
-                }
+            val root = FrameLayout(appContext).apply {
+                setBackgroundColor(0xE8000000.toInt())
             }
-            root.addView(composeView)
-            overlayRoot = root
+            root.addView(buildContent(appContext, onStartChallenge))
 
-            wm.addView(root, params)
+            wm.addView(root, buildLayoutParams())
+
+            windowManager = wm
+            overlayRoot = root
+            currentLockState = lockState
             isShowing = true
+            startClock()
             Log.d(TAG, "覆盖层已显示")
         } catch (e: Exception) {
             Log.e(TAG, "显示覆盖层失败：${e.message}")
@@ -124,26 +113,80 @@ object LockOverlayManager {
         Log.d(TAG, "覆盖层已隐藏")
     }
 
-    private fun cleanup() {
-        try {
-            val root = overlayRoot
-            val wm = windowManager
-            if (root != null && wm != null) {
-                wm.removeViewImmediate(root)
+    // ── 内容构建（纯传统 View） ──────────────────────────────
+
+    private fun dp(context: Context, value: Int): Int =
+        (value * context.resources.displayMetrics.density).toInt()
+
+    private fun buildContent(context: Context, onStartChallenge: () -> Unit): View {
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(context, 32), dp(context, 32), dp(context, 32), dp(context, 32))
+        }
+
+        // 锁图标（Unicode 锁形，避免依赖图标库）
+        val icon = TextView(context).apply {
+            text = "\uD83D\uDD12"
+            textSize = 46f
+            gravity = Gravity.CENTER
+        }
+        container.addView(icon, matchWrap())
+
+        // 标题
+        val title = TextView(context).apply {
+            text = "专注卫士"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(0, dp(context, 14), 0, 0)
+        }
+        container.addView(title, matchWrap())
+
+        // 剩余时间
+        val time = TextView(context).apply {
+            text = "--:--"
+            textSize = 44f
+            setTextColor(Color.parseColor("#FF6B6B"))
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(0, dp(context, 18), 0, 0)
+        }
+        timeText = time
+        container.addView(time, matchWrap())
+
+        // 说明
+        val hint = TextView(context).apply {
+            text = "屏幕已锁定，请专心工作学习"
+            textSize = 13f
+            setTextColor(Color.parseColor("#8CFFFFFF"))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(context, 12), 0, 0)
+        }
+        container.addView(hint, matchWrap())
+
+        // 答题解锁按钮
+        val button = Button(context).apply {
+            text = "答题解锁"
+            textSize = 15f
+            setTextColor(Color.parseColor("#D0BCFF"))
+            setBackgroundColor(Color.TRANSPARENT)
+            isAllCaps = false
+            setOnClickListener {
+                onStartChallenge()
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "移除覆盖层视图失败：${e.message}")
         }
-        try {
-            lifecycleOwner?.stop()
-        } catch (e: Exception) {
-            Log.w(TAG, "停止 LifecycleOwner 失败：${e.message}")
-        }
-        overlayRoot = null
-        windowManager = null
-        lifecycleOwner = null
-        isShowing = false
+        container.addView(button, matchWrap())
+
+        return container
     }
+
+    private fun matchWrap(): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
 
     private fun buildLayoutParams(): WindowManager.LayoutParams {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -156,8 +199,8 @@ object LockOverlayManager {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
-            // NOT_FOCUSABLE 保证覆盖层不抢焦点 → 答题 Activity 的输入法不受影响
-            // LAYOUT_IN_SCREEN | LAYOUT_INSET_DECOR 让它覆盖状态栏 / 导航栏区域
+            // NOT_FOCUSABLE：不抢焦点，不挡输入法
+            // LAYOUT_IN_SCREEN | LAYOUT_NO_LIMITS：覆盖状态栏/导航栏区域
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -172,33 +215,47 @@ object LockOverlayManager {
         }
     }
 
-    // ── 最简 LifecycleOwner，让 ComposeView 在非 Activity 上下文里正常运行 ──────
+    // ── 倒计时刷新（Handler 每秒） ──────────────────────────
 
-    private class OverlayLifecycleOwner :
-        LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
-
-        private val lifecycleRegistry = LifecycleRegistry(this)
-        private val store = ViewModelStore()
-        private val savedStateRegistryController = SavedStateRegistryController.create(this)
-
-        override val lifecycle: Lifecycle get() = lifecycleRegistry
-        override val viewModelStore: ViewModelStore get() = store
-        override val savedStateRegistry: SavedStateRegistry
-            get() = savedStateRegistryController.savedStateRegistry
-
-        fun start() {
-            savedStateRegistryController.performAttach()
-            savedStateRegistryController.performRestore(null)
-            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
-            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
-            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+    private fun startClock() {
+        val runnable = object : Runnable {
+            override fun run() {
+                val ls = currentLockState ?: return
+                val t = timeText ?: return
+                if (!ls.isLocked) {
+                    // 锁机已结束：交给守护服务统一隐藏（这里兜底）
+                    uiHandler.postDelayed(this, 1000L)
+                    return
+                }
+                val secs = ls.remainingSeconds
+                val h = secs / 3600
+                val m = (secs % 3600) / 60
+                val s = secs % 60
+                t.text = if (h > 0) "%02d:%02d:%02d".format(h, m, s)
+                else "%02d:%02d".format(m, s)
+                uiHandler.postDelayed(this, 1000L)
+            }
         }
+        clockRunnable = runnable
+        uiHandler.post(runnable)
+    }
 
-        fun stop() {
-            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
-            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
-            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-            store.clear()
+    private fun cleanup() {
+        clockRunnable?.let { uiHandler.removeCallbacks(it) }
+        clockRunnable = null
+        currentLockState = null
+        try {
+            val root = overlayRoot
+            val wm = windowManager
+            if (root != null && wm != null) {
+                wm.removeViewImmediate(root)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "移除覆盖层视图失败：${e.message}")
         }
+        overlayRoot = null
+        windowManager = null
+        timeText = null
+        isShowing = false
     }
 }
