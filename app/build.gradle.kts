@@ -11,8 +11,8 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 19
-        versionName = "1.6.2"
+        versionCode = 20
+        versionName = "1.7.0"
     }
 
     // 固定签名：仓库内置 keystore，任何机器/任何次构建签名都一致，
@@ -102,6 +102,9 @@ dependencies {
 
     // WorkManager：守护看门狗（进程被杀后仍能被系统唤起重启守护服务）
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // AI 对话 Markdown 渲染（借鉴开源 compose-markdown 实现）
+    implementation("com.github.jeziellago:compose-markdown:0.5.0")
 
     // ── Shizuku / Dhizuku 高级权限增强（可选，无授权时自动降级） ──
     // Shizuku：免 Root 以 shell 身份执行命令（自动授权使用情况/电池优化白名单）

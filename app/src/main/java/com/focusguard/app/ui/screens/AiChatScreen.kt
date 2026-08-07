@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
@@ -22,6 +23,7 @@ import com.focusguard.app.ai.AiClient
 import com.focusguard.app.ai.ChatMessage
 import com.focusguard.app.data.LogStore
 import com.focusguard.app.data.Settings
+import com.jeziellago.compose.markdown.MarkdownText
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -35,8 +37,10 @@ private data class ChatMsg(val role: String, val text: String, val time: String)
  *
  * 两个 Tab：
  * 1. **AI 对话**：与当前配置的模型聊天（openai/anthropic/gemini 协议自适应）。
- *    **检测时 AI 给出的提醒会作为 AI 消息自动进入对话**（来源=AI 视觉
- *    的日志 reason），让用户能在对话里看到 AI 之前说过的话，并继续聊下去。
+ *    - **流式输出**：回复逐字显示（ChatGPT 式），Markdown 渲染
+ *    - **检测时 AI 的提醒**自动进入对话（来源=AI 视觉的日志 reason）
+ *    - **锁机工具**：AI 输出 `__LOCK__:<分钟数>` 即触发锁机
+ *    - 对话历史持久化，切页不丢
  * 2. **检测日志**：保留原有的完整检测日志（含 AI 诊断与崩溃日志）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -180,24 +184,17 @@ fun AiChatScreen() {
                     }
                 }
                 items(messages) { msg ->
-                    ChatBubble(msg)
-                }
-                if (sending) {
-                    item {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 2.dp,
-                                color = Color(0xFF8B7CF6)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "AI 思考中…",
-                                fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.4f)
+                    ChatBubble(
+                        msg = msg,
+                        onCopy = {
+                            val cm = context.getSystemService(
+                                android.content.Context.CLIPBOARD_SERVICE
+                            ) as android.content.ClipboardManager
+                            cm.setPrimaryClip(
+                                android.content.ClipData.newPlainText("AI 对话", msg.text)
                             )
                         }
-                    }
+                    )
                 }
                 item { Spacer(Modifier.height(4.dp)) }
             }
@@ -231,16 +228,23 @@ fun AiChatScreen() {
                         sending = true
                         scope.launch {
                             try {
-                                val history = messages.map {
+                                // 占位 AI 消息（打字动画期间显示跳动点）
+                                val placeholder = ChatMsg("ai", "…", now)
+                                messages = messages + placeholder
+
+                                val history = messages.filter { it !== placeholder }.map {
                                     ChatMessage(
                                         if (it.role == "user") "user" else "assistant",
                                         it.text
                                     )
                                 }
                                 // 系统提示词：复用设置里的提醒风格 + 注入备忘录 + 锁机工具协议
-                                val memoList = com.focusguard.app.data.MemoStore(context).getAll()
+                                val memoList =
+                                    com.focusguard.app.data.MemoStore(context).getAll()
                                 val systemText = buildString {
-                                    append("你是专注卫士的 AI 助手，回答简短、友好、有耐心，使用中文。")
+                                    append(
+                                        "你是专注卫士的 AI 助手，回答简短、友好、有耐心，使用中文。"
+                                    )
                                     if (settings.aiCustomPrompt.isNotBlank()) {
                                         append("\n用户设定的提醒风格：")
                                         append(settings.aiCustomPrompt)
@@ -260,28 +264,55 @@ fun AiChatScreen() {
                                     add(ChatMessage("system", systemText))
                                     addAll(history)
                                 }
-                                val reply = aiClient.chat(
+
+                                // 流式输出：AI 回复逐字显示（ChatGPT 式体验）。
+                                // 关键：onDelta 在 IO 线程回调，必须切回主线程再更新
+                                // Compose 状态，否则 UI 不重组——表现为"卡在思考中"。
+                                val reply = aiClient.streamChat(
                                     messages = fullHistory,
                                     baseUrl = settings.apiBaseUrl,
                                     apiKey = settings.apiKey,
                                     modelName = settings.modelName,
-                                    apiFormat = settings.apiFormat
+                                    apiFormat = settings.apiFormat,
+                                    onDelta = { delta ->
+                                        scope.launch {
+                                            val last = messages.lastOrNull()
+                                            if (last != null && last.role == "ai") {
+                                                val newText = if (last.text == "…") {
+                                                    delta
+                                                } else {
+                                                    last.text + delta
+                                                }
+                                                messages = messages.dropLast(1) +
+                                                    last.copy(text = newText)
+                                            }
+                                        }
+                                    }
                                 )
+
                                 // 解析 AI 的锁机工具调用（__LOCK__:分钟数）
-                                val lockResult = com.focusguard.app.enforce.LockToolExecutor
-                                    .tryExecute(context, reply)
+                                val lockResult =
+                                    com.focusguard.app.enforce.LockToolExecutor
+                                        .tryExecute(context, reply)
                                 val displayReply = if (lockResult != null) {
                                     reply.replace(Regex("""__LOCK__:\d+"""), "")
                                         .trim() + "\n\n🔒 已执行锁机 $lockResult 分钟"
                                 } else {
                                     reply
                                 }
-                                val replyMsg = ChatMsg(
-                                    "ai", displayReply,
-                                    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                )
-                                messages = messages + replyMsg
-                                chatHistory.addMessage("ai", replyMsg.text, replyMsg.time)
+
+                                // 流结束后：把最后一条 AI 消息（占位/增量）替换为完整回复，
+                                // 并持久化。绝不追加第二条 AI 消息（避免重复）。
+                                scope.launch {
+                                    val last = messages.lastOrNull()
+                                    if (last != null && last.role == "ai") {
+                                        messages = messages.dropLast(1) +
+                                            last.copy(text = displayReply)
+                                        chatHistory.addMessage(
+                                            "ai", displayReply, last.time
+                                        )
+                                    }
+                                }
                             } finally {
                                 sending = false
                             }
@@ -304,17 +335,20 @@ fun AiChatScreen() {
     }
 }
 
-/** 聊天气泡：用户右对齐紫色，AI 左对齐深色。 */
+/**
+ * 聊天气泡：用户右对齐紫色，AI 左对齐深色。
+ * AI 消息支持 Markdown 渲染（借鉴 compose-markdown 开源实现）；
+ * 占位消息（"…"）显示打字跳动动画；长按/点击可复制。
+ */
 @Composable
-private fun ChatBubble(msg: ChatMsg) {
+private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
     val isUser = msg.role == "user"
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth(if (isUser) 0.8f else 0.9f),
+            modifier = Modifier.fillMaxWidth(if (isUser) 0.8f else 0.92f),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
             Surface(
@@ -326,22 +360,61 @@ private fun ChatBubble(msg: ChatMsg) {
                 ),
                 color = if (isUser) Color(0xFF4F378B) else Color(0xFF262031)
             ) {
-                Text(
-                    text = msg.text,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                )
+                Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    if (isUser) {
+                        Text(
+                            text = msg.text,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            color = Color.White
+                        )
+                    } else if (msg.text == "…") {
+                        // 打字跳动动画（思考中）
+                        var dotCount by remember { mutableIntStateOf(1) }
+                        LaunchedEffect(Unit) {
+                            while (true) {
+                                kotlinx.coroutines.delay(380)
+                                dotCount = (dotCount % 3) + 1
+                            }
+                        }
+                        Text(
+                            text = "•".repeat(dotCount),
+                            fontSize = 20.sp,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    } else {
+                        // AI 消息：Markdown 渲染
+                        MarkdownText(
+                            markdown = msg.text,
+                            modifier = Modifier,
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
             }
             Spacer(Modifier.height(3.dp))
-            Text(
-                text = msg.time,
-                fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.3f)
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = msg.time,
+                    fontSize = 10.sp,
+                    color = Color.White.copy(alpha = 0.3f)
+                )
+                if (!isUser && msg.text != "…") {
+                    Spacer(Modifier.width(10.dp))
+                    IconButton(
+                        onClick = onCopy,
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "复制",
+                            tint = Color.White.copy(alpha = 0.35f),
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
-
-

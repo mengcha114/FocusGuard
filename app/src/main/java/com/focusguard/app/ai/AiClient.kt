@@ -140,6 +140,147 @@ class AiClient {
     }
 
     /**
+     * 流式文本对话（SSE，ChatGPT 式逐字显示）。
+     *
+     * 借鉴主流开源聊天实现：请求带 stream=true，逐行解析 SSE，
+     * 每收到一段文本就通过 [onDelta] 回调（调用方负责切回主线程）。
+     * 流结束后返回完整回复文本。
+     *
+     * 网关不支持流式 / 网络失败时，内部自动降级为一次性 [chat]。
+     */
+    suspend fun streamChat(
+        messages: List<ChatMessage>,
+        baseUrl: String,
+        apiKey: String,
+        modelName: String,
+        apiFormat: String = "openai",
+        onDelta: (String) -> Unit
+    ): String = withContext(Dispatchers.IO) {
+        try {
+            // ── 构造请求体（与 chat 相同，但带 stream 标志） ──
+            val (body, url, headers) = when (apiFormat) {
+                "anthropic" -> {
+                    val system = messages.filter { it.role == "system" }
+                        .joinToString("\n") { it.content }
+                    val msgs = messages.filter { it.role != "system" }.map {
+                        JSONObject()
+                            .put("role", if (it.role == "user") "user" else "assistant")
+                            .put("content", it.content)
+                    }
+                    Triple(
+                        JSONObject().apply {
+                            put("model", modelName)
+                            if (system.isNotBlank()) put("system", system)
+                            put("messages", JSONArray().apply { msgs.forEach { put(it) } })
+                            put("max_tokens", 1024)
+                            put("stream", true)
+                        }, "${baseUrl.trimEnd('/')}/v1/messages", mapOf(
+                            "x-api-key" to apiKey,
+                            "anthropic-version" to "2023-06-01",
+                            "Content-Type" to "application/json"
+                        )
+                    )
+                }
+                "gemini" -> {
+                    val contents = messages.filter { it.role != "system" }.map {
+                        JSONObject()
+                            .put("role", if (it.role == "user") "user" else "model")
+                            .put("parts", JSONArray().put(JSONObject().put("text", it.content)))
+                    }
+                    Triple(
+                        JSONObject().apply {
+                            put("contents", JSONArray().apply { contents.forEach { put(it) } })
+                            put(
+                                "generationConfig",
+                                JSONObject().put("maxOutputTokens", 1024)
+                            )
+                        }, "${baseUrl.trimEnd('/')}/v1beta/models/${modelName}:streamGenerateContent?alt=sse", mapOf(
+                            "x-goog-api-key" to apiKey,
+                            "Content-Type" to "application/json"
+                        )
+                    )
+                }
+                else -> {
+                    val msgs = messages.map {
+                        JSONObject().put("role", it.role).put("content", it.content)
+                    }
+                    Triple(
+                        JSONObject().apply {
+                            put("model", modelName)
+                            put("messages", JSONArray().apply { msgs.forEach { put(it) } })
+                            put("max_tokens", 1024)
+                            put("stream", true)
+                        }, "${baseUrl.trimEnd('/')}/chat/completions", mapOf(
+                            "Authorization" to "Bearer $apiKey",
+                            "Content-Type" to "application/json"
+                        )
+                    )
+                }
+            }
+
+            recordDiagnostic("对话(流式) 模型=$modelName 协议=$apiFormat")
+
+            val builder = Request.Builder().url(url)
+            headers.forEach { (k, v) -> builder.addHeader(k, v) }
+            val request = builder
+                .post(body.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val full = StringBuilder()
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    recordDiagnostic("对话(流式) HTTP ${resp.code}")
+                    return@withContext chat(
+                        messages, baseUrl, apiKey, modelName, apiFormat
+                    )
+                }
+                // 逐行解析 SSE
+                val source = resp.body?.source()
+                if (source == null) {
+                    return@withContext chat(messages, baseUrl, apiKey, modelName, apiFormat)
+                }
+                while (true) {
+                    val line = source.readUtf8Line() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val payload = line.removePrefix("data:").trim()
+                    if (payload == "[DONE]") break
+                    val delta = try {
+                        when (apiFormat) {
+                            "anthropic" -> JSONObject(payload)
+                                .optString("type").let { t ->
+                                    if (t == "content_block_delta") {
+                                        JSONObject(payload)
+                                            .optJSONObject("delta")
+                                            ?.optString("text", "")
+                                    } else ""
+                                }
+                            "gemini" -> JSONObject(payload)
+                                .optJSONArray("candidates")?.optJSONObject(0)
+                                ?.optJSONObject("content")?.optJSONArray("parts")
+                                ?.optJSONObject(0)?.optString("text", "")
+                            else -> JSONObject(payload)
+                                .optJSONArray("choices")?.optJSONObject(0)
+                                ?.optJSONObject("delta")?.optString("content", "")
+                        }.orEmpty()
+                    } catch (e: Exception) {
+                        ""
+                    }
+                    if (delta.isNotEmpty()) {
+                        full.append(delta)
+                        onDelta(delta)
+                    }
+                }
+            }
+            recordDiagnostic("对话(流式) 完成 ${full.length} 字符")
+            full.toString().ifBlank { "（AI 未返回内容）" }
+        } catch (e: Exception) {
+            Log.w(TAG, "流式对话失败（${e.message}），降级一次性对话")
+            recordDiagnostic("对话(流式)失败降级 ${e.message}")
+            chat(messages, baseUrl, apiKey, modelName, apiFormat)
+        }
+    }
+
+    /**
      * 文本对话（AI 对话页用）。
      *
      * 复用当前配置的模型与协议（openai / anthropic / gemini），
