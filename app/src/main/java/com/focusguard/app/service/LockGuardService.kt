@@ -283,6 +283,14 @@ class LockGuardService : Service() {
 
         // ── A. 锁机守护 ─────────────────────────────
         if (lockState.isLocked && lockState.shouldBlockNow) {
+            // 屏幕已息屏（用户按电源键/自动息屏）：尊重用户，不做任何拉起动作。
+            // 否则拉起覆盖层/锁机页会重新点亮屏幕——"锁机后无法息屏"的根因。
+            // 屏幕重新亮起后（isInteractive=true）守护自动恢复。
+            val pm = getSystemService(android.os.PowerManager::class.java)
+            if (pm != null && !pm.isInteractive) {
+                return
+            }
+
             // 答题流程活跃时绝对放行：隐藏覆盖层，否则会挡住答题页输入
             if (UnlockChallengeActivity.active) {
                 if (LockOverlayManager.isShowing) LockOverlayManager.hide()

@@ -226,12 +226,12 @@ object LockOverlayManager {
             type,
             // NOT_FOCUSABLE：不抢焦点，不挡输入法
             // LAYOUT_IN_SCREEN | LAYOUT_NO_LIMITS：覆盖状态栏/导航栏区域
+            // 注意：不加 TURN_SCREEN_ON / KEEP_SCREEN_ON——
+            // 否则息屏后 guardTick 拉起覆盖层会把屏幕重新点亮（"无法息屏"）
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START

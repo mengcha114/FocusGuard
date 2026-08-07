@@ -146,19 +146,17 @@ class LockScreenActivity : ComponentActivity() {
             Log.w(TAG, "注册返回手势拦截失败：${e.message}")
         }
 
-        // 锁屏上也能显示、并点亮屏幕
+        // 锁屏上也能显示（不强制点亮屏幕）：
+        // setShowWhenLocked 让息屏后按电源键能显示锁机页；
+        // 不设置 TURN_SCREEN_ON / KEEP_SCREEN_ON——否则按电源键息屏后
+        // 锁机页立即把屏幕重新点亮，"无法息屏"。
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setShowWhenLocked(true)
-                setTurnScreenOn(true)
             } else {
                 @Suppress("DEPRECATION")
-                window.addFlags(
-                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-                )
+                window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
             }
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } catch (e: Exception) {
             Log.w(TAG, "设置窗口标志失败：${e.message}")
         }
@@ -316,6 +314,10 @@ class LockScreenActivity : ComponentActivity() {
         // 2. 把自己置顶（盖住华为智慧多窗侧边栏等系统窗口）
         // 注意：本 Activity 仍在 resumed 状态（仅失焦），此时 startActivity 合法。
         if (!hasFocus && lockState.shouldBlockNow && !UnlockChallengeActivity.active) {
+            // 屏幕已息屏（按电源键）：不折腾（置顶会把屏幕重新点亮）
+            val pm = getSystemService(android.os.PowerManager::class.java)
+            if (pm != null && !pm.isInteractive) return
+
             com.focusguard.app.access.GuardAccessibilityService.instance
                 ?.dismissNotificationShade()
 

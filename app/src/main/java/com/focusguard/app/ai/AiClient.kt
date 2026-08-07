@@ -21,7 +21,9 @@ data class AiResult(
     /** 内部标记：该结果是否需要去掉 detail 参数后重试。 */
     var retryable: Boolean = false,
     /** 内部标记：响应解析失败（200 但格式异常），需要降级重试。 */
-    var parseFailed: Boolean = false
+    var parseFailed: Boolean = false,
+    /** 内部标记：网络请求失败（超时/断连），需要换最简请求重试一次。 */
+    var networkFailed: Boolean = false
 )
 
 /**
@@ -78,7 +80,9 @@ class AiClient {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(45, TimeUnit.SECONDS)
+        // 读超时 90s：思考模型（agnes 等）生成 1024 token 的推理可能超过 45s，
+        // 之前 45s 导致频繁 "请求失败：timeout"
+        .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
         .build()
 
@@ -100,6 +104,16 @@ class AiClient {
             baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt, apiFormat,
             withDetail = true, withTools = true
         )
+        // 网络失败（超时/断连）：可能只是临时网络抖动或 tools 参数导致服务端
+        // 处理变慢。用最简请求（去 detail + 去 tools）重试一次，不再递归降级，
+        // 避免网络持续故障时一次检测卡 3 次超时。
+        if (withTools.networkFailed) {
+            Log.w(TAG, "tools 模式网络失败（${withTools.reason}），最简请求重试一次")
+            return@withContext postRequest(
+                baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt, apiFormat,
+                withDetail = false, withTools = false
+            )
+        }
         if (withTools.retryable || withTools.parseFailed) {
             Log.w(TAG, "tools 模式失败（400=${withTools.retryable} 解析失败=${withTools.parseFailed}），降级为 content 模式重试")
             val contentOnly = postRequest(
@@ -175,6 +189,12 @@ class AiClient {
             Log.e(TAG, "视觉识别失败", e)
             AiResult(classification = "NEUTRAL", reason = "请求失败：${e.message}").also {
                 it.retryable = false
+                // 网络层失败（超时/断连）标记出来，上层用最简请求重试一次
+                val isNetwork = e is java.io.IOException ||
+                    e is java.net.SocketTimeoutException ||
+                    e is java.net.ConnectException ||
+                    e is java.net.UnknownHostException
+                it.networkFailed = isNetwork
             }
         }
     }
