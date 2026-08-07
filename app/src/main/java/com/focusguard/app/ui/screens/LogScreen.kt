@@ -146,6 +146,56 @@ fun LogScreen() {
             Spacer(Modifier.height(12.dp))
         }
 
+        // ── 崩溃日志（闪退排查用，有记录才显示） ──
+        val crashLog = remember { com.focusguard.app.FocusGuardApp.readCrashLog(context) }
+        if (crashLog.isNotBlank()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF3A1F1F))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "崩溃日志（最近 ${
+                                crashLog.split("===== ").size - 1
+                            } 次闪退）",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFFF8A80)
+                        )
+                        IconButton(
+                            onClick = { copyToClipboard(context, crashLog) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "复制",
+                                tint = Color(0xFFFF8A80),
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = crashLog,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color.White.copy(alpha = 0.8f),
+                        lineHeight = 15.sp,
+                        modifier = Modifier.verticalScroll(rememberScrollState())
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+
         if (logs.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),

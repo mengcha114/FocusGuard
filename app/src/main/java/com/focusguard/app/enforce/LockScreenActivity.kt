@@ -93,6 +93,9 @@ class LockScreenActivity : ComponentActivity() {
     /** API 33+ 预测性返回手势拦截器（侧滑返回）。 */
     private var backInvokedCallback: android.window.OnBackInvokedCallback? = null
 
+    /** 失焦置顶节流：防止覆盖层/窗口动画触发失焦→置顶→再失焦 的高频循环（ANR/闪退源）。 */
+    private var lastFocusReassertAt = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockState = LockState(this)
@@ -296,11 +299,22 @@ class LockScreenActivity : ComponentActivity() {
         // 失焦 = 有别的窗口抢了焦点（通知栏/侧边栏/返回动画/任何系统界面）。
         // 锁机中除答题页外不允许任何窗口存在：
         // 1. 收起通知栏
-        // 2. 立即把自己置顶（盖住华为智慧多窗侧边栏等系统窗口）
+        // 2. 把自己置顶（盖住华为智慧多窗侧边栏等系统窗口）
         // 注意：本 Activity 仍在 resumed 状态（仅失焦），此时 startActivity 合法。
         if (!hasFocus && lockState.shouldBlockNow && !UnlockChallengeActivity.active) {
             com.focusguard.app.access.GuardAccessibilityService.instance
                 ?.dismissNotificationShade()
+
+            // 覆盖层已显示 → 屏幕已被盖住，无需置顶。
+            // 跳过置顶可切断"失焦→置顶→覆盖层变化→再失焦"的高频循环。
+            if (com.focusguard.app.enforce.LockOverlayManager.isShowing) return
+
+            // 节流：覆盖层 addView/removeView、窗口动画会多次触发失焦，
+            // 高频 startActivity 会让系统窗口动画堆积 → ANR/闪退。
+            val now = System.currentTimeMillis()
+            if (now - lastFocusReassertAt < 500L) return
+            lastFocusReassertAt = now
+
             try {
                 LockScreenActivity.show(applicationContext)
             } catch (e: Exception) {

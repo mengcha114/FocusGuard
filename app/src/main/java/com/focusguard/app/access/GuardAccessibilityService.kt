@@ -213,8 +213,16 @@ class GuardAccessibilityService : AccessibilityService() {
                 else "锁机中检测到系统悬浮窗（疑似侧边栏），立即顶回"
             )
             try {
-                performGlobalAction(GLOBAL_ACTION_HOME)
-                LockScreenActivity.reassert(this)
+                if (hasSplit) {
+                    // 分屏：先回桌面再拉起锁机页
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                    LockScreenActivity.reassert(this)
+                } else {
+                    // 悬浮窗：只把锁机页置顶，不按 Home——
+                    // 华为智慧多窗悬浮球等可能常驻，反复 Home 会造成
+                    // "锁机页消失→拉起"闪烁甚至 ANR
+                    LockScreenActivity.reassert(this)
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "顶回失败：${e.message}")
             }
