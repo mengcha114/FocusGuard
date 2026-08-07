@@ -72,8 +72,10 @@ object DhizukuEnhancer {
             }
 
             val dpm = buildWrappedDpm(context) ?: return false
-            // 通过包装后的 DPM 查询 Device Owner（调用被转发到 Dhizuku 服务器执行）
-            val owner = dpm.getDeviceOwnerComponentOnAnyUser() ?: return false
+            // 通过包装后的 DPM 查询 Device Owner（调用被转发到 Dhizuku 服务器执行）。
+            // getDeviceOwnerComponentOnAnyUser 是 @hide 方法（不在 android.jar stub），
+            // 运行时反射调用（HiddenApiBypass 已放行非 SDK 接口）。
+            val owner = queryDeviceOwner(dpm) ?: return false
             wrappedDpm = dpm
             ownerComponent = owner
             initialized = true
@@ -110,6 +112,17 @@ object DhizukuEnhancer {
             manager
         } catch (e: Throwable) {
             Log.w(TAG, "构造包装 DPM 失败：${e.message}")
+            null
+        }
+    }
+
+    /** 反射调用隐藏方法 DevicePolicyManager.getDeviceOwnerComponentOnAnyUser()。 */
+    private fun queryDeviceOwner(dpm: DevicePolicyManager): ComponentName? {
+        return try {
+            dpm.javaClass.getMethod("getDeviceOwnerComponentOnAnyUser")
+                .invoke(dpm) as? ComponentName
+        } catch (e: Throwable) {
+            Log.w(TAG, "查询 Device Owner 失败：${e.message}")
             null
         }
     }

@@ -277,10 +277,12 @@ private fun LockScreenContent(
     val isPomodoro = lockState.lockSource == "POMODORO"
     val motto = remember { MotivationalQuotes.random() }
 
+    // 在 Composable 作用域取 Activity 引用（LaunchedEffect 内不能调 LocalContext.current）
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+
     // 统一的每秒刷新：时钟、倒计时、番茄钟阶段、暂停状态
     LaunchedEffect(Unit) {
         // 追踪番茄钟工作/休息阶段切换 → 同步进出系统级 Lock Task
-        val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
         var lastWorkPhase = lockState.pomodoroIsWorkPhase
 
         while (lockState.isLocked) {
