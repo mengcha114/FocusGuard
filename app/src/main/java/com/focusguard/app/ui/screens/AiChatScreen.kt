@@ -50,13 +50,21 @@ fun AiChatScreen() {
 
     var tab by remember { mutableIntStateOf(0) } // 0=AI 对话 1=检测日志
 
-    // 会话消息：初始加载检测日志里 AI 给出的提醒（按时间正序）
+    // 对话历史存储：手动对话（用户消息+AI回复）持久化，切页不丢
+    val chatHistory = remember { com.focusguard.app.data.ChatHistoryStore(context) }
+
+    // 会话消息：持久化的手动对话历史 + 检测日志里 AI 给出的提醒（按时间正序）
     fun loadAiReminders(): List<ChatMsg> = logStore.getAllLogs()
         .filter { it.source == "AI_VISION" && it.reason.isNotBlank() }
         .map { ChatMsg("ai", it.reason, it.getTimeFormatted()) }
         .reversed()
 
-    var messages by remember { mutableStateOf(loadAiReminders()) }
+    var messages by remember {
+        mutableStateOf(
+            chatHistory.getMessages()
+                .map { ChatMsg(it.role, it.text, it.time) } + loadAiReminders()
+        )
+    }
     var input by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -87,6 +95,14 @@ fun AiChatScreen() {
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.4f)
                     )
+                }
+            }
+            if (tab == 0 && messages.isNotEmpty()) {
+                TextButton(onClick = {
+                    chatHistory.clear()
+                    messages = loadAiReminders()
+                }) {
+                    Text("清空", color = Color(0xFFF44336), fontSize = 12.sp)
                 }
             }
             // Tab 切换（TabRow：空间充足，图标与文字互不遮挡）
@@ -210,6 +226,7 @@ fun AiChatScreen() {
                         val now = SimpleDateFormat("HH:mm", Locale.getDefault())
                             .format(Date())
                         messages = messages + ChatMsg("user", text, now)
+                        chatHistory.addMessage("user", text, now)
                         input = ""
                         sending = true
                         scope.launch {
@@ -259,10 +276,12 @@ fun AiChatScreen() {
                                 } else {
                                     reply
                                 }
-                                messages = messages + ChatMsg(
+                                val replyMsg = ChatMsg(
                                     "ai", displayReply,
                                     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                                 )
+                                messages = messages + replyMsg
+                                chatHistory.addMessage("ai", replyMsg.text, replyMsg.time)
                             } finally {
                                 sending = false
                             }
