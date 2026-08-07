@@ -51,8 +51,20 @@ class GuardAccessibilityService : AccessibilityService() {
             "com.vivo.assistant",                        // vivo 语音助手
             "com.huawei.vassistant",                     // 华为语音助手
             "com.huawei.systemmanager",
-            "com.hihonor.assistant"                      // 荣耀
+            "com.hihonor.assistant",                     // 荣耀
+            // ── 侧滑破解：华为/荣耀智慧多窗侧边栏（屏幕边缘滑出的应用栏） ──
+            "com.huawei.smartwindow",                    // 华为智慧多窗
+            "com.hihonor.smartwindow",                   // 荣耀智慧多窗
+            "com.huawei.android.launcher.smartwindow",
+            "com.hihonor.systemmanager"                  // 荣耀系统管家（侧边栏宿主）
         )
+
+        /** 命中即"侧边栏/悬浮类"系统界面：不止收起，还要顶回锁机页。 */
+        private fun isSideBarPackage(pkg: String): Boolean =
+            pkg.contains("smartwindow", ignoreCase = true) ||
+                pkg.contains("side", ignoreCase = true) ||
+                pkg == "com.huawei.systemmanager" ||
+                pkg == "com.hihonor.systemmanager"
     }
 
     private var lockState: LockState? = null
@@ -113,10 +125,20 @@ class GuardAccessibilityService : AccessibilityService() {
         if (now - lastReassertAt < 300L) return
         lastReassertAt = now
 
-        // 下拉通知栏 / 最近任务 / 语音助手等系统界面：先收起
+        // 系统界面：收起通知栏；侧边栏类（智慧多窗等）额外顶回
         if (pkg in blockedSystemPackages) {
             Log.d(TAG, "锁机中检测到系统界面 $pkg，执行防破解")
             dismissNotificationShade()
+            if (isSideBarPackage(pkg)) {
+                Log.d(TAG, "检测到侧边栏类界面 $pkg，立即顶回锁屏页")
+                try {
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                    LockScreenActivity.reassert(this)
+                } catch (e: Exception) {
+                    Log.w(TAG, "顶回锁屏页失败：${e.message}")
+                }
+                return
+            }
         }
 
         Log.d(TAG, "锁机中检测到前台切换至 $pkg，立即顶回锁屏页")
@@ -132,6 +154,31 @@ class GuardAccessibilityService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (now - lastReassertAt < 300L) return
 
+        // 记录当前窗口清单（诊断用：定位未知侧滑破解窗口的包名/类型）
+        try {
+            val winList = windows
+                ?.mapNotNull { w ->
+                    val t = when (w.type) {
+                        AccessibilityWindowInfo.TYPE_APPLICATION -> "APP"
+                        AccessibilityWindowInfo.TYPE_SYSTEM -> "SYS"
+                        AccessibilityWindowInfo.TYPE_INPUT_METHOD -> "IME"
+                        AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "A11Y"
+                        AccessibilityWindowInfo.TYPE_SPLIT_SCREEN_DIVIDER -> "DIV"
+                        else -> "T${w.type}"
+                    }
+                    val pkg = runCatching {
+                        w.root?.packageName?.toString()
+                    }.getOrNull() ?: "?"
+                    "$t:$pkg"
+                }
+                ?.joinToString(",")
+            if (!winList.isNullOrBlank()) {
+                Log.d(TAG, "锁机中窗口清单：$winList")
+            }
+        } catch (e: Exception) {
+            // 诊断日志失败不影响拦截
+        }
+
         // 检测分屏/小窗：多于一个应用窗口同时可见 → 顶回锁机页
         val hasSplit = try {
             val appWindows = windows?.filter {
@@ -142,9 +189,29 @@ class GuardAccessibilityService : AccessibilityService() {
             false
         }
 
-        if (hasSplit) {
+        // 检测"不抢焦点的系统悬浮窗"（华为智慧多窗侧边栏等）：
+        // 这类窗口不触发 state_changed 也不抢焦点，只能在这里抓到。
+        // 规则：SYS 类型 + 有包名 + 非自身 + 非通知栏/状态栏（systemui）→ 顶回
+        val hasForeignSysWindow = try {
+            windows?.any { w ->
+                w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
+                    w.root?.packageName?.toString()?.let { pkg ->
+                        pkg != packageName &&
+                            pkg != "com.android.systemui" &&
+                            !pkg.contains("launcher", ignoreCase = true)
+                    } == true
+            } ?: false
+        } catch (e: Exception) {
+            false
+        }
+
+        if (hasSplit || hasForeignSysWindow) {
             lastReassertAt = now
-            Log.d(TAG, "锁机中检测到分屏/小窗，立即顶回")
+            Log.d(
+                TAG,
+                if (hasSplit) "锁机中检测到分屏/小窗，立即顶回"
+                else "锁机中检测到系统悬浮窗（疑似侧边栏），立即顶回"
+            )
             try {
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 LockScreenActivity.reassert(this)

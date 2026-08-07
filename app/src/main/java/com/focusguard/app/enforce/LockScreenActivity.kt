@@ -90,10 +90,31 @@ class LockScreenActivity : ComponentActivity() {
     /** 答题成功后是解锁（false）还是换取一次暂停（true）。 */
     private var pendingPause = false
 
+    /** API 33+ 预测性返回手势拦截器（侧滑返回）。 */
+    private var backInvokedCallback: android.window.OnBackInvokedCallback? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockState = LockState(this)
         instance = this
+
+        // ── 拦截侧滑返回手势（Android 13+ 预测性返回）────────
+        // 关键：targetSdk 34 时系统返回手势走 OnBackInvokedDispatcher，
+        // 不再回调 onBackPressed()（已废弃），不注册回调 = 侧滑直接 finish。
+        // 注册一个空回调消费掉所有返回事件，侧滑就永远无法退出。
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                backInvokedCallback = android.window.OnBackInvokedCallback {
+                    // 消费返回事件：什么都不做（锁机期间侧滑返回无效）
+                }
+                onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    backInvokedCallback!!
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "注册返回手势拦截失败：${e.message}")
+        }
 
         // 锁屏上也能显示、并点亮屏幕
         try {
@@ -272,17 +293,34 @@ class LockScreenActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        // 失焦通常意味着通知栏被拉下 → 立即收起。
-        // 注意：这里只做"收通知栏"，不做顶回。
-        // 顶回统一由守护服务处理，避免与输入法争抢焦点导致闪退。
+        // 失焦 = 有别的窗口抢了焦点（通知栏/侧边栏/返回动画/任何系统界面）。
+        // 锁机中除答题页外不允许任何窗口存在：
+        // 1. 收起通知栏
+        // 2. 立即把自己置顶（盖住华为智慧多窗侧边栏等系统窗口）
+        // 注意：本 Activity 仍在 resumed 状态（仅失焦），此时 startActivity 合法。
         if (!hasFocus && lockState.shouldBlockNow && !UnlockChallengeActivity.active) {
             com.focusguard.app.access.GuardAccessibilityService.instance
                 ?.dismissNotificationShade()
+            try {
+                LockScreenActivity.show(applicationContext)
+            } catch (e: Exception) {
+                Log.w(TAG, "失焦置顶失败：${e.message}")
+            }
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        // 注销返回手势拦截器
+        try {
+            val cb = backInvokedCallback
+            if (Build.VERSION.SDK_INT >= 33 && cb != null) {
+                onBackInvokedDispatcher.unregisterOnBackInvokedCallback(cb)
+                backInvokedCallback = null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "注销返回拦截失败：${e.message}")
+        }
         if (instance === this) instance = null
         foreground = false
         // 兜底退出 Lock Task（正常路径已在 unlock/暂停时退出；
