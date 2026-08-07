@@ -290,8 +290,7 @@ private fun AppBlockedUntilScreen(
             }
 
             Text(
-                text = "在此期间打开该应用会被挡住，
-退出后使用其他应用不受影响。",
+                text = "在此期间打开该应用会被挡住，退出后使用其他应用不受影响。",
                 fontSize = 14.sp,
                 color = Color(0xFF8A8078),
                 textAlign = TextAlign.Center,

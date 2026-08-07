@@ -529,13 +529,15 @@ r 字段规则（非常重要）：
                     it.parseFailed = true
                 }
             }
-            // 先按 JSON 解析；失败则退到纯文本关键词兜底，
-            // 只有两者都失败才算真正解析失败
+            // 先按 JSON 解析；失败则尝试解析"函数调用文本"（部分网关不支持
+            // 真 tool_calls，模型会按提示词输出 classify_screen(c=..., p=..., r=...) 文本）；
+            // 再退到纯文本关键词兜底，只有三者都失败才算真正解析失败
             try {
                 val result = JSONObject(extractJson(text))
                 buildResult(result, json).copy(totalTokens = totalTokens)
             } catch (jsonError: Exception) {
-                parseFromPlainText(text, totalTokens)
+                parseFunctionCallText(text, totalTokens)
+                    ?: parseFromPlainText(text, totalTokens)
                     ?: throw jsonError
             }
         } catch (e: Exception) {
@@ -623,6 +625,40 @@ r 字段规则（非常重要）：
         }
         // 花括号没配平（输出被 max_tokens 截断）→ 返回原文，交给纯文本兜底
         return content
+    }
+
+    /**
+     * 解析"函数调用文本"格式的输出。
+     *
+     * 部分模型/网关不支持真正的 function calling（tool_calls），
+     * 但会按提示词把结果写成文本形式：
+     * `classify_screen(c="NEUTRAL", p=0.9, r="主人~ 该休息啦喵")`
+     *
+     * 直接提取三个参数：
+     * - c → 分类
+     * - p → 置信度
+     * - r → **角色提醒语**（用户设置的猫娘/妈妈口吻等），
+     *   直接作为 reason 展示，避免出现"文本兜底解析：classify_screen(c=..."
+     *   这类把函数调用原文当原因显示的无用信息。
+     */
+    private fun parseFunctionCallText(text: String, totalTokens: Int): AiResult? {
+        val pattern = Regex(
+            """classify_screen\s*\(\s*c\s*=\s*"?([A-Za-z_]+)"?\s*,\s*p\s*=\s*"?([0-9]*\.?[0-9]+)"?\s*,\s*r\s*=\s*"([^"]*)"\s*\)""",
+            RegexOption.IGNORE_CASE or RegexOption.DOT_MATCHES_ALL
+        )
+        val match = pattern.find(text) ?: return null
+
+        val c = match.groupValues[1]
+        val p = match.groupValues[2].toFloatOrNull() ?: 0.6f
+        val r = match.groupValues[3].trim()
+
+        Log.d(TAG, "函数调用文本解析成功：$c $p")
+        return AiResult(
+            classification = normalizeClassification(c),
+            confidence = p.coerceIn(0f, 1f),
+            reason = r,
+            totalTokens = totalTokens
+        )
     }
 
     /**
