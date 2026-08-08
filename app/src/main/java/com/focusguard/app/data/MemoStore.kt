@@ -91,6 +91,47 @@ class MemoStore(context: Context) {
         private const val KEY_MEMOS = "memos"
         /** 注入提示词的最大条数——太多会挤占 token 且模型只会引用前几条。 */
         private const val PROMPT_LIMIT = 5
+
+        /**
+         * 把相对时间描述解析成绝对时间戳；无法识别返回 0（表示不设截止）。
+         *
+         * 手动输入框与 AI 工具共用这一套解析，两边行为一致：
+         * `30m`/`2h`/`3d`、`30分`/`2小时`/`3天`、`今天`/`明天`/`后天`/`本周`。
+         */
+        fun parseDueText(raw: String?): Long {
+            val s = raw?.trim().orEmpty()
+            if (s.isEmpty()) return 0L
+            val now = System.currentTimeMillis()
+
+            Regex("""^(\d+)\s*([mhd分小时天])""").find(s)?.let { m ->
+                val n = m.groupValues[1].toLongOrNull() ?: return@let
+                val ms = when (m.groupValues[2]) {
+                    "m", "分" -> n * 60_000L
+                    "h", "小", "时" -> n * 3_600_000L
+                    else -> n * 86_400_000L
+                }
+                return now + ms
+            }
+
+            return when {
+                s.contains("今天") || s.contains("今晚") -> endOfDay(0)
+                s.contains("明天") -> endOfDay(1)
+                s.contains("后天") -> endOfDay(2)
+                s.contains("本周") || s.contains("这周") -> now + 3 * 86_400_000L
+                else -> 0L
+            }
+        }
+
+        /** N 天后的 23:59。 */
+        private fun endOfDay(dayOffset: Int): Long {
+            val cal = java.util.Calendar.getInstance().apply {
+                add(java.util.Calendar.DAY_OF_YEAR, dayOffset)
+                set(java.util.Calendar.HOUR_OF_DAY, 23)
+                set(java.util.Calendar.MINUTE, 59)
+                set(java.util.Calendar.SECOND, 0)
+            }
+            return cal.timeInMillis
+        }
     }
 
     private val prefs: SharedPreferences =

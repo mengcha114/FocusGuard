@@ -63,7 +63,7 @@ object MemoToolExecutor {
                 val text = parts.getOrNull(0).orEmpty()
                 if (text.isBlank()) return@forEach
                 val priority = parsePriority(parts.getOrNull(1))
-                val dueAt = parseDue(parts.getOrNull(2))
+                val dueAt = MemoStore.parseDueText(parts.getOrNull(2))
                 store.add(text = text, priority = priority, dueAt = dueAt, fromAi = true)
                     ?.let { added.add(it.text) }
             } catch (e: Exception) {
@@ -104,45 +104,6 @@ object MemoToolExecutor {
             s.contains("重要") -> 1
             else -> 0
         }
-    }
-
-    /** 解析相对时间描述为绝对时间戳；无法解析返回 0（不设截止）。 */
-    private fun parseDue(raw: String?): Long {
-        val s = raw?.trim().orEmpty()
-        if (s.isEmpty()) return 0L
-        val now = System.currentTimeMillis()
-
-        // 30m / 2h / 3d 形式
-        Regex("""^(\d+)\s*([mhd分小时天])""").find(s)?.let { m ->
-            val n = m.groupValues[1].toLongOrNull() ?: return@let
-            val unit = m.groupValues[2]
-            val ms = when (unit) {
-                "m", "分" -> n * 60_000L
-                "h", "小" -> n * 3_600_000L
-                "时" -> n * 3_600_000L
-                else -> n * 86_400_000L
-            }
-            return now + ms
-        }
-
-        return when {
-            s.contains("今天") || s.contains("今晚") -> endOfDay(0)
-            s.contains("明天") -> endOfDay(1)
-            s.contains("后天") -> endOfDay(2)
-            s.contains("本周") || s.contains("这周") -> now + 3 * 86_400_000L
-            else -> 0L
-        }
-    }
-
-    /** N 天后的 23:59。 */
-    private fun endOfDay(dayOffset: Int): Long {
-        val cal = java.util.Calendar.getInstance().apply {
-            add(java.util.Calendar.DAY_OF_YEAR, dayOffset)
-            set(java.util.Calendar.HOUR_OF_DAY, 23)
-            set(java.util.Calendar.MINUTE, 59)
-            set(java.util.Calendar.SECOND, 0)
-        }
-        return cal.timeInMillis
     }
 
     /**
