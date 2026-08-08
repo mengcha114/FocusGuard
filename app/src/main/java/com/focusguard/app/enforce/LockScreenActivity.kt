@@ -18,11 +18,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Shield
@@ -594,6 +596,11 @@ private fun LockScreenContent(
                 }
             }
 
+            Spacer(Modifier.height(16.dp))
+
+            // ── 待办清单（锁机时也能看到自己该做什么） ──────
+            LockMemoCard(accent = accent, accentSoft = accentSoft)
+
             Spacer(Modifier.height(20.dp))
 
             // ── 解锁区（暂停中隐藏，避免重复操作） ────────
@@ -770,6 +777,122 @@ private fun CountdownRing(
 }
 
 /** 番茄钟小统计块。 */
+/**
+ * 锁机页的待办清单卡片。
+ *
+ * 锁机时用户最需要的信息不是"还剩多久"，而是"我现在该干什么"。
+ * 这里直接展示未完成事项（紧急/逾期高亮），可勾选完成——
+ * 让锁机从"惩罚"变成"引导"。
+ */
+@Composable
+private fun LockMemoCard(accent: Color, accentSoft: Color) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val memoStore = remember { com.focusguard.app.data.MemoStore(context) }
+    var pending by remember { mutableStateOf(memoStore.getPending()) }
+
+    // 无待办时不占位置，保持锁机页简洁
+    if (pending.isEmpty()) return
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White.copy(alpha = 0.045f))
+            .padding(horizontal = 18.dp, vertical = 15.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "待办清单",
+                    fontSize = 10.sp,
+                    letterSpacing = 2.sp,
+                    color = accentSoft.copy(alpha = 0.75f),
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "${pending.size} 项未完成",
+                    fontSize = 10.sp,
+                    color = Color.White.copy(alpha = 0.35f)
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            pending.take(4).forEach { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 勾选完成：锁机期间也能推进待办
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .clickable {
+                                memoStore.markDone(item.id)
+                                pending = memoStore.getPending()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "标记完成",
+                            tint = accentSoft.copy(alpha = 0.55f),
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = item.text,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        color = Color.White.copy(alpha = 0.82f),
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    // 紧急/逾期标记：让用户一眼看到该先做哪个
+                    val tag = when {
+                        item.overdue -> "逾期"
+                        item.priority == 2 -> "紧急"
+                        item.priority == 1 -> "重要"
+                        else -> ""
+                    }
+                    if (tag.isNotBlank()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = tag,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (item.overdue || item.priority == 2) {
+                                Color(0xFFEF9A9A)
+                            } else {
+                                Color(0xFFFFCC80)
+                            }
+                        )
+                    }
+                }
+            }
+
+            if (pending.size > 4) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "还有 ${pending.size - 4} 项…",
+                    fontSize = 10.sp,
+                    color = Color.White.copy(alpha = 0.3f)
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun MiniStat(label: String, value: String, accent: Color) {
     Column(

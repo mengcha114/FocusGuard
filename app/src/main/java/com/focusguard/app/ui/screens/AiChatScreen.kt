@@ -238,9 +238,10 @@ fun AiChatScreen() {
                                         it.text
                                     )
                                 }
-                                // 系统提示词：复用设置里的提醒风格 + 注入备忘录 + 锁机工具协议
-                                val memoList =
-                                    com.focusguard.app.data.MemoStore(context).getAll()
+                                // 系统提示词：复用设置里的提醒风格 + 注入备忘录 + 工具协议
+                                val memoStore =
+                                    com.focusguard.app.data.MemoStore(context)
+                                val memoSummary = memoStore.promptSummary(limit = 10)
                                 val systemText = buildString {
                                     append(
                                         "你是专注卫士的 AI 助手，回答简短、友好、有耐心，使用中文。"
@@ -255,9 +256,15 @@ fun AiChatScreen() {
                                             "在你的回复末尾单独输出一行 __LOCK__:<分钟数>（例如 __LOCK__:30 表示锁机 30 分钟），" +
                                             "应用会自动执行锁机。其余情况不要输出该标记。"
                                     )
-                                    if (memoList.isNotEmpty()) {
-                                        append("\n用户的备忘录（用户询问待办时可查看并提醒）：\n- ")
-                                        append(memoList.joinToString("\n- "))
+                                    append(
+                                        com.focusguard.app.enforce.MemoToolExecutor
+                                            .toolInstruction()
+                                    )
+                                    if (memoSummary.isNotBlank()) {
+                                        append("\n用户当前的待办事项（询问待办时据此回答）：\n")
+                                        append(memoSummary)
+                                    } else {
+                                        append("\n用户当前没有待办事项。")
                                     }
                                 }
                                 val fullHistory = buildList {
@@ -290,15 +297,26 @@ fun AiChatScreen() {
                                     }
                                 )
 
-                                // 解析 AI 的锁机工具调用（__LOCK__:分钟数）
+                                // ── 解析 AI 的工具调用 ────────────────────
+                                // 1) 锁机工具（__LOCK__:分钟数）
                                 val lockResult =
                                     com.focusguard.app.enforce.LockToolExecutor
                                         .tryExecute(context, reply)
-                                val displayReply = if (lockResult != null) {
-                                    reply.replace(Regex("""__LOCK__:\d+"""), "")
-                                        .trim() + "\n\n🔒 已执行锁机 $lockResult 分钟"
-                                } else {
-                                    reply
+                                // 2) 备忘录工具（__MEMO_ADD__ / __MEMO_DONE__）
+                                val memoResult =
+                                    com.focusguard.app.enforce.MemoToolExecutor
+                                        .tryExecute(context, reply)
+
+                                // 去掉协议标记，再把执行结果作为系统提示追加到气泡
+                                var displayReply = com.focusguard.app.enforce
+                                    .MemoToolExecutor.stripMarkers(reply)
+                                    .replace(Regex("""__LOCK__:\d+"""), "")
+                                    .trim()
+                                if (memoResult.changed) {
+                                    displayReply += "\n\n" + memoResult.summary()
+                                }
+                                if (lockResult != null) {
+                                    displayReply += "\n\n🔒 已执行锁机 $lockResult 分钟"
                                 }
 
                                 // 流结束后：把最后一条 AI 消息（占位/增量）替换为完整回复，
