@@ -121,46 +121,97 @@ object LockOverlayManager {
 
         uiHandler.post {
             if (isShowing) return@post
-            try {
-                val appContext = context.applicationContext
-                val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            attachWindow(context, lockState, onStartChallenge, onRequestPause)
+        }
+    }
 
-                val root = object : FrameLayout(appContext) {
-                    /**
-                     * 吞掉返回键：这是侧滑返回手势最终落到的按键事件。
-                     * dispatchKeyEvent 比 OnKeyListener 更靠前，ROM 手势也走这里。
-                     */
-                    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-                        return when (event.keyCode) {
-                            // 音量键放行：锁机不该妨碍用户调音量
-                            KeyEvent.KEYCODE_VOLUME_UP,
-                            KeyEvent.KEYCODE_VOLUME_DOWN,
-                            KeyEvent.KEYCODE_VOLUME_MUTE -> super.dispatchKeyEvent(event)
-                            // 其余全部吞掉（返回、菜单、搜索、多任务…）
-                            else -> true
-                        }
+    /**
+     * 同步显示覆盖层（仅主线程）。
+     *
+     * 用途：答题页被切走的瞬间（onPause 在主线程执行）**同步**挂载全屏
+     * 覆盖层——不走 Handler 异步，画面刚切走就已被覆盖（<10ms），
+     * 不给"切走 → 覆盖层出现"之间的空窗期做任何操作（防破解加固）。
+     *
+     * addView 无 InputDispatcher 竞态（竞态只存在于"removeView 后立即
+     * startActivity"的组合），在生命周期回调中同步 addView 是安全的。
+     */
+    fun showNow(
+        context: Context,
+        lockState: LockState,
+        onStartChallenge: () -> Unit,
+        onRequestPause: (() -> Unit)? = null
+    ) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Log.w(TAG, "showNow 必须在主线程调用，已退回异步 show")
+            show(
+                context, lockState,
+                force = true,
+                onStartChallenge = onStartChallenge,
+                onRequestPause = onRequestPause
+            )
+            return
+        }
+        if (isShowing) return
+        if (!canShow(context)) {
+            Log.w(TAG, "缺少 SYSTEM_ALERT_WINDOW 权限，覆盖层不可用（走 Activity 兜底）")
+            return
+        }
+        lastContext = context.applicationContext
+        lastChallengeCallback = onStartChallenge
+        lastPauseCallback = onRequestPause
+        attachWindow(context, lockState, onStartChallenge, onRequestPause)
+    }
+
+    /**
+     * 窗口挂载主逻辑（必须在主线程调用）。
+     * 由异步 [show] 与同步 [showNow] 共用，避免两份窗口构建代码漂移。
+     */
+    private fun attachWindow(
+        context: Context,
+        lockState: LockState,
+        onStartChallenge: () -> Unit,
+        onRequestPause: (() -> Unit)?
+    ) {
+        if (isShowing) return
+        try {
+            val appContext = context.applicationContext
+            val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+
+            val root = object : FrameLayout(appContext) {
+                /**
+                 * 吞掉返回键：这是侧滑返回手势最终落到的按键事件。
+                 * dispatchKeyEvent 比 OnKeyListener 更靠前，ROM 手势也走这里。
+                 */
+                override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                    return when (event.keyCode) {
+                        // 音量键放行：锁机不该妨碍用户调音量
+                        KeyEvent.KEYCODE_VOLUME_UP,
+                        KeyEvent.KEYCODE_VOLUME_DOWN,
+                        KeyEvent.KEYCODE_VOLUME_MUTE -> super.dispatchKeyEvent(event)
+                        // 其余全部吞掉（返回、菜单、搜索、多任务…）
+                        else -> true
                     }
-                }.apply {
-                    background = buildBackground()
-                    isFocusableInTouchMode = true
-                    isFocusable = true
                 }
-                root.addView(buildContent(appContext, lockState, onStartChallenge, onRequestPause))
-
-                wm.addView(root, buildLayoutParams())
-                root.requestFocus()
-                hideSystemBars(root)
-
-                windowManager = wm
-                overlayRoot = root
-                currentLockState = lockState
-                isShowing = true
-                startClock()
-                Log.d(TAG, "锁机覆盖层已显示（悬浮窗主体）")
-            } catch (e: Exception) {
-                Log.e(TAG, "显示覆盖层失败：${e.message}")
-                cleanupOnMain()
+            }.apply {
+                background = buildBackground()
+                isFocusableInTouchMode = true
+                isFocusable = true
             }
+            root.addView(buildContent(appContext, lockState, onStartChallenge, onRequestPause))
+
+            wm.addView(root, buildLayoutParams())
+            root.requestFocus()
+            hideSystemBars(root)
+
+            windowManager = wm
+            overlayRoot = root
+            currentLockState = lockState
+            isShowing = true
+            startClock()
+            Log.d(TAG, "锁机覆盖层已显示（悬浮窗主体）")
+        } catch (e: Exception) {
+            Log.e(TAG, "显示覆盖层失败：${e.message}")
+            cleanupOnMain()
         }
     }
 

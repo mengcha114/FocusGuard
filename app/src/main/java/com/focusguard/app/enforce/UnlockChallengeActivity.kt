@@ -130,6 +130,10 @@ class UnlockChallengeActivity : ComponentActivity() {
 
     private lateinit var lockState: LockState
 
+    /** 切走频次监控：2 秒内切走 ≥2 次视为恶意破解，直接结束答题页。 */
+    private var lastPauseAt = 0L
+    private var pauseCountInWindow = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockState = LockState(this)
@@ -224,17 +228,52 @@ class UnlockChallengeActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         foreground = false
-        // 用户上滑回桌面/按 Home：答题页失焦。锁机若仍在进行，
-        // 立刻通过 LockScreenActivity.show 拉回锁机（悬浮窗优先），
-        // 不留"切走答题页 = 自由使用"的漏洞。
+
+        // ── 切走惩罚（防破解） ─────────────────────────
+        // 用户快速连续切走答题页（2 秒内 ≥2 次）= 反复刷"切走窗口期"
+        // 尝试逐步操作/破解 → 直接结束答题页回锁机，不给任何窗口期。
+        // 正常用户单次误触切走不受影响。
+        val now = System.currentTimeMillis()
+        if (now - lastPauseAt < 2_000L) {
+            pauseCountInWindow++
+        } else {
+            pauseCountInWindow = 1
+        }
+        lastPauseAt = now
+        if (pauseCountInWindow >= 2) {
+            Log.w(TAG, "检测到连续切走答题页（${pauseCountInWindow} 次），执行切走惩罚")
+            finish()
+            return
+        }
+
         val stillLocked = try {
             this::lockState.isInitialized && lockState.shouldBlockNow
         } catch (e: Exception) {
             false
         }
         if (stillLocked) {
-            Log.d(TAG, "答题页被切走，立即拉回锁机")
-            LockScreenActivity.show(applicationContext)
+            Log.d(TAG, "答题页被切走，立即拉起锁机")
+            // ── 同步挂载全屏悬浮窗（<10ms） ─────────────
+            // onPause 在主线程执行，showNow 同步 addView——
+            // 切走动画刚发生画面就已被覆盖，不依赖 600ms 守护轮询，
+            // 不给"切走 → 覆盖层出现"之间的空窗期做任何操作。
+            // 无悬浮窗权限才退回 Activity 兜底。
+            if (com.focusguard.app.enforce.LockOverlayManager.canShow(applicationContext)) {
+                com.focusguard.app.enforce.LockOverlayManager.showNow(
+                    context = applicationContext,
+                    lockState = lockState,
+                    onStartChallenge = {
+                        com.focusguard.app.enforce.LockScreenActivity
+                            .startChallengeFromOverlay(applicationContext, lockState)
+                    },
+                    onRequestPause = {
+                        com.focusguard.app.enforce.LockScreenActivity
+                            .showForPause(applicationContext)
+                    }
+                )
+            } else {
+                LockScreenActivity.show(applicationContext)
+            }
         }
     }
 
