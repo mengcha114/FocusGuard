@@ -16,10 +16,7 @@ class LockState(context: Context) {
         private const val PREFS = "focus_guard_lock_state"
         private const val KEY_LOCK_UNTIL = "lock_until"
 
-        /** 单次锁机内允许的答题页切换（切走）次数上限。 */
-        private const val KEY_CHALLENGE_SWITCHES = "challenge_switches"
-        private const val KEY_CHALLENGE_EXHAUSTED = "challenge_exhausted"
-        private const val MAX_CHALLENGE_SWITCHES = 5
+
         private const val KEY_LOCK_SOURCE = "lock_source"
         private const val KEY_LOCK_STRENGTH = "lock_strength"
         private const val KEY_FRIEND_CIPHER = "friend_cipher"
@@ -64,36 +61,9 @@ class LockState(context: Context) {
         lockUntil = System.currentTimeMillis() + minutes * 60_000L
         lockSource = source
         // 新一轮锁机：重置答题切换计数与耗尽标记
-        challengeSwitchCount = 0
-        challengeSwitchesExhausted = false
     }
 
-    // ── 锁机期间答题页切换次数（防破解） ──────────────
-    // 单次锁机内，用户反复"进入答题页 → 切走"最多 5 次，
-    // 超限后答题入口关闭（只能等锁机结束/强度 4 无入口），
-    // 堵住"反复切走刷窗口期逐步操作"的破解方式。
 
-    /** 本次锁机已发生的答题页切换次数。 */
-    var challengeSwitchCount: Int
-        get() = prefs.getInt(KEY_CHALLENGE_SWITCHES, 0)
-        set(value) = prefs.edit().putInt(KEY_CHALLENGE_SWITCHES, value.coerceAtLeast(0)).apply()
-
-    /** 答题切换次数是否已达上限（入口关闭）。 */
-    var challengeSwitchesExhausted: Boolean
-        get() = prefs.getBoolean(KEY_CHALLENGE_EXHAUSTED, false)
-        set(value) = prefs.edit().putBoolean(KEY_CHALLENGE_EXHAUSTED, value).apply()
-
-    /**
-     * 记录一次答题页切换（切走）。返回是否已耗尽（超过 5 次上限）。
-     */
-    fun recordChallengeSwitch(): Boolean {
-        challengeSwitchCount = challengeSwitchCount + 1
-        if (challengeSwitchCount >= MAX_CHALLENGE_SWITCHES) {
-            challengeSwitchesExhausted = true
-            return true
-        }
-        return false
-    }
 
     /**
      * 解锁强度（1-4）：
@@ -137,8 +107,6 @@ class LockState(context: Context) {
         pauseUsed = 0
         pauseUntil = 0L
         // 锁机结束：重置答题切换计数与耗尽标记
-        challengeSwitchCount = 0
-        challengeSwitchesExhausted = false
     }
 
     // ── 锁机暂停（需答题获取暂停时长） ─────────────────

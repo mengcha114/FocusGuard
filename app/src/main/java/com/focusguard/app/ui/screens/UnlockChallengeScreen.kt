@@ -49,6 +49,7 @@ fun UnlockChallengeScreen(
     var currentQuestion by remember { mutableStateOf(generator.generate(difficulty)) }
     var userAnswer by remember { mutableStateOf("") }
     var currentCorrectCount by remember { mutableIntStateOf(0) }
+    var refreshCount by remember { mutableIntStateOf(0) } // 仅针对「换一题」按钮点击计次
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var switching by remember { mutableStateOf(false) }
@@ -248,8 +249,13 @@ fun UnlockChallengeScreen(
             }
 
             OutlinedButton(
-                onClick = { nextQuestion() },
-                enabled = !switching,
+                onClick = {
+                    if (refreshCount < 5) {
+                        refreshCount++
+                        nextQuestion()
+                    }
+                },
+                enabled = !switching && refreshCount < 5,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
@@ -259,7 +265,11 @@ fun UnlockChallengeScreen(
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(6.dp))
-                Text("换一题", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+                Text(
+                    text = if (refreshCount >= 5) "已达换题上限(5/5)" else "换一题 (${refreshCount}/5)",
+                    color = if (refreshCount >= 5) Color.White.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.7f),
+                    fontSize = 14.sp
+                )
             }
 
             Spacer(Modifier.height(24.dp))

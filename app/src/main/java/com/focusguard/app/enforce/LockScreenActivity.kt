@@ -203,19 +203,7 @@ class LockScreenActivity : ComponentActivity() {
          * - 强度 4：覆盖层不显示按钮，不会走到这里
          */
         fun startChallengeFromOverlay(context: Context, lockState: LockState) {
-            // 答题切换次数已耗尽：本次锁机不可再进入答题页（防反复切走破解）
-            if (lockState.challengeSwitchesExhausted) {
-                Log.w(TAG, "答题切换已达上限，拒绝从悬浮窗进入答题")
-                try {
-                    Toast.makeText(
-                        context, "本次锁机答题切换已达 5 次上限，请等待锁机结束",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } catch (e: Exception) {
-                    // Toast 失败不影响
-                }
-                return
-            }
+
             // 同步隐藏：悬浮窗按钮点击发生在主线程，立即移除窗口，
             // 避免答题页启动瞬间被悬浮窗盖住（"点了没反应/闪一下"）
             try {
@@ -357,15 +345,7 @@ class LockScreenActivity : ComponentActivity() {
      * @param count 正数=需答对的题数（解锁）；-1=申请暂停
      */
     private fun startChallenge(count: Int) {
-        // 答题切换次数已耗尽：锁机页按钮同样拒绝（入口统一关闭）
-        if (lockState.challengeSwitchesExhausted) {
-            Log.w(TAG, "答题切换已达上限，拒绝从锁机页进入答题")
-            Toast.makeText(
-                this, "本次锁机答题切换已达 5 次上限，请等待锁机结束",
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
+
         pendingPause = count < 0
         val required = kotlin.math.abs(count).coerceAtLeast(1)
         val launched = UnlockChallengeActivity.show(applicationContext, required)

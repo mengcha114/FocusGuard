@@ -241,17 +241,17 @@ fun AiChatScreen() {
                                 // 系统提示词：复用设置里的提醒风格 + 注入备忘录 + 工具协议
                                 val memoStore =
                                     com.focusguard.app.data.MemoStore(context)
-                                val memoSummary = memoStore.promptSummary(limit = 10)
+                                                                val memoSummary = memoStore.promptSummary(limit = 10)
                                 val systemText = buildString {
-                                    append(
-                                        "你是专注卫士的 AI 助手，回答简短、友好、有耐心，使用中文。"
-                                    )
-                                    if (settings.aiCustomPrompt.isNotBlank()) {
-                                        append("\n用户设定的提醒风格：")
-                                        append(settings.aiCustomPrompt)
-                                        append("（与检测娱乐时的提醒保持一致）")
+                                    val prompt = settings.aiCustomPrompt.trim()
+                                    if (prompt.isNotBlank()) {
+                                        append("【核心人设/角色指令】你必须严格使用以下人设口吻回答一切问题：")
+                                        append(prompt)
+                                        append("。在每一句回答中都必须保持这个性格和口吻（例如若设定为猫娘则句尾必须带'喵'，若设定为妈妈则用关心唠叨的语气）。
+
+")
                                     }
-                                    append(
+                                    append("你是专注卫士的 AI 助手，回答简短、友好、有耐心，使用中文。")                                    append(
                                         "\n你拥有 lock_phone 工具：当用户请求锁机、自律、管住自己、限制使用手机时，" +
                                             "在你的回复末尾单独输出一行 __LOCK__:<分钟数>（例如 __LOCK__:30 表示锁机 30 分钟），" +
                                             "应用会自动执行锁机。其余情况不要输出该标记。"

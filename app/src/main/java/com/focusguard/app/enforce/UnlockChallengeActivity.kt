@@ -140,12 +140,7 @@ class UnlockChallengeActivity : ComponentActivity() {
         instance = this
         created = true
 
-        // 入口防御：切换次数已耗尽时不允许答题（即使被异常拉起也直接回锁机）
-        if (lockState.challengeSwitchesExhausted) {
-            Log.w(TAG, "答题切换次数已耗尽，拒绝答题")
-            finish()
-            return
-        }
+
 
         val requiredCorrect = intent.getIntExtra(EXTRA_REQUIRED_CORRECT, 1)
         Log.d(TAG, "答题页已创建，需答对 $requiredCorrect 题")
@@ -259,13 +254,7 @@ class UnlockChallengeActivity : ComponentActivity() {
             false
         }
         if (stillLocked) {
-            // 单次锁机答题切换上限（5 次）：累计切走达上限 → 结束答题并
-            // 关闭后续答题入口（悬浮窗按钮/锁机页按钮都会检查 exhausted）
-            if (lockState.recordChallengeSwitch()) {
-                Log.w(TAG, "答题切换已达上限，结束答题并锁定入口")
-                finish()
-                return
-            }
+
             Log.d(TAG, "答题页被切走（第 ${lockState.challengeSwitchCount} 次），响应切屏")
         }
     }
