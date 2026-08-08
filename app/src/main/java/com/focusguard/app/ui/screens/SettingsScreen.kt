@@ -387,8 +387,7 @@ fun SettingsScreen(onSave: () -> Unit) {
                         text = if (dhizukuReady) {
                             "Lock Task 生效后，Home / 上滑 / 最近任务全部失效，无法退出"
                         } else {
-                            "安装并激活 Dhizuku 后，锁机将无法被任何手势退出。
-" +
+                            "安装并激活 Dhizuku 后，锁机将无法被任何手势退出。\n" +
                                 "未生效原因：${com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { "未连接" }}"
                         },
                         fontSize = 11.sp,
