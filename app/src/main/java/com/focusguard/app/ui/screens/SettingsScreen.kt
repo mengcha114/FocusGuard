@@ -111,12 +111,11 @@ fun SettingsScreen(onSave: () -> Unit) {
             val presets = listOf(
                 "OpenAI" to Triple("openai", "https://api.openai.com/v1", "gpt-4o-mini"),
                 "Kimi" to Triple("openai", "https://api.moonshot.cn/v1", "moonshot-v1-8k-vision-preview"),
-                "GLM 智谱" to Triple("openai", "https://open.bigmodel.cn/api/paas/v4", "glm-4v-plus"),
-                "通义千问" to Triple("openai", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-vl-plus"),
-                "DeepSeek" to Triple("openai", "https://api.deepseek.com/v1", "deepseek-chat"),
+                "GLM 智谱" to Triple("openai", "https://open.bigmodel.cn/api/paas/v4", "glm-4v-flash"),
+                "通义千问" to Triple("openai", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-vl-max"),
+                "Agnes (免费)" to Triple("openai", "https://api.gemai.cc/v1", "agnes-2.5-flash"),
                 "Claude" to Triple("anthropic", "https://api.anthropic.com", "claude-3-5-sonnet-latest"),
-                "Gemini" to Triple("gemini", "https://generativelanguage.googleapis.com", "gemini-1.5-flash"),
-                // 自定义 API：不覆盖用户已填内容，仅按 OpenAI 兼容协议发送
+                "Gemini (免费)" to Triple("gemini", "https://generativelanguage.googleapis.com", "gemini-1.5-flash"),
                 "自定义 API" to Triple("openai", "", "")
             )
             presets.chunked(2).forEach { rowPresets ->
@@ -127,20 +126,14 @@ fun SettingsScreen(onSave: () -> Unit) {
                     rowPresets.forEach { (name, cfg) ->
                         OutlinedButton(
                             onClick = {
-                                // 切换前：先把当前输入框内容保存为"我的自定义配置"，
-                                // 这样切走再切回「自定义 API」不会丢
-                                if (apiBaseUrl.isNotBlank()) {
-                                    settings.customApiBaseUrl = apiBaseUrl
-                                    settings.customApiModel = modelName
-                                }
                                 if (cfg.second.isBlank()) {
-                                    // 「自定义 API」：恢复之前保存的自定义配置
+                                    // 点击「自定义 API」：清空三个输入框
                                     apiFormat = "openai"
-                                    if (settings.customApiBaseUrl.isNotBlank()) {
-                                        apiBaseUrl = settings.customApiBaseUrl
-                                        modelName = settings.customApiModel
-                                    }
+                                    apiBaseUrl = ""
+                                    apiKey = ""
+                                    modelName = ""
                                 } else {
+                                    // 点击预设厂商：把预设填入输入框，但保留用户之前存在 custom 里的自定义配置
                                     apiFormat = cfg.first
                                     apiBaseUrl = cfg.second
                                     modelName = cfg.third

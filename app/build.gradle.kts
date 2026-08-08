@@ -11,8 +11,8 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 32
-        versionName = "2.4.0"
+        versionCode = 33
+        versionName = "2.5.0"
     }
 
     // 固定签名：仓库内置 keystore，任何机器/任何次构建签名都一致，
