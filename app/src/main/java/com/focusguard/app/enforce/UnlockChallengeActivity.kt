@@ -86,6 +86,18 @@ class UnlockChallengeActivity : ComponentActivity() {
             private set
 
         /**
+         * 标记"即将启动"：让启动窗口从此刻立即生效。
+         *
+         * 悬浮窗按钮链路会在移除悬浮窗后延迟 150ms 才真正 startActivity
+         * （规避华为 ROM 的 native 竞态）。这 150ms 内 guardTick 若看到
+         * active=false 会把悬浮窗重新拉起盖住答题页——先打点即可让
+         * [active] 立即为 true，guardTick 让位。
+         */
+        fun markLaunchPending() {
+            launchRequestedAt = System.currentTimeMillis()
+        }
+
+        /**
          * 启动答题页。
          *
          * @param requiredCorrect 需要连续答对的题数

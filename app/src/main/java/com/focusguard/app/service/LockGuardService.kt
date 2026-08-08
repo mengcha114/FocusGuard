@@ -306,7 +306,9 @@ class LockGuardService : Service() {
             val challengeForeground = UnlockChallengeActivity.foreground
             val challengeLaunching = UnlockChallengeActivity.active &&
                 !UnlockChallengeActivity.isCreated
-            if (challengeForeground || challengeLaunching) {
+            // 锁机页启动窗口（悬浮窗「暂停」/强度3 路径的延迟启动期间）
+            val lockScreenLaunching = LockScreenActivity.launching
+            if (challengeForeground || challengeLaunching || lockScreenLaunching) {
                 if (LockOverlayManager.isShowing) LockOverlayManager.hide()
                 return
             }

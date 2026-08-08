@@ -63,6 +63,24 @@ class LockScreenActivity : ComponentActivity() {
     companion object {
         private const val TAG = "LockScreenActivity"
         private const val EXTRA_REQUEST_PAUSE = "request_pause"
+        private const val LAUNCH_WINDOW_MS = 4_000L
+
+        /** 最近一次发起启动的时间戳（延迟启动窗口，供 guardTick 让位）。 */
+        @Volatile
+        private var launchPendingAt: Long = 0L
+
+        /** 锁机页是否处于"即将启动"窗口内（悬浮窗按钮点击后 ~4s 内）。 */
+        val launching: Boolean
+            get() {
+                val elapsed = System.currentTimeMillis() - launchPendingAt
+                return elapsed in 0..LAUNCH_WINDOW_MS
+            }
+
+        /** 标记"即将启动"：悬浮窗按钮链路移除悬浮窗后延迟 150ms 才启动，
+         *  这期间 guardTick 不会重新拉起悬浮窗盖住锁机页。 */
+        fun markLaunchPending() {
+            launchPendingAt = System.currentTimeMillis()
+        }
 
         /** 当前锁机页实例，供答题页与守护服务查询。 */
         @Volatile
@@ -140,20 +158,25 @@ class LockScreenActivity : ComponentActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "隐藏覆盖层失败：${e.message}")
             }
-            try {
-                val intent = Intent(appCtx, LockScreenActivity::class.java).apply {
-                    putExtra(EXTRA_REQUEST_PAUSE, true)
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                            Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                    )
+            // 启动窗口标记：150ms 延迟期间 guardTick 不拉起悬浮窗
+            markLaunchPending()
+            // 与 startChallengeFromOverlay 相同：延迟启动规避 native 竞态
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    val intent = Intent(appCtx, LockScreenActivity::class.java).apply {
+                        putExtra(EXTRA_REQUEST_PAUSE, true)
+                        addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                        )
+                    }
+                    appCtx.startActivity(intent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "拉起暂停请求页失败：${e.message}")
                 }
-                appCtx.startActivity(intent)
-            } catch (e: Exception) {
-                Log.e(TAG, "拉起暂停请求页失败：${e.message}")
-            }
+            }, 150L)
         }
 
         /** 兼容旧调用点：语义与 [show] 相同（都是置顶而非重建）。 */
@@ -176,19 +199,48 @@ class LockScreenActivity : ComponentActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "隐藏覆盖层失败：${e.message}")
             }
-            when (lockState.unlockStrength) {
-                // 强度 3（朋友辅助）：必须进锁机页输入密文。
-                // forceActivity=true——否则 show() 默认悬浮窗优先，
-                // 会重新拉起悬浮窗而不启动锁机页（"点了没反应"）。
-                3 -> show(context, forceActivity = true)
-                else -> {
-                    val required = if (lockState.unlockStrength == 2) 5 else 1
-                    UnlockChallengeActivity.show(
-                        context.applicationContext,
-                        required
-                    )
-                }
+            // 诊断记录：导出诊断日志可定位"点击解锁"走到了哪一步
+            try {
+                com.focusguard.app.ai.AiClient.recordDiagnostic(
+                    "点击解锁 强度=${lockState.unlockStrength} 隐藏悬浮窗=${!LockOverlayManager.isShowing}"
+                )
+            } catch (e: Exception) {
+                // 诊断记录失败不影响功能
             }
+            // ── 关键：延迟 150ms 再启动目标页面 ──────────────
+            // TYPE_APPLICATION_OVERLAY 窗口移除后，系统的 InputDispatcher
+            // 需要短暂时间完成窗口注销。华为 EMUI/HarmonyOS 上"移除悬浮窗
+            // 的瞬间立即 startActivity"会触发 native 层崩溃
+            // （Java 的 try-catch 抓不到，crash_log.txt 也不记录）
+            // ——表现为"点击答题解锁直接闪退"且无日志。
+            // 延迟让窗口系统稳定后再启动，彻底避开这个竞态。
+            //
+            // 先打启动窗口标记：150ms 延迟期间 guardTick 不会重新拉起
+            // 悬浮窗（否则答题页/锁机页一出现就被盖住，像"没反应"）。
+            if (lockState.unlockStrength == 3) {
+                LockScreenActivity.markLaunchPending()
+            } else {
+                UnlockChallengeActivity.markLaunchPending()
+            }
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    when (lockState.unlockStrength) {
+                        // 强度 3（朋友辅助）：必须进锁机页输入密文。
+                        // forceActivity=true——否则 show() 默认悬浮窗优先，
+                        // 会重新拉起悬浮窗而不启动锁机页（"点了没反应"）。
+                        3 -> show(context, forceActivity = true)
+                        else -> {
+                            val required = if (lockState.unlockStrength == 2) 5 else 1
+                            UnlockChallengeActivity.show(
+                                context.applicationContext,
+                                required
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "延迟启动解锁流程失败：${e.message}")
+                }
+            }, 150L)
         }
     }
 
@@ -207,6 +259,7 @@ class LockScreenActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         lockState = LockState(this)
         instance = this
+        launchPendingAt = 0L
 
         // ── 拦截侧滑返回手势（Android 13+ 预测性返回）────────
         // 关键：targetSdk 34 时系统返回手势走 OnBackInvokedDispatcher，
