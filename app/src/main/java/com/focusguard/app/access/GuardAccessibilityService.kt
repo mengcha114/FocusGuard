@@ -107,11 +107,15 @@ class GuardAccessibilityService : AccessibilityService() {
         // 番茄钟休息阶段 / 暂停中 放行
         if (!state.shouldBlockNow) return
 
+        // 无论何种事件、无论是否在答题界面，只要下拉了系统通知栏/控制中心，一律强制收起
+        val pkgName = event.packageName?.toString() ?: ""
+        if (pkgName == "com.android.systemui" || pkgName in blockedSystemPackages) {
+            dismissNotificationShade()
+        }
+
         // ── 答题页前台：精准放行（防破解加固） ──────────
         // 答题页正常交互（输入框/输入法）必须放行——悬浮窗在此阶段让位，
-        // 无障碍若整体放行，用户就能在答题页**下拉通知栏点设置**、滑出
-        // 华为智慧多窗侧边栏或开启分屏来破解锁机（"答题页容易退出"根因）。
-        // 因此只放行答题交互本身，通知栏/侧边栏/分屏依然强制拦截。
+        // 只放行答题交互本身，通知栏/侧边栏/分屏依然强制拦截。
         if (UnlockChallengeActivity.foreground) {
             when (event.eventType) {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {

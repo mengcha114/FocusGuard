@@ -266,12 +266,20 @@ class UnlockChallengeActivity : ComponentActivity() {
                 finish()
                 return
             }
-            Log.d(TAG, "答题页被切走（第 ${lockState.challengeSwitchCount} 次），立即拉起锁机")
-            // ── 同步挂载全屏悬浮窗（<10ms） ─────────────
-            // onPause 在主线程执行，showNow 同步 addView——
-            // 切走动画刚发生画面就已被覆盖，不依赖 600ms 守护轮询，
-            // 不给"切走 → 覆盖层出现"之间的空窗期做任何操作。
-            // 无悬浮窗权限才退回 Activity 兜底。
+            Log.d(TAG, "答题页被切走（第 ${lockState.challengeSwitchCount} 次），响应切屏")
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // 只有在真正的 Home/上滑手势离开（onUserLeaveHint）时，才同步挂载悬浮窗
+        Log.d(TAG, "用户按 Home 或上滑切走答题页，挂载全屏悬浮窗锁定")
+        val stillLocked = try {
+            this::lockState.isInitialized && lockState.shouldBlockNow
+        } catch (e: Exception) {
+            false
+        }
+        if (stillLocked) {
             if (com.focusguard.app.enforce.LockOverlayManager.canShow(applicationContext)) {
                 com.focusguard.app.enforce.LockOverlayManager.showNow(
                     context = applicationContext,

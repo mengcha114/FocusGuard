@@ -173,6 +173,10 @@ object LockOverlayManager {
         onRequestPause: (() -> Unit)?
     ) {
         if (isShowing) return
+        if (UnlockChallengeActivity.active) {
+            Log.d(TAG, "答题流程进行中，拒绝挂载悬浮窗")
+            return
+        }
         try {
             val appContext = context.applicationContext
             val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
