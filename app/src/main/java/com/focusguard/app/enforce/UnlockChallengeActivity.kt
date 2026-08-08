@@ -139,21 +139,6 @@ class UnlockChallengeActivity : ComponentActivity() {
         val requiredCorrect = intent.getIntExtra(EXTRA_REQUIRED_CORRECT, 1)
         Log.d(TAG, "答题页已创建，需答对 $requiredCorrect 题")
 
-        // API 33+ 预测性返回（侧滑手势）：必须显式拦截，否则侧滑直接退出答题页。
-        // 注意：注册必须 try-catch——部分 ROM（华为 EMUI/HarmonyOS）的
-        // OnBackInvokedDispatcher 实现不完整，裸注册会抛异常，
-        // 导致"点击解锁直接闪退"（崩溃发生在答题页 onCreate）。
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
-                    predictiveBackCallback
-                )
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "注册预测性返回拦截失败：${e.message}")
-        }
-
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setShowWhenLocked(true)
@@ -231,12 +216,6 @@ class UnlockChallengeActivity : ComponentActivity() {
         returnToLockScreen()
     }
 
-    private val predictiveBackCallback = object : android.window.OnBackInvokedCallback {
-        override fun onBackInvoked() {
-            returnToLockScreen()
-        }
-    }
-
     override fun onResume() {
         super.onResume()
         foreground = true
@@ -261,13 +240,6 @@ class UnlockChallengeActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            try {
-                onBackInvokedDispatcher.unregisterOnBackInvokedCallback(predictiveBackCallback)
-            } catch (e: Exception) {
-                Log.w(TAG, "注销预测性返回回调失败：${e.message}")
-            }
-        }
         if (instance === this) instance = null
         foreground = false
         created = false
