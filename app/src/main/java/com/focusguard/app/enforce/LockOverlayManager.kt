@@ -201,6 +201,25 @@ object LockOverlayManager {
         }
     }
 
+    /**
+     * 同步隐藏：仅允许主线程调用。
+     *
+     * 悬浮窗按钮点击后要立刻启动答题页——如果走异步 [hide]，
+     * 答题页 onCreate 时悬浮窗可能还挂着，把答题页盖住
+     * （用户看到的"点了没反应/闪一下"）。
+     */
+    fun hideNow() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Log.w(TAG, "hideNow 必须在主线程调用，已退回异步 hide")
+            hide()
+            return
+        }
+        if (!isShowing) return
+        lastHideAt = System.currentTimeMillis()
+        cleanupOnMain()
+        Log.d(TAG, "覆盖层已同步隐藏")
+    }
+
     /** 隐藏并销毁覆盖层。任意线程可调用。 */
     fun hide() {
         uiHandler.post {
@@ -354,7 +373,13 @@ object LockOverlayManager {
                         setColor(0xFF4F378B.toInt())
                     }
                     setPadding(dp(context, 28), dp(context, 12), dp(context, 28), dp(context, 12))
-                    setOnClickListener { onStartChallenge() }
+                    setOnClickListener {
+                        try {
+                            onStartChallenge()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "解锁按钮回调异常：${e.message}")
+                        }
+                    }
                 },
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -378,7 +403,13 @@ object LockOverlayManager {
                             setColor(0x334F378B.toInt()) // 半透明紫底，次级按钮观感
                         }
                         setPadding(dp(context, 24), dp(context, 9), dp(context, 24), dp(context, 9))
-                        setOnClickListener { onRequestPause() }
+                        setOnClickListener {
+                            try {
+                                onRequestPause()
+                            } catch (e: Exception) {
+                                Log.e(TAG, "暂停按钮回调异常：${e.message}")
+                            }
+                        }
                     },
                     LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,

@@ -48,6 +48,10 @@ class UnlockChallengeActivity : ComponentActivity() {
         @Volatile
         private var created: Boolean = false
 
+        /** 答题页是否已创建（供守护服务区分"启动窗口期"与"已被切走"）。 */
+        val isCreated: Boolean
+            get() = created
+
         /** 最近一次发起启动的时间戳，用于覆盖"启动中"的空窗期。 */
         @Volatile
         private var launchRequestedAt: Long = 0L
@@ -123,12 +127,19 @@ class UnlockChallengeActivity : ComponentActivity() {
         val requiredCorrect = intent.getIntExtra(EXTRA_REQUIRED_CORRECT, 1)
         Log.d(TAG, "答题页已创建，需答对 $requiredCorrect 题")
 
-        // API 33+ 预测性返回（侧滑手势）：必须显式拦截，否则侧滑直接退出答题页
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
-                predictiveBackCallback
-            )
+        // API 33+ 预测性返回（侧滑手势）：必须显式拦截，否则侧滑直接退出答题页。
+        // 注意：注册必须 try-catch——部分 ROM（华为 EMUI/HarmonyOS）的
+        // OnBackInvokedDispatcher 实现不完整，裸注册会抛异常，
+        // 导致"点击解锁直接闪退"（崩溃发生在答题页 onCreate）。
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    predictiveBackCallback
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "注册预测性返回拦截失败：${e.message}")
         }
 
         try {

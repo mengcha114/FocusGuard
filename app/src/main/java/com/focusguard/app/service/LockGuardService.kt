@@ -297,10 +297,16 @@ class LockGuardService : Service() {
                 return
             }
 
-            // 答题页在前台时让位：隐藏覆盖层，否则会挡住答题页输入。
-            // 注意用 foreground 而非 active——答题页被切走后（仍 active）
-            // 必须立即恢复覆盖层锁屏，否则"切走答题页 = 自由使用"。
-            if (UnlockChallengeActivity.foreground) {
+            // 答题页让位规则：
+            // - foreground（答题页在前台）→ 隐藏覆盖层，否则挡住答题页输入
+            // - active 且尚未 created（启动窗口期：按钮点击后 ~1.5s 内）→ 同样让位，
+            //   否则按钮点击后 guardTick 会把刚移除的覆盖层重新拉起盖住答题页
+            // - created 但被切走（foreground=false）→ 不满足上述条件，
+            //   走下方覆盖层拉起逻辑锁屏（堵住"切走答题页 = 自由使用"）
+            val challengeForeground = UnlockChallengeActivity.foreground
+            val challengeLaunching = UnlockChallengeActivity.active &&
+                !UnlockChallengeActivity.isCreated
+            if (challengeForeground || challengeLaunching) {
                 if (LockOverlayManager.isShowing) LockOverlayManager.hide()
                 return
             }

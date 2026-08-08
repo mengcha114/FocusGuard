@@ -136,7 +136,7 @@ class LockScreenActivity : ComponentActivity() {
         fun showForPause(context: Context) {
             val appCtx = context.applicationContext
             try {
-                LockOverlayManager.hide()
+                LockOverlayManager.hideNow()
             } catch (e: Exception) {
                 Log.w(TAG, "隐藏覆盖层失败：${e.message}")
             }
@@ -169,13 +169,18 @@ class LockScreenActivity : ComponentActivity() {
          * - 强度 4：覆盖层不显示按钮，不会走到这里
          */
         fun startChallengeFromOverlay(context: Context, lockState: LockState) {
+            // 同步隐藏：悬浮窗按钮点击发生在主线程，立即移除窗口，
+            // 避免答题页启动瞬间被悬浮窗盖住（"点了没反应/闪一下"）
             try {
-                LockOverlayManager.hide()
+                LockOverlayManager.hideNow()
             } catch (e: Exception) {
                 Log.w(TAG, "隐藏覆盖层失败：${e.message}")
             }
             when (lockState.unlockStrength) {
-                3 -> show(context)
+                // 强度 3（朋友辅助）：必须进锁机页输入密文。
+                // forceActivity=true——否则 show() 默认悬浮窗优先，
+                // 会重新拉起悬浮窗而不启动锁机页（"点了没反应"）。
+                3 -> show(context, forceActivity = true)
                 else -> {
                     val required = if (lockState.unlockStrength == 2) 5 else 1
                     UnlockChallengeActivity.show(
