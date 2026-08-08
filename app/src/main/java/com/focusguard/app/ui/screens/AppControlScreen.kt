@@ -156,6 +156,16 @@ fun AppControlScreen() {
             onSaved = { category, rule ->
                 val categoryStore = AppCategoryStore(context)
                 val ruleStore = UsageRuleStore(context)
+
+                // 限额改动后必须解除既有封锁，否则旧封锁在新限额下仍然生效
+                // （用户反馈"修改限额后软件仍被封锁"的根因）：
+                // ① 清掉 AI 执法下发的临时封锁截止时间
+                // ② 归零今日累计，让新限额从干净状态重新计时
+                // ③ 若封锁页正挂在前台，通知它自行退出
+                AppBlockStore(context).clear(app.packageName)
+                ruleStore.resetToday(app.packageName)
+                com.focusguard.app.enforce.AppBlockActivity
+                    .dismissIfShowing(app.packageName)
                 if (category == null) {
                     categoryStore.clearUserOverride(app.packageName)
                 } else {

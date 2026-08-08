@@ -81,6 +81,31 @@ class AppBlockActivity : ComponentActivity() {
             }
             context.startActivity(intent)
         }
+
+        /**
+         * 当前挂在前台的封锁页实例（弱引用语义：onDestroy 时清空）。
+         *
+         * 用于「用户改了限额」这种场景：规则一变，正在显示的封锁页必须
+         * 立即撤掉，否则用户会看到"限额都改了还在被封锁"。
+         */
+        @Volatile
+        private var instance: AppBlockActivity? = null
+
+        /**
+         * 若封锁页正在显示指定应用，则立刻关闭它。
+         *
+         * @param packageName 被解除封锁的包名；传 null 表示无条件关闭
+         */
+        fun dismissIfShowing(packageName: String? = null) {
+            val act = instance ?: return
+            if (packageName != null && act.blockedPackage != packageName) return
+            act.runOnUiThread {
+                runCatching {
+                    Log.d(TAG, "限额已变更，关闭封锁页：${act.blockedPackage}")
+                    act.finish()
+                }
+            }
+        }
     }
 
     private var blockedPackage: String = ""
@@ -102,6 +127,7 @@ class AppBlockActivity : ComponentActivity() {
         // 保持屏幕常亮，避免息屏后封锁页被系统回收
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        instance = this
         blockedPackage = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
         val label = intent.getStringExtra(EXTRA_LABEL).orEmpty().ifBlank { blockedPackage }
         val used = intent.getIntExtra(EXTRA_USED_MINUTES, 0)
@@ -133,6 +159,44 @@ class AppBlockActivity : ComponentActivity() {
         // 复用同一实例时刷新数据，避免显示上一个应用的信息
         setIntent(intent)
         recreate()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        instance = this
+        // 自检：回到前台时确认封锁是否仍然成立。
+        // 用户可能在别处（应用管控页）刚把限额改大或删掉规则——
+        // 这时封锁页应当自己退场，而不是继续挡着。
+        if (!stillBlocked()) {
+            Log.d(TAG, "封锁条件已不成立，封锁页自行退出：$blockedPackage")
+            finish()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (instance === this) instance = null
+    }
+
+    /**
+     * 封锁是否仍然成立。
+     *
+     * 两个来源都要看：AI 执法下发的临时封锁（AppBlockStore），
+     * 以及用户配置的每日硬上限（UsageRuleStore）。任一成立就继续挡。
+     */
+    private fun stillBlocked(): Boolean {
+        if (blockedPackage.isBlank()) return false
+        return runCatching {
+            val tempBlocked = com.focusguard.app.data.AppBlockStore(this)
+                .isBlocked(blockedPackage)
+            if (tempBlocked) return@runCatching true
+
+            val store = com.focusguard.app.usage.UsageRuleStore(this)
+            val limit = store.getRule(blockedPackage)?.hardBlockMinutes
+                ?: return@runCatching false
+            val usedMinutes = (store.getTodaySeconds(blockedPackage) / 60).toInt()
+            usedMinutes >= limit
+        }.getOrDefault(true) // 读取异常时保守起见继续挡
     }
 
     @Deprecated("Back is intentionally disabled while blocked")

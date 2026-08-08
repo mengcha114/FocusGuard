@@ -261,6 +261,7 @@ class LockGuardService : Service() {
             LockOverlayManager.show(
                 context = applicationContext,
                 lockState = lockState,
+                force = true, // 锁机主体显示：不走冷却，确保立即覆盖
                 onStartChallenge = {
                     // 覆盖层按钮：按解锁强度直接进入解锁流程
                     // （强度 1/2 直接开答题页——若绕道锁机页，guardTick 可能在
@@ -284,8 +285,7 @@ class LockGuardService : Service() {
         // ── A. 锁机守护 ─────────────────────────────
         if (lockState.isLocked && lockState.shouldBlockNow) {
             // 屏幕已息屏（用户按电源键/自动息屏）：尊重用户，不做任何拉起动作。
-            // 否则拉起覆盖层/锁机页会重新点亮屏幕——"锁机后无法息屏"的根因。
-            // 屏幕重新亮起后（isInteractive=true）守护自动恢复。
+            // 否则拉起覆盖层会重新点亮屏幕——"锁机后无法息屏"的根因。
             val pm = getSystemService(android.os.PowerManager::class.java)
             if (pm != null && !pm.isInteractive) {
                 return
@@ -297,20 +297,27 @@ class LockGuardService : Service() {
                 return
             }
 
-            // 锁机页在前台 → 无需覆盖层，正常交互
-            if (LockScreenActivity.foreground) {
-                if (LockOverlayManager.isShowing) LockOverlayManager.hide()
+            // ── 主防线：全屏悬浮窗常驻 ────────────────────
+            // 悬浮窗不属于任何 Task：上滑手势、最近任务、清后台都动不了它，
+            // z-order 也高于普通 Activity 与小窗。只要权限在手就让它一直挂着，
+            // 不再等"锁机页掉出前台"才补位——那个间隙正是破解窗口。
+            if (LockOverlayManager.canShow(applicationContext)) {
+                if (LockOverlayManager.isShowing) {
+                    // 已显示：校验窗口是否真的还挂着（ROM 清理/进程重建会掉）
+                    LockOverlayManager.verifyAttached(applicationContext, lockState)
+                } else {
+                    ensureOverlay()
+                }
+                // 悬浮窗本身已是完整锁机界面，不必再拉 Activity 到前台：
+                // 少一次 startActivity 就少一次闪烁和被手势销毁的机会。
                 return
             }
 
-            // 锁机页不在前台（被上滑/销毁/切后台）：
-            // 立即用 TYPE_APPLICATION_OVERLAY 覆盖层堵住桌面/小窗/最近任务，
-            // 同时把锁机页拉回前台；锁机页回来后覆盖层自动隐藏。
-            ensureOverlay()
-
+            // ── 兜底：无悬浮窗权限时退回 Activity 方案 ─────
+            if (LockScreenActivity.foreground) return
             if (now - lastLockReassertAt < REASSERT_COOLDOWN_MS) return
             lastLockReassertAt = now
-            Log.d(TAG, "锁机中但锁机页不在前台（前台=$foreground），拉起锁机页")
+            Log.d(TAG, "无悬浮窗权限，改用锁机页兜底（前台=$foreground）")
             LockScreenActivity.show(applicationContext)
             return
         }

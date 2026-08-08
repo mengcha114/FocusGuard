@@ -4,12 +4,14 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -17,34 +19,53 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.focusguard.app.data.LockState
+import com.focusguard.app.data.MemoStore
 
 /**
- * TYPE_APPLICATION_OVERLAY 全屏覆盖层管理器（纯传统 View 实现）。
+ * 锁机主体：TYPE_APPLICATION_OVERLAY 全屏悬浮窗（纯传统 View）。
  *
- * ## 为什么需要这个
- * Activity 的锁机页存在一个无法回避的软肋：小窗（Picture-in-Picture / 浮动窗口）
- * 的 z-order 天然高于普通 Activity。TYPE_APPLICATION_OVERLAY 窗口是 App 能申请的
- * 最高 z-order，盖住小窗/分屏，且不受"清后台"影响。
+ * ## 为什么悬浮窗是主体，而不是 Activity
+ * Activity 有一堆无法回避的软肋：会被上滑手势销毁、被最近任务划掉、被系统
+ * 内存回收、被 ROM 清理、被小窗/分屏压在下面。任何一次"掉出前台"到"被守护
+ * 拉回"之间都是破解窗口（哪怕只有 300ms）。
  *
- * ## 线程模型（重要）
- * WindowManager 的 addView / removeViewImmediate **必须在主线程**执行。
- * 本管理器所有窗口操作统一 post 到主线程 Handler 串行执行；
- * show/hide 可被任意线程调用（守护协程、Activity 回调），内部保证线程安全。
+ * TYPE_APPLICATION_OVERLAY 是应用能申请的最高 z-order 窗口：
+ * - 不属于任何 Task → 上滑手势、最近任务、清后台都动不了它
+ * - z-order 高于普通 Activity、小窗、分屏
+ * - 只要不主动 removeView 就一直挂在屏幕上，没有"窗口期"
+ *
+ * 所以现在的分工是：**悬浮窗常驻显示锁机界面**，Activity 只在答题时出场。
+ * 无悬浮窗权限时才退回 Activity 方案（见 [LockGuardService]）。
+ *
+ * ## 按键拦截（关键加固）
+ * 早期版本带 `FLAG_NOT_FOCUSABLE`，窗口完全不接收按键 → 返回键/侧滑手势直接
+ * 穿透到下层应用，锁机形同虚设。现在窗口是 focusable 的，并在 root 上装
+ * [KeyEvent] 监听吞掉返回/菜单等键；音量键放行（不影响用户调音量）。
+ *
+ * ## 自愈
+ * [verifyAttached] 由守护巡检每 300ms 调用：若窗口被系统回收（进程被杀后
+ * 重建、ROM 清理悬浮窗），立即重建。这是"锁死"的最后一道保险。
+ *
+ * ## 线程模型
+ * WindowManager 的 addView / removeViewImmediate **必须在主线程**。
+ * 所有窗口操作统一 post 到主线程 Handler 串行执行；show/hide/verifyAttached
+ * 可被任意线程调用（守护协程、Activity 回调）。
  *
  * ## 为什么不用 Compose（教训）
- * 早期用 ComposeView 渲染覆盖层，在 WindowManager 直挂的 View 上崩溃：
- * `ViewTreeLifecycleOwner not found`（Compose WindowRecomposer 需要 Activity
- * 窗口上下文）。覆盖层 UI 极简，传统 View 零框架依赖。
- *
- * ## 防竞态
- * [HIDE_COOLDOWN_MS]：hide 后短暂拒绝重新 show——否则"按钮→hide→guardTick
- * 立即重 show"会把锁机页/答题页盖住，表现为"点了没反应"。
+ * ComposeView 挂在 WindowManager 上会崩：`ViewTreeLifecycleOwner not found`
+ * （Compose 的 WindowRecomposer 需要 Activity 窗口上下文）。传统 View 零依赖。
  */
 object LockOverlayManager {
 
     private const val TAG = "LockOverlayManager"
 
-    /** hide 后拒绝重新 show 的冷却时长：防"按钮→hide→guardTick 立即重 show"竞态。 */
+    /**
+     * hide 后拒绝重新 show 的冷却时长。
+     *
+     * 仅用于答题流程：hide → 答题页启动之间若被 guardTick 立即重 show，
+     * 会把答题页盖住（表现为"点了没反应"）。锁机主体显示走 [show] 的
+     * force 路径，不受冷却影响。
+     */
     private const val HIDE_COOLDOWN_MS = 1200L
 
     /** 覆盖层是否当前可见（主线程维护，volatile 供任意线程读取）。 */
@@ -55,56 +76,123 @@ object LockOverlayManager {
     private var windowManager: WindowManager? = null
     private var overlayRoot: FrameLayout? = null
     private var timeText: TextView? = null
+    private var statusText: TextView? = null
     private var currentLockState: LockState? = null
+    private var lastChallengeCallback: (() -> Unit)? = null
+    private var lastContext: Context? = null
 
     private val uiHandler = Handler(Looper.getMainLooper())
     private var clockRunnable: Runnable? = null
     private var lastHideAt = 0L
 
+    /** 是否具备悬浮窗权限——决定锁机走"悬浮窗主体"还是"Activity 兜底"。 */
+    fun canShow(context: Context): Boolean = Settings.canDrawOverlays(context)
+
     /**
      * 显示覆盖层（幂等）。任意线程可调用；窗口操作在内部切到主线程执行。
      *
-     * @param context 任意 Context
-     * @param lockState 当前锁机状态，覆盖层每秒刷新剩余时间；按钮按解锁强度显示
-     * @param onStartChallenge 点击解锁按钮时的回调（主线程回调）
+     * @param force true 时忽略 hide 冷却（锁机主体显示用）。
+     *              答题流程结束后的补位显示应传 false，避免盖住答题页。
      */
     fun show(
         context: Context,
         lockState: LockState,
+        force: Boolean = false,
         onStartChallenge: () -> Unit
     ) {
         if (isShowing) return
-        val now = System.currentTimeMillis()
-        if (now - lastHideAt < HIDE_COOLDOWN_MS) {
-            Log.d(TAG, "覆盖层冷却中，跳过本次显示")
+        if (!force) {
+            val now = System.currentTimeMillis()
+            if (now - lastHideAt < HIDE_COOLDOWN_MS) {
+                Log.d(TAG, "覆盖层冷却中，跳过本次显示")
+                return
+            }
+        }
+        if (!canShow(context)) {
+            Log.w(TAG, "缺少 SYSTEM_ALERT_WINDOW 权限，覆盖层不可用（走 Activity 兜底）")
             return
         }
-        if (!Settings.canDrawOverlays(context)) {
-            Log.w(TAG, "缺少 SYSTEM_ALERT_WINDOW 权限，覆盖层不启动（Activity 防线仍有效）")
-            return
-        }
+        // 记住参数：窗口被系统回收后 verifyAttached 用它原样重建
+        lastContext = context.applicationContext
+        lastChallengeCallback = onStartChallenge
+
         uiHandler.post {
             if (isShowing) return@post
             try {
                 val appContext = context.applicationContext
                 val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-                val root = FrameLayout(appContext).apply {
-                    setBackgroundColor(0xE8000000.toInt())
+                val root = object : FrameLayout(appContext) {
+                    /**
+                     * 吞掉返回键：这是侧滑返回手势最终落到的按键事件。
+                     * dispatchKeyEvent 比 OnKeyListener 更靠前，ROM 手势也走这里。
+                     */
+                    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                        return when (event.keyCode) {
+                            // 音量键放行：锁机不该妨碍用户调音量
+                            KeyEvent.KEYCODE_VOLUME_UP,
+                            KeyEvent.KEYCODE_VOLUME_DOWN,
+                            KeyEvent.KEYCODE_VOLUME_MUTE -> super.dispatchKeyEvent(event)
+                            // 其余全部吞掉（返回、菜单、搜索、多任务…）
+                            else -> true
+                        }
+                    }
+                }.apply {
+                    background = buildBackground()
+                    isFocusableInTouchMode = true
+                    isFocusable = true
                 }
                 root.addView(buildContent(appContext, lockState, onStartChallenge))
 
                 wm.addView(root, buildLayoutParams())
+                root.requestFocus()
+                hideSystemBars(root)
 
                 windowManager = wm
                 overlayRoot = root
                 currentLockState = lockState
                 isShowing = true
                 startClock()
-                Log.d(TAG, "覆盖层已显示")
+                Log.d(TAG, "锁机覆盖层已显示（悬浮窗主体）")
             } catch (e: Exception) {
                 Log.e(TAG, "显示覆盖层失败：${e.message}")
                 cleanupOnMain()
+            }
+        }
+    }
+
+    /**
+     * 校验窗口仍挂在屏幕上；被系统回收则原样重建。
+     *
+     * 守护巡检每 tick 调用。这是"进程被杀后重建 / ROM 清理悬浮窗"
+     * 之后能自动恢复锁机的关键。
+     */
+    /**
+     * 校验窗口仍挂在屏幕上；被系统回收则原样重建。
+     * 由守护巡检每 tick 调用。
+     */
+    fun verifyAttached(
+        context: Context? = lastContext,
+        lockState: LockState? = currentLockState
+    ) {
+        if (!isShowing) return
+        uiHandler.post {
+            val root = overlayRoot ?: return@post
+            if (root.isAttachedToWindow) {
+                // 顺手把系统栏重新隐藏：部分 ROM 会在切换应用后重置
+                hideSystemBars(root)
+                return@post
+            }
+            Log.w(TAG, "覆盖层已被系统回收，立即重建")
+            val ctx = lastContext
+            val ls = currentLockState
+            val cb = lastChallengeCallback
+            cleanupOnMain()
+            if (ctx != null && ls != null && cb != null) {
+                show(ctx, ls, force = true, onStartChallenge = cb)
+            } else if (context != null && lockState != null) {
+                val savedCb = cb ?: {}
+                show(context, lockState, force = true, onStartChallenge = savedCb)
             }
         }
     }
@@ -124,6 +212,12 @@ object LockOverlayManager {
     private fun dp(context: Context, value: Int): Int =
         (value * context.resources.displayMetrics.density).toInt()
 
+    /** 深色渐变背景：比纯黑更有质感，也和锁机页视觉统一。 */
+    private fun buildBackground(): GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TOP_BOTTOM,
+        intArrayOf(0xFF0A0A0F.toInt(), 0xFF151221.toInt(), 0xFF0D0B14.toInt())
+    )
+
     private fun buildContent(
         context: Context,
         lockState: LockState,
@@ -132,76 +226,136 @@ object LockOverlayManager {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(context, 32), dp(context, 32), dp(context, 32), dp(context, 32))
+            setPadding(dp(context, 34), dp(context, 40), dp(context, 34), dp(context, 40))
         }
 
-        // 锁图标（Unicode 锁形，避免依赖图标库）
-        val icon = TextView(context).apply {
-            text = "\uD83D\uDD12"
-            textSize = 46f
+        // 锁图标（Unicode 锁形，避免依赖图标资源）
+        container.addView(
+            TextView(context).apply {
+                text = "\uD83D\uDD12"
+                textSize = 44f
+                gravity = Gravity.CENTER
+            },
+            matchWrap()
+        )
+
+        container.addView(
+            TextView(context).apply {
+                text = "专注卫士"
+                textSize = 20f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                letterSpacing = 0.08f
+                setPadding(0, dp(context, 12), 0, 0)
+            },
+            matchWrap()
+        )
+
+        // 状态行（锁定中 / 番茄钟专注 / 暂停中，每秒刷新）
+        val status = TextView(context).apply {
+            text = "设备已锁定"
+            textSize = 12f
+            setTextColor(Color.parseColor("#9C8BC9"))
             gravity = Gravity.CENTER
+            setPadding(0, dp(context, 6), 0, 0)
         }
-        container.addView(icon, matchWrap())
+        statusText = status
+        container.addView(status, matchWrap())
 
-        // 标题
-        val title = TextView(context).apply {
-            text = "专注卫士"
-            textSize = 22f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setPadding(0, dp(context, 14), 0, 0)
-        }
-        container.addView(title, matchWrap())
-
-        // 剩余时间
+        // 大号倒计时
         val time = TextView(context).apply {
             text = "--:--"
-            textSize = 44f
-            setTextColor(Color.parseColor("#FF6B6B"))
+            textSize = 52f
+            setTextColor(Color.parseColor("#B4A5FF"))
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            setPadding(0, dp(context, 18), 0, 0)
+            setPadding(0, dp(context, 20), 0, 0)
         }
         timeText = time
         container.addView(time, matchWrap())
 
-        // 说明
-        val hint = TextView(context).apply {
-            text = "屏幕已锁定，请专心工作学习"
-            textSize = 13f
-            setTextColor(Color.parseColor("#8CFFFFFF"))
-            gravity = Gravity.CENTER
-            setPadding(0, dp(context, 12), 0, 0)
-        }
-        container.addView(hint, matchWrap())
-
-        // 解锁按钮：按强度显示（强度 4 不可提前解锁，不显示按钮）
-        if (lockState.unlockStrength < 4) {
-            val buttonText = when (lockState.unlockStrength) {
-                3 -> "去解锁"
-                else -> "答题解锁"
-            }
-            val button = Button(context).apply {
-                text = buttonText
-                textSize = 15f
-                setTextColor(Color.parseColor("#D0BCFF"))
-                setBackgroundColor(Color.TRANSPARENT)
-                isAllCaps = false
-                setOnClickListener {
-                    onStartChallenge()
-                }
-            }
-            container.addView(button, matchWrap())
-        } else {
-            val noUnlock = TextView(context).apply {
-                text = "本次锁机不可提前解锁，请等待时间结束"
+        container.addView(
+            TextView(context).apply {
+                text = "锁定期间无法使用其他应用"
                 textSize = 12f
-                setTextColor(Color.parseColor("#C6786F"))
+                setTextColor(Color.parseColor("#70FFFFFF"))
                 gravity = Gravity.CENTER
-                setPadding(0, dp(context, 12), 0, 0)
+                setPadding(0, dp(context, 4), 0, 0)
+            },
+            matchWrap()
+        )
+
+        // 待办清单：锁机时看到自己该做什么，比单纯拦截更有意义
+        val pending = runCatching { MemoStore(context).getPending() }.getOrDefault(emptyList())
+        if (pending.isNotEmpty()) {
+            container.addView(
+                TextView(context).apply {
+                    text = "待办清单"
+                    textSize = 10f
+                    letterSpacing = 0.2f
+                    setTextColor(Color.parseColor("#9C8BC9"))
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(context, 24), 0, dp(context, 8))
+                },
+                matchWrap()
+            )
+            pending.take(3).forEach { item ->
+                val tag = when {
+                    item.overdue -> " · 逾期"
+                    item.priority == 2 -> " · 紧急"
+                    item.priority == 1 -> " · 重要"
+                    else -> ""
+                }
+                container.addView(
+                    TextView(context).apply {
+                        text = "· ${item.text}$tag"
+                        textSize = 12f
+                        setTextColor(Color.parseColor("#B0FFFFFF"))
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(context, 2), 0, dp(context, 2))
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                    },
+                    matchWrap()
+                )
             }
-            container.addView(noUnlock, matchWrap())
+        }
+
+        // 解锁按钮：按强度显示（强度 4 不可提前解锁 → 不给按钮）
+        if (lockState.unlockStrength < 4) {
+            container.addView(
+                Button(context).apply {
+                    text = if (lockState.unlockStrength == 3) "去解锁" else "答题解锁"
+                    textSize = 15f
+                    setTextColor(Color.WHITE)
+                    isAllCaps = false
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(context, 14).toFloat()
+                        setColor(0xFF4F378B.toInt())
+                    }
+                    setPadding(dp(context, 28), dp(context, 12), dp(context, 28), dp(context, 12))
+                    setOnClickListener { onStartChallenge() }
+                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = Gravity.CENTER
+                    topMargin = dp(context, 28)
+                }
+            )
+        } else {
+            container.addView(
+                TextView(context).apply {
+                    text = "本次锁机不可提前解锁，请等待时间结束"
+                    textSize = 12f
+                    setTextColor(Color.parseColor("#EF9A9A"))
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(context, 26), 0, 0)
+                },
+                matchWrap()
+            )
         }
 
         return container
@@ -224,13 +378,16 @@ object LockOverlayManager {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
-            // NOT_FOCUSABLE：不抢焦点，不挡输入法
-            // LAYOUT_IN_SCREEN | LAYOUT_NO_LIMITS：覆盖状态栏/导航栏区域
-            // 注意：不加 TURN_SCREEN_ON / KEEP_SCREEN_ON——
-            // 否则息屏后 guardTick 拉起覆盖层会把屏幕重新点亮（"无法息屏"）
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            // 注意这里**故意不加** FLAG_NOT_FOCUSABLE：
+            // 窗口必须能接收按键，才能吞掉返回键/侧滑手势。
+            // 这正是此前"侧滑轻易破解"的根因。
+            //
+            // LAYOUT_IN_SCREEN | LAYOUT_NO_LIMITS：铺满状态栏/导航栏区域
+            // FLAG_FULLSCREEN：隐藏状态栏，减少下拉通知栏的入口
+            // 不加 TURN_SCREEN_ON / KEEP_SCREEN_ON——否则息屏会被强行点亮
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_FULLSCREEN or
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -240,19 +397,53 @@ object LockOverlayManager {
         }
     }
 
+    /** 隐藏系统栏（沉浸式）：减少下拉通知栏与导航手势的入口。 */
+    private fun hideSystemBars(root: View) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                root.windowInsetsController?.let { controller ->
+                    controller.hide(
+                        android.view.WindowInsets.Type.statusBars() or
+                            android.view.WindowInsets.Type.navigationBars()
+                    )
+                    controller.systemBarsBehavior = android.view.WindowInsetsController
+                        .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                root.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "隐藏系统栏失败：${e.message}")
+        }
+    }
+
     // ── 倒计时刷新（主线程 Handler，每秒） ────────────────────
 
     private fun startClock() {
         val runnable = object : Runnable {
             override fun run() {
                 val ls = currentLockState ?: return
-                val t = timeText ?: return
-                val secs = ls.remainingSeconds
+                val secs = when {
+                    ls.isPaused -> ls.pauseRemainingSeconds
+                    ls.lockSource == "POMODORO" -> ls.pomodoroRemainingSeconds
+                    else -> ls.remainingSeconds
+                }
                 val h = secs / 3600
                 val m = (secs % 3600) / 60
                 val s = secs % 60
-                t.text = if (h > 0) "%02d:%02d:%02d".format(h, m, s)
+                timeText?.text = if (h > 0) "%02d:%02d:%02d".format(h, m, s)
                 else "%02d:%02d".format(m, s)
+
+                statusText?.text = when {
+                    ls.isPaused -> "暂停中 · 可自由使用"
+                    ls.lockSource == "POMODORO" && ls.pomodoroIsWorkPhase -> "番茄钟专注阶段"
+                    ls.lockSource == "POMODORO" -> "番茄钟休息阶段"
+                    else -> "设备已锁定"
+                }
                 uiHandler.postDelayed(this, 1000L)
             }
         }
@@ -277,6 +468,7 @@ object LockOverlayManager {
         overlayRoot = null
         windowManager = null
         timeText = null
+        statusText = null
         isShowing = false
     }
 }
