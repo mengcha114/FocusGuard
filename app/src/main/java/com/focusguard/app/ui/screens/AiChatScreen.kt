@@ -312,7 +312,7 @@ fun AiChatScreen() {
                                     .MemoToolExecutor.stripMarkers(reply)
                                     .replace(Regex("""__LOCK__:\d+"""), "")
                                     .trim()
-                                if (memoResult.changed) {
+                                if (!memoResult.isEmpty) {
                                     displayReply += "\n\n" + memoResult.summary()
                                 }
                                 if (lockResult != null) {

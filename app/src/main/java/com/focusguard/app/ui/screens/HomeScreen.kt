@@ -19,6 +19,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.LogStore
+import com.focusguard.app.data.MemoItem
+import com.focusguard.app.data.MemoStore
 import com.focusguard.app.data.Settings
 
 @Composable
