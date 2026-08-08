@@ -321,15 +321,23 @@ fun AiChatScreen() {
 
                                 // 流结束后：把最后一条 AI 消息（占位/增量）替换为完整回复，
                                 // 并持久化。绝不追加第二条 AI 消息（避免重复）。
-                                scope.launch {
-                                    val last = messages.lastOrNull()
-                                    if (last != null && last.role == "ai") {
-                                        messages = messages.dropLast(1) +
-                                            last.copy(text = displayReply)
-                                        chatHistory.addMessage(
-                                            "ai", displayReply, last.time
-                                        )
-                                    }
+                                val last = messages.lastOrNull()
+                                if (last != null && last.role == "ai") {
+                                    messages = messages.dropLast(1) +
+                                        last.copy(text = displayReply)
+                                    chatHistory.addMessage("ai", displayReply, last.time)
+                                }
+                            } catch (e: Exception) {
+                                // 流式/网络异常：把占位消息替换为错误说明并保存——
+                                // 否则占位"…"永远卡在屏幕上，且 AI 回复不会入库
+                                // （这就是"对话记录没保存"的根因之一）。
+                                if (e is kotlinx.coroutines.CancellationException) throw e
+                                val errMsg = "⚠️ 请求失败：${e.message ?: "未知错误"}"
+                                val lastMsg = messages.lastOrNull()
+                                if (lastMsg != null && lastMsg.role == "ai") {
+                                    messages = messages.dropLast(1) +
+                                        lastMsg.copy(text = errMsg)
+                                    chatHistory.addMessage("ai", errMsg, lastMsg.time)
                                 }
                             } finally {
                                 sending = false
@@ -337,15 +345,15 @@ fun AiChatScreen() {
                             listState.animateScrollToItem(messages.size - 1)
                         }
                     },
-                    modifier = Modifier.size(56.dp),
-                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.size(60.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF)),
                     enabled = !sending
                 ) {
                     Icon(
                         Icons.Default.Send,
                         contentDescription = "发送",
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
             }

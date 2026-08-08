@@ -62,6 +62,7 @@ class LockScreenActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "LockScreenActivity"
+        private const val EXTRA_REQUEST_PAUSE = "request_pause"
 
         /** 当前锁机页实例，供答题页与守护服务查询。 */
         @Volatile
@@ -74,13 +75,44 @@ class LockScreenActivity : ComponentActivity() {
             private set
 
         /**
-         * 显示锁机页。
+         * 显示锁机。
          *
-         * 必须使用 applicationContext 调用，避免持有已销毁的 Activity。
+         * **悬浮窗优先**：有悬浮窗权限且锁机生效时，锁机主体由
+         * [LockOverlayManager] 承担（锁得更死），Activity 只用于
+         * 答题/暂停/朋友解锁等交互场景。
+         *
+         * 所有旧调用点（守护服务、看门狗、开机广播、无障碍、Enforcer）
+         * 都经过这里，因此行为自动统一——不再出现"时而悬浮窗、
+         * 时而锁机页"的交替。
+         *
+         * @param forceActivity true 时强制走 Activity（答题/暂停交互场景，
+         *                      由 [startChallengeFromOverlay] / [showForPause] 使用）
          */
-        fun show(context: Context) {
+        fun show(context: Context, forceActivity: Boolean = false) {
+            val appCtx = context.applicationContext
+            if (!forceActivity && LockOverlayManager.canShow(appCtx)) {
+                try {
+                    val ls = LockState(appCtx)
+                    if (ls.isLocked && ls.shouldBlockNow) {
+                        LockOverlayManager.show(
+                            context = appCtx,
+                            lockState = ls,
+                            force = true,
+                            onStartChallenge = {
+                                startChallengeFromOverlay(appCtx, LockState(appCtx))
+                            },
+                            onRequestPause = {
+                                showForPause(appCtx)
+                            }
+                        )
+                        return
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "悬浮窗优先显示失败，退回 Activity：${e.message}")
+                }
+            }
             try {
-                val intent = Intent(context.applicationContext, LockScreenActivity::class.java).apply {
+                val intent = Intent(appCtx, LockScreenActivity::class.java).apply {
                     addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
                             Intent.FLAG_ACTIVITY_SINGLE_TOP or
@@ -88,9 +120,39 @@ class LockScreenActivity : ComponentActivity() {
                             Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                     )
                 }
-                context.applicationContext.startActivity(intent)
+                appCtx.startActivity(intent)
             } catch (e: Exception) {
                 Log.e(TAG, "拉起锁机页失败：${e.message}")
+            }
+        }
+
+        /**
+         * 答题换取暂停（悬浮窗「暂停」按钮入口）。
+         *
+         * 与 [show] 不同：**必须**进 Activity（答题流程需要输入法，
+         * 悬浮窗必须让位），因此先隐藏悬浮窗，再直接构造带
+         * EXTRA_REQUEST_PAUSE 的 Intent。
+         */
+        fun showForPause(context: Context) {
+            val appCtx = context.applicationContext
+            try {
+                LockOverlayManager.hide()
+            } catch (e: Exception) {
+                Log.w(TAG, "隐藏覆盖层失败：${e.message}")
+            }
+            try {
+                val intent = Intent(appCtx, LockScreenActivity::class.java).apply {
+                    putExtra(EXTRA_REQUEST_PAUSE, true)
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    )
+                }
+                appCtx.startActivity(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "拉起暂停请求页失败：${e.message}")
             }
         }
 
@@ -186,6 +248,12 @@ class LockScreenActivity : ComponentActivity() {
 
         // 确保守护服务在运行（负责防退出巡检）
         LockGuardService.ensureRunning(applicationContext)
+
+        // 悬浮窗「暂停」入口：直接进入答题流程（count=-1 → pendingPause=true，
+        // 答对后换取一次暂停而不是解锁）
+        if (intent.getBooleanExtra(EXTRA_REQUEST_PAUSE, false)) {
+            startChallenge(-1)
+        }
 
         setContent {
             LockScreenContent(

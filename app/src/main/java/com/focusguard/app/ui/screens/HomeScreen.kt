@@ -483,16 +483,22 @@ private fun MemoRow(item: MemoItem, onToggle: () -> Unit) {
             .padding(vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onToggle, modifier = Modifier.size(22.dp)) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .clickable(onClick = onToggle),
+            contentAlignment = Alignment.Center
+        ) {
             Icon(
                 imageVector = if (item.done) Icons.Default.CheckCircle
                 else Icons.Default.RadioButtonUnchecked,
                 contentDescription = if (item.done) "标记未完成" else "标记完成",
                 tint = if (item.done) Color(0xFF66BB6A) else priorityColor,
-                modifier = Modifier.size(17.dp)
+                modifier = Modifier.size(20.dp)
             )
         }
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = item.text,

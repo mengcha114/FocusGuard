@@ -270,6 +270,12 @@ class LockGuardService : Service() {
                         applicationContext,
                         lockState
                     )
+                },
+                onRequestPause = {
+                    // 「暂停（答题）」：进锁机页触发答题换取暂停（悬浮窗让位给输入法）
+                    com.focusguard.app.enforce.LockScreenActivity.showForPause(
+                        applicationContext
+                    )
                 }
             )
         } catch (e: Exception) {
@@ -291,8 +297,10 @@ class LockGuardService : Service() {
                 return
             }
 
-            // 答题流程活跃时绝对放行：隐藏覆盖层，否则会挡住答题页输入
-            if (UnlockChallengeActivity.active) {
+            // 答题页在前台时让位：隐藏覆盖层，否则会挡住答题页输入。
+            // 注意用 foreground 而非 active——答题页被切走后（仍 active）
+            // 必须立即恢复覆盖层锁屏，否则"切走答题页 = 自由使用"。
+            if (UnlockChallengeActivity.foreground) {
                 if (LockOverlayManager.isShowing) LockOverlayManager.hide()
                 return
             }

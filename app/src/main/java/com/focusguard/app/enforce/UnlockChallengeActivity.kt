@@ -70,6 +70,18 @@ class UnlockChallengeActivity : ComponentActivity() {
             }
 
         /**
+         * 答题页是否在前台可见。
+         *
+         * 与 [active] 的区别：active 表示"答题流程存在"（启动中/已创建），
+         * foreground 表示"答题页正占据屏幕"。
+         * 守护巡检据此决定悬浮窗：答题页在前台 → 悬浮窗让位（输入法可用）；
+         * 答题页被切走 → 立即恢复悬浮窗锁住屏幕（堵住"切走答题页"漏洞）。
+         */
+        @Volatile
+        var foreground: Boolean = false
+            private set
+
+        /**
          * 启动答题页。
          *
          * @param requiredCorrect 需要连续答对的题数
@@ -110,6 +122,14 @@ class UnlockChallengeActivity : ComponentActivity() {
 
         val requiredCorrect = intent.getIntExtra(EXTRA_REQUIRED_CORRECT, 1)
         Log.d(TAG, "答题页已创建，需答对 $requiredCorrect 题")
+
+        // API 33+ 预测性返回（侧滑手势）：必须显式拦截，否则侧滑直接退出答题页
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                predictiveBackCallback
+            )
+        }
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -182,12 +202,51 @@ class UnlockChallengeActivity : ComponentActivity() {
 
     @Deprecated("Back returns to lock screen, not unlock")
     override fun onBackPressed() {
+        // 答题页不允许退出：无论按返回键还是侧滑返回，都回到锁机状态
+        // （悬浮窗优先，见 LockScreenActivity.show 的统一逻辑），
+        // 而不是回到用户之前的应用——否则"答题页轻松退出"就绕过了锁机。
         returnToLockScreen()
+    }
+
+    private val predictiveBackCallback = object : android.window.OnBackInvokedCallback {
+        override fun onBackInvoked() {
+            returnToLockScreen()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        foreground = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        foreground = false
+        // 用户上滑回桌面/按 Home：答题页失焦。锁机若仍在进行，
+        // 立刻通过 LockScreenActivity.show 拉回锁机（悬浮窗优先），
+        // 不留"切走答题页 = 自由使用"的漏洞。
+        val stillLocked = try {
+            this::lockState.isInitialized && lockState.shouldBlockNow
+        } catch (e: Exception) {
+            false
+        }
+        if (stillLocked) {
+            Log.d(TAG, "答题页被切走，立即拉回锁机")
+            LockScreenActivity.show(applicationContext)
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                onBackInvokedDispatcher.unregisterOnBackInvokedCallback(predictiveBackCallback)
+            } catch (e: Exception) {
+                Log.w(TAG, "注销预测性返回回调失败：${e.message}")
+            }
+        }
         if (instance === this) instance = null
+        foreground = false
         created = false
         launchRequestedAt = 0L
         Log.d(TAG, "答题页已关闭，防护恢复")

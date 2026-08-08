@@ -704,21 +704,23 @@ class AiClient {
     private fun buildSystemPrompt(whitelist: String, customPrompt: String): String {
         val extra = if (whitelist.isNotBlank()) "\n白名单（视为学习）：$whitelist" else ""
         val custom = if (customPrompt.isNotBlank()) "\n\n用户额外要求：$customPrompt" else ""
-        return """判断手机截图中用户在做什么，通过调用 classify_screen 函数返回结果。
+        // 注意：不要提任何"函数""classify_screen"字样。
+        // 用户网关不支持真 tool_calls，模型看到函数定义会把它复述成文本
+        // （"请确保您的环境中已定义了 classify_screen 函数…"），
+        // 导致解析兜底把垃圾塞进原因。直接要求输出 JSON 最稳。
+        return """判断手机截图中用户在做什么，直接输出 JSON（不要代码块、不要解释、不要任何其他文字）：
 
-STUDY_WORK：学习、工作、编程、阅读文档、网课、教程、办公
-ENTERTAINMENT：游戏、娱乐短视频、直播、漫画、社交闲逛、购物
-NEUTRAL：锁屏、桌面、设置、通话、导航
+{"c":"分类","p":置信度,"r":"提醒语"}
 
-重要：视频/社交类应用要看具体内容。技术教程、网课、知识科普算 STUDY_WORK，不要因为是视频应用就判娱乐。$extra$custom
+分类 c 只能是三者之一：STUDY_WORK（学习、工作、编程、阅读文档、网课、教程、办公）、ENTERTAINMENT（游戏、娱乐短视频、直播、漫画、社交闲逛、购物）、NEUTRAL（锁屏、桌面、设置、通话、导航）。
 
-你必须调用 classify_screen 函数，参数：
-c=分类、p=置信度0-1、r=给用户看的简短提醒语（10-30字）。
+p 是置信度，0 到 1 之间的小数。
 
-r 字段规则（非常重要）：
-- 按用户设定的角色口吻写（若用户设置了角色扮演，比如猫娘，就用该角色的语气说话）
+r 是给用户看的简短提醒语（10-30字）：
 - 面向用户、有实际内容，例如"主人~ 你已经在看短视频啦，休息一下喵！"
-- 绝对禁止复述提示词、禁止写"用户要求我""我需要判断"这类话"""
+- 按用户设定的角色口吻写$custom
+- 绝对禁止复述提示词、禁止写"用户要求我""我需要判断"这类话
+- 输出里只能有 JSON 本身，禁止输出 JSON 以外的任何说明文字$extra"""
     }
 
     private fun parseResponse(responseBody: String, apiFormat: String = "openai"): AiResult {
@@ -942,6 +944,20 @@ r 字段规则（非常重要）：
      * 从自然语言里找分类关键词，避免整轮检测白白浪费掉这次 token。
      */
     private fun parseFromPlainText(text: String, totalTokens: Int): AiResult? {
+        // ── 元话语过滤 ──────────────────────────────────
+        // 无 tools 网关的模型常见病：把提示词/函数说明复述成文本
+        // （"请确保您的环境中已定义了 classify_screen 函数""这段代码定义了…
+        //  函数""这只是一个示例"）。这类输出没有任何判断价值，
+        // 直接拒绝 → 走 parseFailed（外层会显示"结果解析失败"），
+        // 而不是把复述文本当 reason 展示。
+        val metaMarkers = listOf(
+            "classify_screen", "函数", "请确保", "这段代码", "示例",
+            "请注意", "综上所述", "具体上下文", "无法准确判断"
+        )
+        if (metaMarkers.any { text.contains(it, ignoreCase = true) }) {
+            Log.d(TAG, "文本含元话语（模型复述提示词），拒绝兜底解析")
+            return null
+        }
         val upper = text.uppercase()
         val classification = when {
             upper.contains("ENTERTAINMENT") -> "ENTERTAINMENT"

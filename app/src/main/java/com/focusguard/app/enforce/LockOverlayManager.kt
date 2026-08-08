@@ -79,6 +79,7 @@ object LockOverlayManager {
     private var statusText: TextView? = null
     private var currentLockState: LockState? = null
     private var lastChallengeCallback: (() -> Unit)? = null
+    private var lastPauseCallback: (() -> Unit)? = null
     private var lastContext: Context? = null
 
     private val uiHandler = Handler(Looper.getMainLooper())
@@ -98,7 +99,8 @@ object LockOverlayManager {
         context: Context,
         lockState: LockState,
         force: Boolean = false,
-        onStartChallenge: () -> Unit
+        onStartChallenge: () -> Unit,
+        onRequestPause: (() -> Unit)? = null
     ) {
         if (isShowing) return
         if (!force) {
@@ -115,6 +117,7 @@ object LockOverlayManager {
         // 记住参数：窗口被系统回收后 verifyAttached 用它原样重建
         lastContext = context.applicationContext
         lastChallengeCallback = onStartChallenge
+        lastPauseCallback = onRequestPause
 
         uiHandler.post {
             if (isShowing) return@post
@@ -142,7 +145,7 @@ object LockOverlayManager {
                     isFocusableInTouchMode = true
                     isFocusable = true
                 }
-                root.addView(buildContent(appContext, lockState, onStartChallenge))
+                root.addView(buildContent(appContext, lockState, onStartChallenge, onRequestPause))
 
                 wm.addView(root, buildLayoutParams())
                 root.requestFocus()
@@ -187,12 +190,13 @@ object LockOverlayManager {
             val ctx = lastContext
             val ls = currentLockState
             val cb = lastChallengeCallback
+            val cbPause = lastPauseCallback
             cleanupOnMain()
             if (ctx != null && ls != null && cb != null) {
-                show(ctx, ls, force = true, onStartChallenge = cb)
+                show(ctx, ls, force = true, onStartChallenge = cb, onRequestPause = cbPause)
             } else if (context != null && lockState != null) {
                 val savedCb = cb ?: {}
-                show(context, lockState, force = true, onStartChallenge = savedCb)
+                show(context, lockState, force = true, onStartChallenge = savedCb, onRequestPause = cbPause)
             }
         }
     }
@@ -221,7 +225,8 @@ object LockOverlayManager {
     private fun buildContent(
         context: Context,
         lockState: LockState,
-        onStartChallenge: () -> Unit
+        onStartChallenge: () -> Unit,
+        onRequestPause: (() -> Unit)?
     ): View {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -322,7 +327,21 @@ object LockOverlayManager {
             }
         }
 
-        // 解锁按钮：按强度显示（强度 4 不可提前解锁 → 不给按钮）
+        // 箴言（与旧版锁机页一致：优先用户自定义，随机一条）
+        container.addView(
+            TextView(context).apply {
+                text = pickMotto(context)
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(Color.parseColor("#9C8BC9"))
+                setPadding(dp(context, 20), dp(context, 22), dp(context, 20), 0)
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            },
+            matchWrap()
+        )
+
+        // 解锁/暂停按钮：按强度显示（强度 4 不可提前解锁 → 不给按钮）
         if (lockState.unlockStrength < 4) {
             container.addView(
                 Button(context).apply {
@@ -342,9 +361,34 @@ object LockOverlayManager {
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     gravity = Gravity.CENTER
-                    topMargin = dp(context, 28)
+                    topMargin = dp(context, 26)
                 }
             )
+            // 暂停按钮：设置了"允许中途暂停"且有剩余配额时显示
+            // （用户反馈"设置了允许中途暂停但锁机页面没显示暂停入口"）
+            if (lockState.canPause && onRequestPause != null) {
+                container.addView(
+                    Button(context).apply {
+                        text = "暂停（答题）"
+                        textSize = 13f
+                        setTextColor(Color.parseColor("#C0B4FF"))
+                        isAllCaps = false
+                        background = GradientDrawable().apply {
+                            cornerRadius = dp(context, 12).toFloat()
+                            setColor(0x334F378B.toInt()) // 半透明紫底，次级按钮观感
+                        }
+                        setPadding(dp(context, 24), dp(context, 9), dp(context, 24), dp(context, 9))
+                        setOnClickListener { onRequestPause() }
+                    },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        gravity = Gravity.CENTER
+                        topMargin = dp(context, 12)
+                    }
+                )
+            }
         } else {
             container.addView(
                 TextView(context).apply {
@@ -451,11 +495,38 @@ object LockOverlayManager {
         uiHandler.post(runnable)
     }
 
+    /** 取一条箴言：优先用户自定义（每行一条随机），否则内置库。 */
+    private fun pickMotto(context: Context): String {
+        val custom = runCatching {
+            com.focusguard.app.data.Settings(context).customMottos
+        }.getOrDefault("")
+        val customList = custom.lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        return if (customList.isNotEmpty()) {
+            customList.random()
+        } else {
+            BUILTIN_MOTTOS.random()
+        }
+    }
+
+    private val BUILTIN_MOTTOS = listOf(
+        "把手机放下，把时间还给自己。",
+        "专注不是天赋，是每天的选择。",
+        "现在做的事，正在塑造未来的你。",
+        "一次只做一件事，做完再做下一件。",
+        "自律给我自由。",
+        "别让短视频偷走你的梦想。",
+        "深度工作，才是真正的生产力。",
+        "坚持一下，你会感谢现在的自己。"
+    )
+
     /** 必须在主线程调用。 */
     private fun cleanupOnMain() {
         clockRunnable?.let { uiHandler.removeCallbacks(it) }
         clockRunnable = null
         currentLockState = null
+        lastPauseCallback = null
         try {
             val root = overlayRoot
             val wm = windowManager

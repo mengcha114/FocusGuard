@@ -438,11 +438,14 @@ class MonitorService : Service() {
     private fun enforceLockReassert() {
         try {
             if (!lockState.isLocked || !lockState.shouldBlockNow) return
-            // 锁机页或答题页任一在前台都算受控
+            // 悬浮窗已是主体：只要它还挂着就算受控，无需再拉 Activity
+            if (com.focusguard.app.enforce.LockOverlayManager.isShowing) return
+            // 答题页在前台时让位（输入法场景）
+            if (com.focusguard.app.enforce.UnlockChallengeActivity.foreground) return
+            // 锁机页在前台也算受控
             if (com.focusguard.app.enforce.LockScreenActivity.instance != null) return
-            if (com.focusguard.app.enforce.UnlockChallengeActivity.active) return
 
-            Log.d(TAG, "锁机状态激活但锁机页不在前台，自动重新拉起")
+            Log.d(TAG, "锁机状态激活但无任何防线在前台，自动重新拉起")
             com.focusguard.app.enforce.LockScreenActivity.show(this)
         } catch (e: Exception) {
             Log.w(TAG, "锁机兜底拉起失败：${e.message}")
