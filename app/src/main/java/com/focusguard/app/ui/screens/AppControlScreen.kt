@@ -27,6 +27,7 @@ import com.focusguard.app.detection.AppCategoryStore
 import com.focusguard.app.detection.AppClassifier
 import com.focusguard.app.detection.AppInventory
 import com.focusguard.app.detection.InstalledApp
+import com.focusguard.app.data.AppBlockStore
 import com.focusguard.app.usage.AppUsageRule
 import com.focusguard.app.usage.UsageRuleStore
 import kotlinx.coroutines.launch
