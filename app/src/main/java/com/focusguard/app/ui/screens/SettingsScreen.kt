@@ -360,6 +360,44 @@ fun SettingsScreen(onSave: () -> Unit) {
         }
 
         // ── AI 检出娱乐后的锁机设置 ────────────────────────────────
+        // ── 系统级锁机（Dhizuku Lock Task）状态 ──────────────
+        SettingsSection(title = "系统级锁机（Lock Task）", icon = Icons.Default.Security) {
+            val dhizukuReady = com.focusguard.app.enhance.DhizukuEnhancer.isReady()
+            val lockTaskOn = com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = when {
+                            lockTaskOn -> "已生效 · 锁机期间系统级封锁"
+                            dhizukuReady -> "Dhizuku 已连接 · 锁机时自动进入"
+                            else -> "未启用（将使用悬浮窗方案）"
+                        },
+                        fontSize = 14.sp,
+                        color = when {
+                            lockTaskOn -> Color(0xFF66BB6A)
+                            dhizukuReady -> Color(0xFFFFB74D)
+                            else -> Color.White.copy(alpha = 0.6f)
+                        }
+                    )
+                    Text(
+                        text = if (dhizukuReady) {
+                            "Lock Task 生效后，Home / 上滑 / 最近任务全部失效，无法退出"
+                        } else {
+                            "安装并激活 Dhizuku 后，锁机将无法被任何手势退出。
+" +
+                                "未生效原因：${com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { "未连接" }}"
+                        },
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.45f)
+                    )
+                }
+            }
+        }
+
         SettingsSection(title = "AI 锁机设置", icon = Icons.Default.Lock) {
             Text(
                 text = "AI 判定娱乐并达到连续次数后，按下面的配置自动锁机",

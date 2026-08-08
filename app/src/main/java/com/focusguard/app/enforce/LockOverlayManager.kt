@@ -519,6 +519,20 @@ object LockOverlayManager {
                     ls.lockSource == "POMODORO" -> "番茄钟休息阶段"
                     else -> "设备已锁定"
                 }
+                // 配色随阶段切换：专注=紫（严肃），暂停/休息=绿（放松）——
+                // 与旧版 Compose 锁机页的视觉语言一致
+                val relaxed = ls.isPaused ||
+                    (ls.lockSource == "POMODORO" && !ls.pomodoroIsWorkPhase)
+                val accentColor = if (relaxed) {
+                    android.graphics.Color.parseColor("#34D399")
+                } else {
+                    android.graphics.Color.parseColor("#B4A5FF")
+                }
+                timeText?.setTextColor(accentColor)
+                statusText?.setTextColor(
+                    if (relaxed) android.graphics.Color.parseColor("#6EE7B7")
+                    else android.graphics.Color.parseColor("#9C8BC9")
+                )
                 uiHandler.postDelayed(this, 1000L)
             }
         }

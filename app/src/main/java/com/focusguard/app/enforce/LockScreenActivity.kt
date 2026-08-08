@@ -87,6 +87,11 @@ class LockScreenActivity : ComponentActivity() {
         var instance: LockScreenActivity? = null
             private set
 
+        /** 实例创建时间戳：守护服务据此给 onResume 的 Lock Task enter 留宽限期。 */
+        @Volatile
+        var instanceCreatedAt: Long = 0L
+            private set
+
         /** 锁机页是否在前台可见（守护服务据此判断是否需要拉起）。 */
         @Volatile
         var foreground: Boolean = false
@@ -108,7 +113,13 @@ class LockScreenActivity : ComponentActivity() {
          */
         fun show(context: Context, forceActivity: Boolean = false) {
             val appCtx = context.applicationContext
-            if (!forceActivity && LockOverlayManager.canShow(appCtx)) {
+            // 悬浮窗优先仅限无 Dhizuku 场景：Dhizuku（Lock Task）可用时
+            // 必须走 Activity——Lock Task 让 Activity 无法被任何手势退出，
+            // 且 UI 是完整的 Compose 锁机页；此时显示悬浮窗反而会盖住它。
+            if (!forceActivity &&
+                !com.focusguard.app.enhance.DhizukuEnhancer.isReady() &&
+                LockOverlayManager.canShow(appCtx)
+            ) {
                 try {
                     val ls = LockState(appCtx)
                     if (ls.isLocked && ls.shouldBlockNow) {
@@ -256,6 +267,7 @@ class LockScreenActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         lockState = LockState(this)
         instance = this
+        instanceCreatedAt = System.currentTimeMillis()
         launchPendingAt = 0L
 
         // 锁屏上也能显示（不强制点亮屏幕）：
@@ -390,7 +402,24 @@ class LockScreenActivity : ComponentActivity() {
         // Dhizuku 增强：应封锁时进入系统级 Lock Task（Home/上滑/最近任务全部失效）；
         // 暂停/番茄钟休息阶段退出 Lock Task，让用户自由使用。
         if (lockState.shouldBlockNow) {
-            com.focusguard.app.enhance.LockTaskEnhancer.enter(this)
+            val ok = com.focusguard.app.enhance.LockTaskEnhancer.enter(this)
+            // enter 失败（Dhizuku 授权问题/白名单失败等）→ 立即退回悬浮窗方案：
+            // 否则 Activity 没有 Lock Task 保护，可以被正常退出。
+            // 悬浮窗盖住 Activity 并吞掉所有按键，锁死能力不降级。
+            if (!ok && LockOverlayManager.canShow(this)) {
+                Log.w(TAG, "Lock Task 进入失败，悬浮窗接管锁机")
+                LockOverlayManager.show(
+                    context = this,
+                    lockState = lockState,
+                    force = true,
+                    onStartChallenge = {
+                        startChallengeFromOverlay(applicationContext, lockState)
+                    },
+                    onRequestPause = {
+                        showForPause(applicationContext)
+                    }
+                )
+            }
         } else {
             com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
         }
@@ -460,6 +489,7 @@ class LockScreenActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (instance === this) instance = null
+        instanceCreatedAt = 0L
         foreground = false
         // 兜底退出 Lock Task（正常路径已在 unlock/暂停时退出；
         // 若因锁机到期 finish 等路径遗漏，这里保证系统不被锁死）

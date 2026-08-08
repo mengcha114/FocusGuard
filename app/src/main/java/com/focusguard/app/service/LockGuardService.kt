@@ -313,7 +313,48 @@ class LockGuardService : Service() {
                 return
             }
 
-            // ── 主防线：全屏悬浮窗常驻 ────────────────────
+            // ── Dhizuku 优先：系统级 Lock Task 方案 ──────────
+            // Lock Task 生效后系统禁用 Home/上滑/最近任务，锁机页**无法被任何
+            // 手势退出**——这是最强的锁死（比悬浮窗更彻底，且 UI 用回完整好看的
+            // Compose 锁机页）。启动 LockScreenActivity，其 onResume 会自动
+            // enter Lock Task（见 LockScreenActivity.onResume）。
+            //
+            // 注意：v2.0.0 起锁机主体一度改为悬浮窗，导致 LockScreenActivity
+            // 从不启动、LockTaskEnhancer.enter 从未执行——用户"配置了 Dhizuku
+            // 依然非常容易退出"的根因。
+            if (com.focusguard.app.enhance.DhizukuEnhancer.isReady()) {
+                // Lock Task 真正生效中（Activity 在前台被系统锁死）→ 无需悬浮窗，
+                // 并清掉可能残留的悬浮窗（比如之前 enter 失败时拉起过）
+                if (LockScreenActivity.foreground &&
+                    com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
+                ) {
+                    if (LockOverlayManager.isShowing) LockOverlayManager.hide()
+                    return
+                }
+                // Activity 已创建但 LockTask 未生效（enter 失败/授权问题）：
+                // 悬浮窗兜底锁死（Activity 的 onResume 也会主动拉起悬浮窗）。
+                // 宽限期 3s：Activity 首次创建后等 onResume 完成 enter——
+                // 否则刚启动的 Activity 立刻被悬浮窗盖住，LockTask 生效后
+                // 用户也看不到完整的 Compose 锁机页 UI。
+                if (LockScreenActivity.instance != null &&
+                    !com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
+                ) {
+                    val createdRecently = LockScreenActivity.instanceCreatedAt > 0 &&
+                        now - LockScreenActivity.instanceCreatedAt < 3_000L
+                    if (!createdRecently && LockOverlayManager.canShow(applicationContext)) {
+                        ensureOverlay()
+                        return
+                    }
+                }
+                if (LockOverlayManager.isShowing) LockOverlayManager.hideNow()
+                if (LockScreenActivity.instance == null) {
+                    Log.d(TAG, "Dhizuku 可用，启动锁机页并进入 Lock Task")
+                    LockScreenActivity.show(applicationContext, forceActivity = true)
+                }
+                return
+            }
+
+            // ── 无 Dhizuku：全屏悬浮窗常驻（主防线） ──────────
             // 悬浮窗不属于任何 Task：上滑手势、最近任务、清后台都动不了它，
             // z-order 也高于普通 Activity 与小窗。只要权限在手就让它一直挂着，
             // 不再等"锁机页掉出前台"才补位——那个间隙正是破解窗口。

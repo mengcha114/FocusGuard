@@ -18,6 +18,17 @@ object LockTaskEnhancer {
     private const val TAG = "LockTaskEnhancer"
 
     /**
+     * Lock Task 是否真正生效（enter 成功置 true，exit 置 false）。
+     *
+     * 守护服务据此判断：Dhizuku 已连接 ≠ LockTask 一定生效——
+     * 白名单授权失败等都会让 enter 返回 false。此时必须退回悬浮窗方案，
+     * 否则锁机页 Activity 能被正常退出（"配置了 Dhizuku 依然容易退出"）。
+     */
+    @Volatile
+    var lockTaskActive: Boolean = false
+        private set
+
+    /**
      * 尝试进入 Lock Task 模式。
      *
      * 流程：初始化 Dhizuku → 确保本包在白名单 → startLockTask。
@@ -38,10 +49,12 @@ object LockTaskEnhancer {
             }
 
             activity.startLockTask()
+            lockTaskActive = true
             Log.d(TAG, "已进入系统级 Lock Task 模式")
             true
         } catch (e: Throwable) {
             Log.w(TAG, "进入 Lock Task 失败：${e.message}")
+            lockTaskActive = false
             false
         }
     }
@@ -53,6 +66,8 @@ object LockTaskEnhancer {
             activity.stopLockTask()
         } catch (e: Throwable) {
             Log.w(TAG, "退出 Lock Task 失败：${e.message}")
+        } finally {
+            lockTaskActive = false
         }
     }
 }
