@@ -38,6 +38,18 @@ jobs:
       - name: 清理本机路径配置
         run: rm -f local.properties
 
+      # 仓库公开后不再内置签名密钥（防伪造 APK / 签名劫持）。
+      # 每次构建用 keytool 临时生成同名同密码的调试密钥：
+      # debug 包是卸载重装场景，签名每次不同没有影响。
+      - name: 生成临时签名密钥
+        run: |
+          mkdir -p keystore
+          keytool -genkeypair -v \
+            -keystore keystore/focusguard-debug.jks \
+            -storepass focusguard -keypass focusguard \
+            -alias focusguard -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=FocusGuard Debug, OU=Dev, O=FocusGuard, L=Beijing, ST=Beijing, C=CN"
+
       - name: 构建 Debug APK
         run: ./gradlew assembleDebug --no-daemon
 
