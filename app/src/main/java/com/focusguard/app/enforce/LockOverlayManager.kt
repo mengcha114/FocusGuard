@@ -107,6 +107,10 @@ object LockOverlayManager {
         com.focusguard.app.challenge.ChallengeGenerator()
     }
 
+    // 锁机界面的时钟视图（每秒刷新）
+    private var wallClockText: TextView? = null
+    private var wallDateText: TextView? = null
+
     // 答题界面的可变视图引用（按键只更新文本，不整屏重建）
     private var challengeAnswerText: TextView? = null
     private var challengeFeedbackText: TextView? = null
@@ -241,6 +245,22 @@ object LockOverlayManager {
                         else -> true
                     }
                 }
+
+                /**
+                 * 捕获窗口外触摸（配合 FLAG_WATCH_OUTSIDE_TOUCH）。
+                 *
+                 * 下拉通知栏的起手动作会落在状态栏区域（可能算窗口外），
+                 * 收到 ACTION_OUTSIDE 就立刻重新压制系统栏并收起通知栏——
+                 * 让下拉动作无法完成。
+                 */
+                override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+                    if (event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                        hideSystemBars(this)
+                        notifyShadeDismiss()
+                        return true
+                    }
+                    return super.onTouchEvent(event)
+                }
             }.apply {
                 background = buildBackground()
                 isFocusableInTouchMode = true
@@ -355,29 +375,80 @@ object LockOverlayManager {
     ): View {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(context, 34), dp(context, 40), dp(context, 34), dp(context, 40))
+            gravity = Gravity.CENTER_HORIZONTAL
+            // 顶部留出状态栏高度，内容不被刘海/挖孔压住（窗口本身已铺满全屏）
+            setPadding(
+                dp(context, 26),
+                dp(context, 52),
+                dp(context, 26),
+                dp(context, 28)
+            )
         }
 
-        // 锁图标（Unicode 锁形，避免依赖图标资源）
-        container.addView(
-            TextView(context).apply {
-                text = "\uD83D\uDD12"
-                textSize = 44f
-                gravity = Gravity.CENTER
-            },
-            matchWrap()
-        )
+        // ── 顶部：真实时钟 + 日期（像系统锁屏一样） ──────────
+        val wallClock = TextView(context).apply {
+            text = "--:--"
+            textSize = 58f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            gravity = Gravity.CENTER
+            letterSpacing = 0.02f
+        }
+        wallClockText = wallClock
+        container.addView(wallClock, matchWrap())
 
-        container.addView(
-            TextView(context).apply {
-                text = "专注卫士"
-                textSize = 20f
-                setTextColor(Color.WHITE)
-                typeface = Typeface.DEFAULT_BOLD
+        val wallDate = TextView(context).apply {
+            text = ""
+            textSize = 13f
+            setTextColor(Color.parseColor("#8FFFFFFF"))
+            gravity = Gravity.CENTER
+            letterSpacing = 0.06f
+            setPadding(0, dp(context, 2), 0, 0)
+        }
+        wallDateText = wallDate
+        container.addView(wallDate, matchWrap())
+
+        // ── 中部：锁定状态卡（圆角卡片 + 锁标 + 倒计时） ──────
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(context, 24).toFloat()
+                setColor(0x14FFFFFF)
+                setStroke(dp(context, 1), 0x26FFFFFF)
+            }
+            setPadding(dp(context, 22), dp(context, 20), dp(context, 22), dp(context, 20))
+        }
+
+        // 锁标 + 应用名（一行）
+        card.addView(
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
-                letterSpacing = 0.08f
-                setPadding(0, dp(context, 12), 0, 0)
+                addView(
+                    TextView(context).apply {
+                        text = "\uD83D\uDD12"
+                        textSize = 17f
+                    },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                )
+                addView(
+                    TextView(context).apply {
+                        text = "专注卫士"
+                        textSize = 14f
+                        setTextColor(Color.WHITE)
+                        typeface = Typeface.DEFAULT_BOLD
+                        letterSpacing = 0.1f
+                        setPadding(dp(context, 8), 0, 0, 0)
+                    },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                )
             },
             matchWrap()
         )
@@ -385,35 +456,44 @@ object LockOverlayManager {
         // 状态行（锁定中 / 番茄钟专注 / 暂停中，每秒刷新）
         val status = TextView(context).apply {
             text = "设备已锁定"
-            textSize = 12f
+            textSize = 11f
             setTextColor(Color.parseColor("#9C8BC9"))
             gravity = Gravity.CENTER
-            setPadding(0, dp(context, 6), 0, 0)
+            letterSpacing = 0.08f
+            setPadding(0, dp(context, 10), 0, 0)
         }
         statusText = status
-        container.addView(status, matchWrap())
+        card.addView(status, matchWrap())
 
-        // 大号倒计时
+        // 大号剩余时长
         val time = TextView(context).apply {
             text = "--:--"
-            textSize = 52f
+            textSize = 46f
             setTextColor(Color.parseColor("#B4A5FF"))
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            setPadding(0, dp(context, 20), 0, 0)
+            setPadding(0, dp(context, 4), 0, 0)
         }
         timeText = time
-        container.addView(time, matchWrap())
+        card.addView(time, matchWrap())
 
-        container.addView(
+        card.addView(
             TextView(context).apply {
-                text = "锁定期间无法使用其他应用"
-                textSize = 12f
-                setTextColor(Color.parseColor("#70FFFFFF"))
+                text = "剩余锁定时间"
+                textSize = 10f
+                setTextColor(Color.parseColor("#60FFFFFF"))
                 gravity = Gravity.CENTER
-                setPadding(0, dp(context, 4), 0, 0)
+                letterSpacing = 0.14f
             },
             matchWrap()
+        )
+
+        container.addView(
+            card,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(context, 26) }
         )
 
         // 待办清单：锁机时看到自己该做什么，比单纯拦截更有意义
@@ -564,21 +644,41 @@ object LockOverlayManager {
             // 这正是此前"侧滑轻易破解"的根因。
             //
             // LAYOUT_IN_SCREEN | LAYOUT_NO_LIMITS：铺满状态栏/导航栏区域
-            // FLAG_FULLSCREEN：隐藏状态栏，减少下拉通知栏的入口
+            //   （去掉 FLAG_FULLSCREEN——它会让窗口避开状态栏区域，
+            //    表现为顶部缺一条；改用 NO_LIMITS + 全屏 insets 隐藏，
+            //    窗口真正铺到屏幕最顶端，视觉上无缺口）
+            // FLAG_WATCH_OUTSIDE_TOUCH：捕获窗口外触摸（下拉通知栏的起手动作）
             // 不加 TURN_SCREEN_ON / KEEP_SCREEN_ON——否则息屏会被强行点亮
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
+            // 铺到刘海/挖孔区域，顶部彻底无缺口
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
         }
     }
 
-    /** 隐藏系统栏（沉浸式）：减少下拉通知栏与导航手势的入口。 */
+    /**
+     * 隐藏系统栏（沉浸式）+ 持续阻止下拉通知栏。
+     *
+     * 关键点：
+     * 1. `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE` 会允许"滑动临时显示"——
+     *    用户借这一下就能把通知栏拉出来。改用 `BEHAVIOR_DEFAULT`
+     *    （不允许滑动唤出），配合下面的 insets 监听持续压制。
+     * 2. 部分 ROM 会在切换/焦点变化后重置系统栏状态 → 注册
+     *    `OnApplyWindowInsetsListener`，一旦发现状态栏可见立即再隐藏，
+     *    通知栏动画被反复中断，无法完整展开。
+     * 3. 布局层面不再用 FLAG_FULLSCREEN（会让窗口避开状态栏留下缺口），
+     *    改为 NO_LIMITS + cutout SHORT_EDGES，窗口铺满到屏幕最顶端。
+     */
     private fun hideSystemBars(root: View) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -587,8 +687,26 @@ object LockOverlayManager {
                         android.view.WindowInsets.Type.statusBars() or
                             android.view.WindowInsets.Type.navigationBars()
                     )
-                    controller.systemBarsBehavior = android.view.WindowInsetsController
-                        .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    // 不允许"滑动临时显示系统栏"——否则用户能借此拉出通知栏
+                    controller.systemBarsBehavior =
+                        android.view.WindowInsetsController.BEHAVIOR_DEFAULT
+                }
+                // 持续压制：系统栏一旦重新可见（下拉动作），立即再隐藏
+                root.setOnApplyWindowInsetsListener { v, insets ->
+                    try {
+                        val statusVisible =
+                            insets.isVisible(android.view.WindowInsets.Type.statusBars())
+                        if (statusVisible) {
+                            v.windowInsetsController?.hide(
+                                android.view.WindowInsets.Type.statusBars() or
+                                    android.view.WindowInsets.Type.navigationBars()
+                            )
+                            notifyShadeDismiss()
+                        }
+                    } catch (e: Exception) {
+                        // 忽略，不影响窗口
+                    }
+                    insets
                 }
             } else {
                 @Suppress("DEPRECATION")
@@ -596,9 +714,31 @@ object LockOverlayManager {
                     View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
                     View.SYSTEM_UI_FLAG_FULLSCREEN or
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                @Suppress("DEPRECATION")
+                root.setOnSystemUiVisibilityChangeListener { visibility ->
+                    @Suppress("DEPRECATION")
+                    if ((visibility and View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
+                        @Suppress("DEPRECATION")
+                        root.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        notifyShadeDismiss()
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "隐藏系统栏失败：${e.message}")
+        }
+    }
+
+    /** 借无障碍服务收起已展开的通知栏（有权限时的补充防线）。 */
+    private fun notifyShadeDismiss() {
+        try {
+            com.focusguard.app.access.GuardAccessibilityService.instance
+                ?.dismissNotificationShade()
+        } catch (e: Exception) {
+            // 无障碍未开启时忽略
         }
     }
 
@@ -607,7 +747,24 @@ object LockOverlayManager {
     private fun startClock() {
         val runnable = object : Runnable {
             override fun run() {
-                val ls = currentLockState ?: return
+                // ── 真实时钟与日期（像系统锁屏） ──────────────
+                try {
+                    val now = java.util.Date()
+                    wallClockText?.text = java.text.SimpleDateFormat(
+                        "HH:mm", java.util.Locale.getDefault()
+                    ).format(now)
+                    wallDateText?.text = java.text.SimpleDateFormat(
+                        "M月d日 EEEE", java.util.Locale.CHINA
+                    ).format(now)
+                } catch (e: Exception) {
+                    // 时间格式化失败不影响其他刷新
+                }
+
+                val ls = currentLockState ?: run {
+                    // 答题模式下 currentLockState 可能为空，但时钟仍需继续走
+                    uiHandler.postDelayed(this, 1000L)
+                    return
+                }
                 val secs = when {
                     ls.isPaused -> ls.pauseRemainingSeconds
                     ls.lockSource == "POMODORO" -> ls.pomodoroRemainingSeconds
@@ -704,6 +861,8 @@ object LockOverlayManager {
         clockRunnable = null
         timeText = null
         statusText = null
+        wallClockText = null
+        wallDateText = null
 
         isChallengeMode = true
         val session = challengeSession ?: return
@@ -767,7 +926,8 @@ object LockOverlayManager {
         }
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(context, 20), dp(context, 26), dp(context, 20), dp(context, 20))
+            // 顶部留状态栏高度：窗口铺满全屏（无缺口），内容不被刘海压住
+            setPadding(dp(context, 20), dp(context, 52), dp(context, 20), dp(context, 20))
         }
 
         // ── 标题 + 进度 ──────────────────────────────
@@ -1257,6 +1417,8 @@ object LockOverlayManager {
         windowManager = null
         timeText = null
         statusText = null
+        wallClockText = null
+        wallDateText = null
         isShowing = false
         clearChallengeViewRefs()
     }
