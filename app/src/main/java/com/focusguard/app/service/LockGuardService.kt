@@ -84,6 +84,14 @@ class LockGuardService : Service() {
             } catch (e: Exception) {
                 Log.w(TAG, "启动锁机守护失败：${e.message}")
             }
+            // 自愈闹钟：进程被杀后由系统闹钟在 5 秒内拉活守护并恢复锁机
+            // （华为/荣耀 ROM 的 START_STICKY 重启延迟 5-10 秒——破解窗口）。
+            // 闹钟是自续环：锁机结束/暂停后 Receiver 不再续，自然停止。
+            try {
+                LockGuardAlarm.schedule(app, LockGuardAlarm.RECOVERY_INTERVAL_MS)
+            } catch (e: Exception) {
+                Log.w(TAG, "注册自愈闹钟失败：${e.message}")
+            }
         }
 
         /** 若未运行则启动（幂等入口，供各处随手调用）。 */
@@ -440,6 +448,11 @@ class LockGuardService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            LockGuardAlarm.cancel(applicationContext)
+        } catch (e: Exception) {
+            Log.w(TAG, "取消自愈闹钟失败：${e.message}")
+        }
         isRunning = false
         guardJob?.cancel()
         scope.cancel()

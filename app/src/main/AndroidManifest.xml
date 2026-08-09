@@ -135,6 +135,11 @@
             android:foregroundServiceType="mediaProjection" />
 
         <!-- 锁机守护前台服务（不依赖无障碍，使用情况权限即可工作） -->
+        <!-- 锁机自愈闹钟接收器（杀后台后 5 秒内强制恢复锁机） -->
+        <receiver
+            android:name=".service.LockGuardAlarmReceiver"
+            android:exported="false" />
+
         <service
             android:name=".service.LockGuardService"
             android:exported="false"
