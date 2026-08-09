@@ -933,7 +933,6 @@ private fun TokenStatChip(
 
 @Composable
 /** 设置分组标题（分隔不同类别，让设置页更清晰）。 */
-@Composable
 private fun SettingsGroupHeader(title: String) {
     Spacer(Modifier.height(10.dp))
     Text(
@@ -945,6 +944,7 @@ private fun SettingsGroupHeader(title: String) {
     )
 }
 
+@Composable
 fun SettingsSection(
     title: String,
     icon: ImageVector,
