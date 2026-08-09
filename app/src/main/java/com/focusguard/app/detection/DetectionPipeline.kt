@@ -123,12 +123,12 @@ class DetectionPipeline(
         // ── L2 屏幕文字（可关闭）──────────────────────
         if (textPrefilterOn) {
             ScreenTextReader.readCurrentScreenText()?.let { text ->
-                // 合并用户自定义特征词（设置页可配置）
+                // 完整词表（内置默认 + 用户编辑，设置页可查看/修改）
                 val settings = com.focusguard.app.data.Settings(context)
                 val textVerdict = AppClassifier.classifyByScreenText(
                     text,
-                    settings.customStudyKeywordList(),
-                    settings.customEntertainmentKeywordList()
+                    settings.studyKeywordList(),
+                    settings.entertainmentKeywordList()
                 )
                 if (textVerdict == "STUDY_WORK" || textVerdict == "ENTERTAINMENT") {
                     val reason = if (textVerdict == "STUDY_WORK") {

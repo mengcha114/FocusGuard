@@ -118,20 +118,7 @@ object AppClassifier {
         "com.alibaba.android.rimet"          to AppCategory.SOCIAL,  // 钉钉（办公，但需 AI 确认场景）
     )
 
-    private val studyKeywords = listOf(
-        "课程", "教程", "学习", "编程", "讲座", "公开课",
-        "教学", "培训", "笔记", "课件", "作业", "考试",
-        "复习", "预习", "论文", "报告", "研究", "分析",
-        "document", "code", "IDE", "terminal", "editor",
-        "spreadsheet", "word", "excel", "powerpoint"
-    )
 
-    private val entertainmentKeywords = listOf(
-        "搞笑", "娱乐", "综艺", "八卦", "段子", "笑话",
-        "电影", "电视剧", "动漫", "直播", "打赏", "刷",
-        "funny", "entertainment", "comedy", "game", "play",
-        "battle", "rank", "level", "reward", "gacha"
-    )
 
     /**
      * 获取前台应用信息，并按四级优先级确定分类。
@@ -215,25 +202,21 @@ object AppClassifier {
         return
     }
 
-    fun classifyByScreenText(text: String): String =
-        classifyByScreenText(text, emptyList(), emptyList())
-
     /**
      * 屏幕文字分类（L2 检测）。
      *
-     * @param studyExtra 用户自定义学习/工作特征词（与内置词表合并）
-     * @param entertainmentExtra 用户自定义娱乐特征词（与内置词表合并）
+     * 词表完全由调用方传入（Settings 提供完整词表：内置默认 + 用户编辑）。
+     * 至少命中 2 个特征词且倾向明显才定论。
      */
     fun classifyByScreenText(
         text: String,
-        studyExtra: List<String>,
-        entertainmentExtra: List<String>
+        studyKeywords: List<String>,
+        entertainmentKeywords: List<String>
     ): String {
         val lowerText = text.lowercase()
-        val mergedStudy = studyKeywords + studyExtra.filter { it.isNotBlank() }
-        val mergedEntertainment = entertainmentKeywords + entertainmentExtra.filter { it.isNotBlank() }
-        val studyScore = mergedStudy.count { lowerText.contains(it) }
-        val entertainmentScore = mergedEntertainment.count { lowerText.contains(it) }
+        val studyScore = studyKeywords.count { it.isNotBlank() && lowerText.contains(it) }
+        val entertainmentScore =
+            entertainmentKeywords.count { it.isNotBlank() && lowerText.contains(it) }
 
         return when {
             studyScore > entertainmentScore && studyScore >= 2 -> "STUDY_WORK"

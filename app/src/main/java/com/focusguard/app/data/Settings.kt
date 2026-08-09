@@ -45,9 +45,66 @@ class Settings(context: Context) {
         // 智能检测模式（风险驱动的秒级动态间隔）
         private const val KEY_SMART_SCHEDULE = "smart_schedule"
 
-        // 屏幕文字特征自定义关键词
-        private const val KEY_CUSTOM_STUDY_KEYWORDS = "custom_study_keywords"
-        private const val KEY_CUSTOM_ENTERTAINMENT_KEYWORDS = "custom_entertainment_keywords"
+        // 屏幕文字特征关键词（完整词表，首次读取写入内置默认）
+        private const val KEY_STUDY_KEYWORDS = "study_keywords"
+        private const val KEY_ENTERTAINMENT_KEYWORDS = "entertainment_keywords"
+
+        /** 内置默认学习/工作特征词（每行一个，用户可编辑）。 */
+        val DEFAULT_STUDY_KEYWORDS = """
+课程
+教程
+学习
+编程
+讲座
+公开课
+教学
+培训
+笔记
+课件
+作业
+考试
+复习
+预习
+论文
+报告
+研究
+分析
+document
+code
+IDE
+terminal
+editor
+spreadsheet
+word
+excel
+powerpoint
+""".trimIndent()
+
+        /** 内置默认娱乐特征词（每行一个，用户可编辑）。 */
+        val DEFAULT_ENTERTAINMENT_KEYWORDS = """
+搞笑
+娱乐
+综艺
+八卦
+段子
+笑话
+电影
+电视剧
+动漫
+直播
+打赏
+刷
+funny
+entertainment
+comedy
+game
+play
+battle
+rank
+level
+reward
+gacha
+""".trimIndent()
 
         // Token 节约系统开关
         private const val KEY_TOKEN_SAVING_ENABLED = "token_saving_enabled"
@@ -220,27 +277,50 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_CUSTOM_API_MODEL, "") ?: ""
         set(value) = prefs.edit().putString(KEY_CUSTOM_API_MODEL, value).apply()
 
-    // ── 屏幕文字特征自定义关键词（L2 检测） ─────────────
-    // 用户可自定义"学习/工作特征词"与"娱乐特征词"（每行一个），
-    // 与内置词表合并参与屏幕文字打分。留空则只用内置词表。
+    // ── 屏幕文字特征关键词（L2 检测，完整词表可编辑） ──
+    // 首次读取时写入内置默认词表；用户可在设置页查看/增删改。
+    // v2.7.0 的 custom_* 字段自动迁移合并进完整词表。
 
-    /** 自定义学习/工作特征词（每行一个）。 */
-    var customStudyKeywords: String
-        get() = prefs.getString(KEY_CUSTOM_STUDY_KEYWORDS, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_CUSTOM_STUDY_KEYWORDS, value).apply()
+    /** 学习/工作特征词完整词表（每行一个，默认内置，可编辑）。 */
+    var studyKeywords: String
+        get() {
+            val stored = prefs.getString(KEY_STUDY_KEYWORDS, null)
+            if (stored != null) return stored
+            // 首次读取：合并旧版 custom 字段（用户曾自定义过）或使用内置默认
+            val legacy = prefs.getString("custom_study_keywords", "") ?: ""
+            val merged = if (legacy.isNotBlank()) {
+                DEFAULT_STUDY_KEYWORDS + "\n" + legacy
+            } else {
+                DEFAULT_STUDY_KEYWORDS
+            }
+            prefs.edit().putString(KEY_STUDY_KEYWORDS, merged).apply()
+            return merged
+        }
+        set(value) = prefs.edit().putString(KEY_STUDY_KEYWORDS, value).apply()
 
-    /** 自定义娱乐特征词（每行一个）。 */
-    var customEntertainmentKeywords: String
-        get() = prefs.getString(KEY_CUSTOM_ENTERTAINMENT_KEYWORDS, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_CUSTOM_ENTERTAINMENT_KEYWORDS, value).apply()
+    /** 娱乐特征词完整词表（每行一个，默认内置，可编辑）。 */
+    var entertainmentKeywords: String
+        get() {
+            val stored = prefs.getString(KEY_ENTERTAINMENT_KEYWORDS, null)
+            if (stored != null) return stored
+            val legacy = prefs.getString("custom_entertainment_keywords", "") ?: ""
+            val merged = if (legacy.isNotBlank()) {
+                DEFAULT_ENTERTAINMENT_KEYWORDS + "\n" + legacy
+            } else {
+                DEFAULT_ENTERTAINMENT_KEYWORDS
+            }
+            prefs.edit().putString(KEY_ENTERTAINMENT_KEYWORDS, merged).apply()
+            return merged
+        }
+        set(value) = prefs.edit().putString(KEY_ENTERTAINMENT_KEYWORDS, value).apply()
 
-    /** 自定义学习/工作特征词列表（去空行）。 */
-    fun customStudyKeywordList(): List<String> =
-        customStudyKeywords.lines().map { it.trim() }.filter { it.isNotBlank() }
+    /** 学习/工作特征词列表（去空行）。 */
+    fun studyKeywordList(): List<String> =
+        studyKeywords.lines().map { it.trim() }.filter { it.isNotBlank() }
 
-    /** 自定义娱乐特征词列表（去空行）。 */
-    fun customEntertainmentKeywordList(): List<String> =
-        customEntertainmentKeywords.lines().map { it.trim() }.filter { it.isNotBlank() }
+    /** 娱乐特征词列表（去空行）。 */
+    fun entertainmentKeywordList(): List<String> =
+        entertainmentKeywords.lines().map { it.trim() }.filter { it.isNotBlank() }
 
     /**
      * 智能检测模式（默认开启）。

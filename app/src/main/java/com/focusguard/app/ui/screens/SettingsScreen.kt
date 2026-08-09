@@ -67,11 +67,9 @@ fun SettingsScreen(onSave: () -> Unit) {
     var decisionCacheEnabled by remember { mutableStateOf(settings.decisionCacheEnabled) }
     var adaptiveInterval by remember { mutableStateOf(settings.adaptiveIntervalEnabled) }
 
-    // 屏幕文字特征自定义关键词
-    var customStudyKeywords by remember { mutableStateOf(settings.customStudyKeywords) }
-    var customEntertainmentKeywords by remember {
-        mutableStateOf(settings.customEntertainmentKeywords)
-    }
+    // 屏幕文字特征关键词（完整词表，默认内置，可增删改）
+    var studyKeywords by remember { mutableStateOf(settings.studyKeywords) }
+    var entertainmentKeywords by remember { mutableStateOf(settings.entertainmentKeywords) }
 
     var saved by remember { mutableStateOf(false) }
 
@@ -303,30 +301,28 @@ fun SettingsScreen(onSave: () -> Unit) {
         SettingsSection(title = "屏幕文字特征词", icon = Icons.Default.TextFields) {
             Text(
                 text = "「屏幕文字预过滤」命中这些词时直接判定（不截图、不调 AI）。\n" +
-                    "每行一个关键词，与内置词表合并；留空则只用内置词表。",
+                    "这是完整词表（默认内置，可增删改）：每行一个关键词，直接编辑即可。",
                 fontSize = 11.sp,
                 lineHeight = 17.sp,
                 color = Color.White.copy(alpha = 0.5f)
             )
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
-                value = customStudyKeywords,
-                onValueChange = { customStudyKeywords = it },
+                value = studyKeywords,
+                onValueChange = { studyKeywords = it },
                 label = { Text("学习/工作特征词") },
-                placeholder = { Text("课程\n编程\n考试\n…（每行一个）") },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                minLines = 3
+                minLines = 6
             )
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
-                value = customEntertainmentKeywords,
-                onValueChange = { customEntertainmentKeywords = it },
+                value = entertainmentKeywords,
+                onValueChange = { entertainmentKeywords = it },
                 label = { Text("娱乐特征词") },
-                placeholder = { Text("刷\n直播\n游戏\n…（每行一个）") },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                minLines = 3
+                minLines = 6
             )
         }
 
@@ -696,8 +692,8 @@ fun SettingsScreen(onSave: () -> Unit) {
             settings.aiAlertEnabled = aiAlertEnabled
             settings.aiAlertDelaySeconds = aiAlertDelaySeconds.coerceIn(0, 120)
             // 仅锁该软件时长 + 自定义箴言
-            settings.customStudyKeywords = customStudyKeywords
-            settings.customEntertainmentKeywords = customEntertainmentKeywords
+            settings.studyKeywords = studyKeywords
+            settings.entertainmentKeywords = entertainmentKeywords
             settings.smartScheduleEnabled = smartScheduleEnabled
             settings.appBlockMinutes = appBlockMinutes.coerceIn(1, 480)
             settings.customMottos = customMottos
