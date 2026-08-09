@@ -113,9 +113,9 @@ fun SettingsScreen(onSave: () -> Unit) {
                 "Kimi" to Triple("openai", "https://api.moonshot.cn/v1", "moonshot-v1-8k-vision-preview"),
                 "GLM 智谱" to Triple("openai", "https://open.bigmodel.cn/api/paas/v4", "glm-4v-flash"),
                 "通义千问" to Triple("openai", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-vl-max"),
-                "Agnes (免费)" to Triple("openai", "https://api.gemai.cc/v1", "agnes-2.5-flash"),
+                "Agnes" to Triple("openai", "https://apihub.agnes-ai.com/v1", "agnes-2.5-flash"),
                 "Claude" to Triple("anthropic", "https://api.anthropic.com", "claude-3-5-sonnet-latest"),
-                "Gemini (免费)" to Triple("gemini", "https://generativelanguage.googleapis.com", "gemini-1.5-flash"),
+                "Gemini" to Triple("gemini", "https://generativelanguage.googleapis.com", "gemini-1.5-flash"),
                 "自定义 API" to Triple("openai", "", "")
             )
             presets.chunked(2).forEach { rowPresets ->

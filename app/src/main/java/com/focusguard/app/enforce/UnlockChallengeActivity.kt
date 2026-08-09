@@ -62,6 +62,17 @@ class UnlockChallengeActivity : ComponentActivity() {
             private set
 
         /**
+         * 实例创建时间戳。
+         *
+         * guardTick 让位判断用：答题页已创建但尚未 onResume（foreground 未置 true）
+         * 的窗口期（毫秒级），守护轮询恰好 tick 会拉起悬浮窗盖住答题页——
+         * 表现为"点击答题后答题页直接退出"。创建后 1.5s 内一律让位。
+         */
+        @Volatile
+        var instanceCreatedAt: Long = 0L
+            private set
+
+        /**
          * 答题流程是否处于活跃状态（锁机页据此暂停顶回）。
          *
          * 关键：启动窗口会自动过期，绝不会因启动失败而永久卡住。
@@ -138,6 +149,7 @@ class UnlockChallengeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         lockState = LockState(this)
         instance = this
+        instanceCreatedAt = System.currentTimeMillis()
         created = true
 
 
@@ -159,11 +171,23 @@ class UnlockChallengeActivity : ComponentActivity() {
         // 是"打开输入法就闪退"的直接成因。
 
         // 隐藏系统栏但保留输入法可用（不使用 BEHAVIOR_SHOW_TRANSIENT 以免干扰 IME）
-        try {
-            val controller = androidx.core.view.WindowInsetsControllerCompat(window, window.decorView)
-            controller.hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
-        } catch (e: Exception) {
-            Log.w(TAG, "隐藏状态栏失败：${e.message}")
+        hideSystemBars()
+
+        // ── 通知栏防下拉（无无障碍也能生效） ──────────────
+        // 沉浸模式下下拉通知栏 = 系统栏先滑出（SYSTEM_UI_FLAG_FULLSCREEN 被清除）。
+        // 监听系统栏可见性变化：一旦状态栏被拉出，立即收回（通知栏动画被强制
+        // 中断，无法完整展开），同时若有无障碍服务则一并收起通知栏。
+        window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
+            if ((visibility and android.view.View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
+                Log.d(TAG, "检测到系统栏被拉出（下拉通知栏），立即收回")
+                hideSystemBars()
+                try {
+                    com.focusguard.app.access.GuardAccessibilityService.instance
+                        ?.dismissNotificationShade()
+                } catch (e: Exception) {
+                    Log.w(TAG, "收起通知栏失败：${e.message}")
+                }
+            }
         }
 
         setContent {
@@ -230,11 +254,16 @@ class UnlockChallengeActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         foreground = false
+        // 注意：切走惩罚不在这里——onPause 会被悬浮窗盖住、窗口切换、
+        // 输入法弹起等被动场景触发，误判会直接把答题页 finish（"第二次
+        // 点击答题后直接退出"的根因之一）。惩罚移到 onUserLeaveHint
+        // （只有用户明确 Home/上滑切走才触发）。
+    }
 
-        // ── 切走惩罚（防破解） ─────────────────────────
-        // 用户快速连续切走答题页（2 秒内 ≥2 次）= 反复刷"切走窗口期"
-        // 尝试逐步操作/破解 → 直接结束答题页回锁机，不给任何窗口期。
-        // 正常用户单次误触切走不受影响。
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // 用户明确切走（Home/上滑手势）才走到这里。
+        // ── 切走惩罚：2 秒内切走 ≥2 次 = 反复刷窗口期尝试破解 → 直接结束答题
         val now = System.currentTimeMillis()
         if (now - lastPauseAt < 2_000L) {
             pauseCountInWindow++
@@ -247,20 +276,7 @@ class UnlockChallengeActivity : ComponentActivity() {
             finish()
             return
         }
-
-        val stillLocked = try {
-            this::lockState.isInitialized && lockState.shouldBlockNow
-        } catch (e: Exception) {
-            false
-        }
-        if (stillLocked) {
-            Log.d(TAG, "答题页被切走，响应切屏")
-        }
-    }
-
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        // 只有在真正的 Home/上滑手势离开（onUserLeaveHint）时，才同步挂载悬浮窗
+        // 同步挂载全屏悬浮窗锁定
         Log.d(TAG, "用户按 Home 或上滑切走答题页，挂载全屏悬浮窗锁定")
         val stillLocked = try {
             this::lockState.isInitialized && lockState.shouldBlockNow
@@ -287,9 +303,22 @@ class UnlockChallengeActivity : ComponentActivity() {
         }
     }
 
+    /** 隐藏状态栏（输入法兼容：不隐藏导航栏、不用 BEHAVIOR_SHOW_TRANSIENT）。 */
+    private fun hideSystemBars() {
+        try {
+            val controller = androidx.core.view.WindowInsetsControllerCompat(
+                window, window.decorView
+            )
+            controller.hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+        } catch (e: Exception) {
+            Log.w(TAG, "隐藏状态栏失败：${e.message}")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         if (instance === this) instance = null
+        instanceCreatedAt = 0L
         foreground = false
         created = false
         launchRequestedAt = 0L

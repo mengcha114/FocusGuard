@@ -16,6 +16,10 @@ class LockState(context: Context) {
         private const val PREFS = "focus_guard_lock_state"
         private const val KEY_LOCK_UNTIL = "lock_until"
 
+        /** 单次锁机内「换一题」按钮可用次数上限（持久化：退出重进不重置）。 */
+        private const val KEY_CHALLENGE_REFRESHES = "challenge_refreshes"
+        private const val MAX_CHALLENGE_REFRESHES = 5
+
 
         private const val KEY_LOCK_SOURCE = "lock_source"
         private const val KEY_LOCK_STRENGTH = "lock_strength"
@@ -57,10 +61,27 @@ class LockState(context: Context) {
             .coerceAtLeast(0L)
             .toInt()
 
+    // ── 锁机期间「换一题」次数（防破解） ──────────────
+    // 存 prefs 持久化：用户退出答题页再重进，次数不重置
+    // （之前放在 Compose remember 里，退出重进就清零——被用户发现
+    // "切换次数用完后再退出重进就又可以切换了"）。锁机结束自动归零。
+
+    /** 本次锁机已使用的「换一题」次数。 */
+    var challengeRefreshCount: Int
+        get() = prefs.getInt(KEY_CHALLENGE_REFRESHES, 0)
+        set(value) = prefs.edit().putInt(KEY_CHALLENGE_REFRESHES, value.coerceAtLeast(0)).apply()
+
+    /** 记录一次换题。返回是否已达上限（≥5 次）。 */
+    fun recordChallengeRefresh(): Boolean {
+        challengeRefreshCount = challengeRefreshCount + 1
+        return challengeRefreshCount >= MAX_CHALLENGE_REFRESHES
+    }
+
     fun startLock(minutes: Int, source: String) {
         lockUntil = System.currentTimeMillis() + minutes * 60_000L
         lockSource = source
-        // 新一轮锁机：重置答题切换计数与耗尽标记
+        // 新一轮锁机：重置「换一题」次数
+        challengeRefreshCount = 0
     }
 
 
@@ -106,7 +127,8 @@ class LockState(context: Context) {
         friendShift = 0
         pauseUsed = 0
         pauseUntil = 0L
-        // 锁机结束：重置答题切换计数与耗尽标记
+        // 锁机结束：重置「换一题」次数
+        challengeRefreshCount = 0
     }
 
     // ── 锁机暂停（需答题获取暂停时长） ─────────────────

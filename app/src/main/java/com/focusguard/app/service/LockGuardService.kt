@@ -299,16 +299,23 @@ class LockGuardService : Service() {
 
             // 答题页让位规则：
             // - foreground（答题页在前台）→ 隐藏覆盖层，否则挡住答题页输入
-            // - active 且尚未 created（启动窗口期：按钮点击后 ~1.5s 内）→ 同样让位，
-            //   否则按钮点击后 guardTick 会把刚移除的覆盖层重新拉起盖住答题页
-            // - created 但被切走（foreground=false）→ 不满足上述条件，
+            // - active 且尚未 created（启动窗口期：按钮点击后 ~1.5s 内）→ 同样让位
+            // - created 但 <1.5s 内（onCreate → onResume 窗口期）→ 也必须让位！
+            //   否则 guardTick 恰好 tick 会拉起悬浮窗盖住刚创建的答题页，
+            //   答题页永远无法 onResume——"点击答题后答题页直接退出"的根因
+            // - created 且超过 1.5s 且被切走（foreground=false）→ 不满足上述条件，
             //   走下方覆盖层拉起逻辑锁屏（堵住"切走答题页 = 自由使用"）
             val challengeForeground = UnlockChallengeActivity.foreground
             val challengeLaunching = UnlockChallengeActivity.active &&
                 !UnlockChallengeActivity.isCreated
+            val challengeJustCreated = UnlockChallengeActivity.isCreated &&
+                UnlockChallengeActivity.instanceCreatedAt > 0 &&
+                now - UnlockChallengeActivity.instanceCreatedAt < 1_500L
             // 锁机页启动窗口（悬浮窗「暂停」/强度3 路径的延迟启动期间）
             val lockScreenLaunching = LockScreenActivity.launching
-            if (challengeForeground || challengeLaunching || lockScreenLaunching) {
+            if (challengeForeground || challengeLaunching || challengeJustCreated ||
+                lockScreenLaunching
+            ) {
                 if (LockOverlayManager.isShowing) LockOverlayManager.hide()
                 return
             }

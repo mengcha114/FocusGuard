@@ -46,10 +46,13 @@ fun UnlockChallengeScreen(
     // 题数越多，单题难度越高：1 题=中等，>=3 题=困难
     val difficulty = remember { if (targetCorrectCount >= 3) 3 else 2 }
 
+    // 换题计数持久化在 LockState：退出答题页重进不重置（锁机结束才归零）
+    val lockState = remember { com.focusguard.app.data.LockState(context) }
+
     var currentQuestion by remember { mutableStateOf(generator.generate(difficulty)) }
     var userAnswer by remember { mutableStateOf("") }
     var currentCorrectCount by remember { mutableIntStateOf(0) }
-    var refreshCount by remember { mutableIntStateOf(0) } // 仅针对「换一题」按钮点击计次
+    var refreshCount by remember { mutableIntStateOf(lockState.challengeRefreshCount) }
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var switching by remember { mutableStateOf(false) }
@@ -252,6 +255,8 @@ fun UnlockChallengeScreen(
                 onClick = {
                     if (refreshCount < 5) {
                         refreshCount++
+                        // 持久化：退出答题页重进不重置
+                        lockState.recordChallengeRefresh()
                         nextQuestion()
                     }
                 },
