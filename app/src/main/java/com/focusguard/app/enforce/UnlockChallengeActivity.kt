@@ -230,12 +230,34 @@ class UnlockChallengeActivity : ComponentActivity() {
 
     /** 放弃答题，回到锁机页。 */
     private fun returnToLockScreen() {
-        finish()
-        // finish 后 created 会转 false，锁机页恢复防护。
-        // 若锁机页已被回收则重新拉起。
-        if (LockScreenActivity.instance == null && lockState.shouldBlockNow) {
-            LockScreenActivity.show(applicationContext)
+        // ── 无缝接替（0 露桌） ─────────────────────────
+        // 先同步挂载全屏悬浮窗（<10ms 盖住屏幕），再 finish 销毁答题页——
+        // 答题页销毁瞬间系统暴露的是已被悬浮窗遮挡的界面，桌面 0 毫秒暴露。
+        // 无悬浮窗权限才退回 Activity 兜底。
+        val stillLocked = try {
+            this::lockState.isInitialized && lockState.shouldBlockNow
+        } catch (e: Exception) {
+            false
         }
+        if (stillLocked) {
+            if (com.focusguard.app.enforce.LockOverlayManager.canShow(applicationContext)) {
+                com.focusguard.app.enforce.LockOverlayManager.showNow(
+                    context = applicationContext,
+                    lockState = lockState,
+                    onStartChallenge = {
+                        com.focusguard.app.enforce.LockScreenActivity
+                            .startChallengeFromOverlay(applicationContext, lockState)
+                    },
+                    onRequestPause = {
+                        com.focusguard.app.enforce.LockScreenActivity
+                            .showForPause(applicationContext)
+                    }
+                )
+            } else {
+                LockScreenActivity.show(applicationContext)
+            }
+        }
+        finish()
     }
 
     @Deprecated("Back returns to lock screen, not unlock")
@@ -249,6 +271,15 @@ class UnlockChallengeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         foreground = true
+        // ── 无缝接替（0 露桌） ─────────────────────────
+        // 点击答题时悬浮窗不先隐藏（防露桌），答题页在悬浮窗下方完成
+        // 创建与首帧绘制；此处 onResume = 答题页已完全就绪并占据屏幕，
+        // 此时才撤下悬浮窗——撤下瞬间露出的直接是答题页，桌面 0 毫秒暴露。
+        try {
+            com.focusguard.app.enforce.LockOverlayManager.hideNow()
+        } catch (e: Exception) {
+            Log.w(TAG, "撤下悬浮窗失败：${e.message}")
+        }
     }
 
     override fun onPause() {

@@ -168,30 +168,24 @@ class LockScreenActivity : ComponentActivity() {
          */
         fun showForPause(context: Context) {
             val appCtx = context.applicationContext
-            try {
-                LockOverlayManager.hideNow()
-            } catch (e: Exception) {
-                Log.w(TAG, "隐藏覆盖层失败：${e.message}")
-            }
-            // 启动窗口标记：150ms 延迟期间 guardTick 不拉起悬浮窗
+            // ── 无缝接替（0 露桌） ─────────────────────────
+            // 悬浮窗不先隐藏：锁机页在悬浮窗下方创建，其 onCreate 立即发起
+            // 答题流程，答题页 onResume 就绪后统一撤下悬浮窗。
             markLaunchPending()
-            // 与 startChallengeFromOverlay 相同：延迟启动规避 native 竞态
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                try {
-                    val intent = Intent(appCtx, LockScreenActivity::class.java).apply {
-                        putExtra(EXTRA_REQUEST_PAUSE, true)
-                        addFlags(
-                            Intent.FLAG_ACTIVITY_NEW_TASK or
-                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                                Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                        )
-                    }
-                    appCtx.startActivity(intent)
-                } catch (e: Exception) {
-                    Log.e(TAG, "拉起暂停请求页失败：${e.message}")
+            try {
+                val intent = Intent(appCtx, LockScreenActivity::class.java).apply {
+                    putExtra(EXTRA_REQUEST_PAUSE, true)
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    )
                 }
-            }, 150L)
+                appCtx.startActivity(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "拉起暂停请求页失败：${e.message}")
+            }
         }
 
         /** 兼容旧调用点：语义与 [show] 相同（都是置顶而非重建）。 */
@@ -207,7 +201,7 @@ class LockScreenActivity : ComponentActivity() {
          * - 强度 4：覆盖层不显示按钮，不会走到这里
          */
         fun startChallengeFromOverlay(context: Context, lockState: LockState) {
-            // 连点去抖：300ms 内忽略重复点击，避免两次 hideNow + 两次延迟启动
+            // 连点去抖：300ms 内忽略重复点击，避免重复启动
             val clickNow = System.currentTimeMillis()
             if (clickNow - lastStartClickAt < 300L) {
                 Log.d(TAG, "答题按钮连点已忽略")
@@ -215,55 +209,33 @@ class LockScreenActivity : ComponentActivity() {
             }
             lastStartClickAt = clickNow
 
-            // 同步隐藏：悬浮窗按钮点击发生在主线程，立即移除窗口，
-            // 避免答题页启动瞬间被悬浮窗盖住（"点了没反应/闪一下"）
-            try {
-                LockOverlayManager.hideNow()
-            } catch (e: Exception) {
-                Log.w(TAG, "隐藏覆盖层失败：${e.message}")
-            }
-            // 诊断记录：导出诊断日志可定位"点击解锁"走到了哪一步
-            try {
-                com.focusguard.app.ai.AiClient.recordDiagnostic(
-                    "点击解锁 强度=${lockState.unlockStrength} 隐藏悬浮窗=${!LockOverlayManager.isShowing}"
-                )
-            } catch (e: Exception) {
-                // 诊断记录失败不影响功能
-            }
-            // ── 关键：延迟 150ms 再启动目标页面 ──────────────
-            // TYPE_APPLICATION_OVERLAY 窗口移除后，系统的 InputDispatcher
-            // 需要短暂时间完成窗口注销。华为 EMUI/HarmonyOS 上"移除悬浮窗
-            // 的瞬间立即 startActivity"会触发 native 层崩溃
-            // （Java 的 try-catch 抓不到，crash_log.txt 也不记录）
-            // ——表现为"点击答题解锁直接闪退"且无日志。
-            // 延迟让窗口系统稳定后再启动，彻底避开这个竞态。
-            //
-            // 先打启动窗口标记：150ms 延迟期间 guardTick 不会重新拉起
-            // 悬浮窗（否则答题页/锁机页一出现就被盖住，像"没反应"）。
+            // ── 无缝接替（0 露桌） ─────────────────────────
+            // 悬浮窗**不先隐藏**：目标页面（答题页/锁机页）在悬浮窗下方完成
+            // 创建与首帧绘制，其 onResume 就绪后才由它撤下悬浮窗——
+            // 撤下瞬间露出的直接是目标页面，桌面 0 毫秒暴露。
+            // 也正因为悬浮窗未被移除，"移除悬浮窗瞬间 startActivity"的
+            // InputDispatcher native 竞态自然消失，150ms 延时不再需要。
             if (lockState.unlockStrength == 3) {
                 LockScreenActivity.markLaunchPending()
             } else {
                 UnlockChallengeActivity.markLaunchPending()
             }
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                try {
-                    when (lockState.unlockStrength) {
-                        // 强度 3（朋友辅助）：必须进锁机页输入密文。
-                        // forceActivity=true——否则 show() 默认悬浮窗优先，
-                        // 会重新拉起悬浮窗而不启动锁机页（"点了没反应"）。
-                        3 -> show(context, forceActivity = true)
-                        else -> {
-                            val required = if (lockState.unlockStrength == 2) 5 else 1
-                            UnlockChallengeActivity.show(
-                                context.applicationContext,
-                                required
-                            )
-                        }
+            try {
+                when (lockState.unlockStrength) {
+                    // 强度 3（朋友辅助）：必须进锁机页输入密文。
+                    // forceActivity=true——否则 show() 默认悬浮窗优先。
+                    3 -> show(context, forceActivity = true)
+                    else -> {
+                        val required = if (lockState.unlockStrength == 2) 5 else 1
+                        UnlockChallengeActivity.show(
+                            context.applicationContext,
+                            required
+                        )
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "延迟启动解锁流程失败：${e.message}")
                 }
-            }, 150L)
+            } catch (e: Exception) {
+                Log.e(TAG, "启动解锁流程失败：${e.message}")
+            }
         }
     }
 
@@ -408,6 +380,15 @@ class LockScreenActivity : ComponentActivity() {
         if (!lockState.isLocked) {
             finish()
             return
+        }
+        // ── 无缝接替（0 露桌） ─────────────────────────
+        // 悬浮窗不先隐藏，锁机页在悬浮窗下方完成创建与绘制；
+        // 此处 onResume = 锁机页已就绪，撤下悬浮窗露出锁机页
+        // （强度 3 密文输入 / 暂停流程的答题中转都依赖这一撤）。
+        try {
+            LockOverlayManager.hideNow()
+        } catch (e: Exception) {
+            Log.w(TAG, "撤下悬浮窗失败：${e.message}")
         }
         // 每次回到前台重新应用沉浸模式（部分 ROM 会重置系统栏状态）
         applyImmersiveMode()
