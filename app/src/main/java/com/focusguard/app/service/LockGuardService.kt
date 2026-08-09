@@ -349,9 +349,7 @@ class LockGuardService : Service() {
             // 当 Dhizuku 已连接且已授权时，优先启动 LockScreenActivity 并进入系统级 Lock Task 模式！
             // 此模式下系统在底层彻底禁用 Home / 上滑 / 最近任务 / 通知栏下拉 / 状态栏展开，
             // 这是最强的系统级锁死。
-            if (com.focusguard.app.enhance.DhizukuEnhancer.isReady() &&
-                com.focusguard.app.enhance.DhizukuEnhancer.isPermissionGranted()
-            ) {
+            if (com.focusguard.app.enhance.DhizukuEnhancer.ensureReady(applicationContext)) {
                 // 如果已经在前台且 LockTask 已生效，彻底隐藏悬浮窗防止闪烁并放行
                 if (LockScreenActivity.foreground &&
                     com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
