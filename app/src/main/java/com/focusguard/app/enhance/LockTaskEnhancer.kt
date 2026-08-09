@@ -48,6 +48,20 @@ object LockTaskEnhancer {
                 }
             }
 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                try {
+                    val dpm = context.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+                    val comp = DhizukuEnhancer.ownerComponent
+                    // STATUS_BAR_DISABLE_NOTIFICATION_ICONS | STATUS_BAR_DISABLE_NOTIFICATION_TABS | STATUS_BAR_DISABLE_EXPAND
+                    // 禁用通知栏下拉、通知图标与通知扩展
+                    val flags = 0x00000001 or 0x00000002 or 0x00010000
+                    if (comp != null) {
+                        dpm?.setStatusBarDisabled(comp, true)
+                    }
+                } catch (e: Throwable) {
+                    Log.w(TAG, "设置 setStatusBarDisabled 失败: ${e.message}")
+                }
+            }
             activity.startLockTask()
             lockTaskActive = true
             Log.d(TAG, "已进入系统级 Lock Task 模式")
@@ -64,6 +78,15 @@ object LockTaskEnhancer {
         try {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
             activity.stopLockTask()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                runCatching {
+                    val dpm = activity.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+                    val comp = DhizukuEnhancer.ownerComponent
+                    if (comp != null) {
+                        dpm?.setStatusBarDisabled(comp, false)
+                    }
+                }
+            }
         } catch (e: Throwable) {
             Log.w(TAG, "退出 Lock Task 失败：${e.message}")
         } finally {

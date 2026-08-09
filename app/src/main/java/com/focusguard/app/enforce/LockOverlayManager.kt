@@ -248,35 +248,31 @@ object LockOverlayManager {
 
                 /**
                  * 捕获窗口外触摸（配合 FLAG_WATCH_OUTSIDE_TOUCH）。
-                 *
-                 * 下拉通知栏的起手动作会落在状态栏区域（可能算窗口外），
-                 * 收到 ACTION_OUTSIDE 就立刻重新压制系统栏并收起通知栏——
-                 * 让下拉动作无法完成。
+                 * 任何窗口外/边缘触摸都触发系统栏重新隐藏与通知栏收起。
                  */
                 override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
-                    if (event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                    if (event.action == android.view.MotionEvent.ACTION_OUTSIDE ||
+                        event.action == android.view.MotionEvent.ACTION_DOWN
+                    ) {
                         hideSystemBars(this)
                         notifyShadeDismiss()
-                        return true
                     }
                     return super.onTouchEvent(event)
                 }
 
                 /**
-                 * 顶部下拉手势拦截（部分 ROM 上窗口优先于 SystemUI 手势区域时生效）。
-                 *
-                 * 屏幕顶部 ~1/4 高度内的 ACTION_DOWN 很可能是「下拉通知栏 /
-                 * 唤出状态栏」的起手动作：直接消费掉并立即压制系统栏。
-                 * 若 SystemUI 手势区域优先（事件到不了这里），则此层不生效，
-                 * 由 insets 监听与无障碍 dismiss 兜底（展开即收回）。
+                 * 全屏按压/滑动事件预拦截：
+                 * 任何在顶部 35% 区域内的触摸（DOWN/MOVE），全部阻断并收起通知栏。
                  */
                 override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
-                    if (event.action == android.view.MotionEvent.ACTION_DOWN &&
-                        event.rawY < height / 4
-                    ) {
+                    if (event.rawY < height * 0.35f) {
                         hideSystemBars(this)
                         notifyShadeDismiss()
-                        return true
+                        if (event.action == android.view.MotionEvent.ACTION_DOWN ||
+                            event.action == android.view.MotionEvent.ACTION_MOVE
+                        ) {
+                            return true
+                        }
                     }
                     return super.dispatchTouchEvent(event)
                 }
