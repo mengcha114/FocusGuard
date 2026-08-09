@@ -376,12 +376,17 @@ object LockOverlayManager {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            // 高度撑满：底部弹性占位才能把操作区推到屏幕下部
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
             // 顶部留出状态栏高度，内容不被刘海/挖孔压住（窗口本身已铺满全屏）
             setPadding(
                 dp(context, 26),
-                dp(context, 52),
+                dp(context, 48),
                 dp(context, 26),
-                dp(context, 28)
+                dp(context, 34)
             )
         }
 
@@ -493,72 +498,194 @@ object LockOverlayManager {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(context, 26) }
+            ).apply { topMargin = dp(context, 22) }
         )
 
-        // 待办清单：锁机时看到自己该做什么，比单纯拦截更有意义
+        // ── 待办清单卡片（带边框，左对齐，逾期/紧急高亮） ──────
         val pending = runCatching { MemoStore(context).getPending() }.getOrDefault(emptyList())
         if (pending.isNotEmpty()) {
-            container.addView(
-                TextView(context).apply {
-                    text = "待办清单"
-                    textSize = 10f
-                    letterSpacing = 0.2f
-                    setTextColor(Color.parseColor("#9C8BC9"))
-                    gravity = Gravity.CENTER
-                    setPadding(0, dp(context, 24), 0, dp(context, 8))
+            val memoCard = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 18).toFloat()
+                    setColor(0x0FFFFFFF)
+                    setStroke(dp(context, 1), 0x1FFFFFFF)
+                }
+                setPadding(dp(context, 18), dp(context, 14), dp(context, 18), dp(context, 14))
+            }
+            // 卡片标题行：小圆点 + 标题 + 数量
+            memoCard.addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(
+                        TextView(context).apply {
+                            text = "待办清单"
+                            textSize = 11f
+                            letterSpacing = 0.16f
+                            typeface = Typeface.DEFAULT_BOLD
+                            setTextColor(Color.parseColor("#B4A5FF"))
+                        },
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    )
+                    addView(
+                        TextView(context).apply {
+                            text = "${pending.size} 项"
+                            textSize = 10f
+                            setTextColor(Color.parseColor("#60FFFFFF"))
+                        },
+                        LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        )
+                    )
                 },
                 matchWrap()
             )
-            pending.take(3).forEach { item ->
-                val tag = when {
-                    item.overdue -> " · 逾期"
-                    item.priority == 2 -> " · 紧急"
-                    item.priority == 1 -> " · 重要"
+            pending.take(4).forEach { item ->
+                val tagText = when {
+                    item.overdue -> "逾期"
+                    item.priority == 2 -> "紧急"
+                    item.priority == 1 -> "重要"
                     else -> ""
                 }
-                container.addView(
-                    TextView(context).apply {
-                        text = "· ${item.text}$tag"
-                        textSize = 12f
-                        setTextColor(Color.parseColor("#B0FFFFFF"))
-                        gravity = Gravity.CENTER
-                        setPadding(0, dp(context, 2), 0, dp(context, 2))
-                        maxLines = 1
-                        ellipsize = android.text.TextUtils.TruncateAt.END
+                val tagColor = when {
+                    item.overdue || item.priority == 2 -> "#EF9A9A"
+                    item.priority == 1 -> "#FFCC80"
+                    else -> "#60FFFFFF"
+                }
+                memoCard.addView(
+                    LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(0, dp(context, 5), 0, dp(context, 5))
+                        // 左侧竖条：按优先级着色
+                        addView(
+                            View(context).apply {
+                                background = GradientDrawable().apply {
+                                    cornerRadius = dp(context, 2).toFloat()
+                                    setColor(Color.parseColor(tagColor))
+                                }
+                            },
+                            LinearLayout.LayoutParams(dp(context, 3), dp(context, 14)).apply {
+                                marginEnd = dp(context, 10)
+                            }
+                        )
+                        addView(
+                            TextView(context).apply {
+                                text = item.text
+                                textSize = 12f
+                                setTextColor(Color.parseColor("#D0FFFFFF"))
+                                maxLines = 1
+                                ellipsize = android.text.TextUtils.TruncateAt.END
+                            },
+                            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        )
+                        if (tagText.isNotEmpty()) {
+                            addView(
+                                TextView(context).apply {
+                                    text = tagText
+                                    textSize = 9f
+                                    typeface = Typeface.DEFAULT_BOLD
+                                    setTextColor(Color.parseColor(tagColor))
+                                    background = GradientDrawable().apply {
+                                        cornerRadius = dp(context, 6).toFloat()
+                                        setColor(0x14FFFFFF)
+                                    }
+                                    setPadding(
+                                        dp(context, 6), dp(context, 2),
+                                        dp(context, 6), dp(context, 2)
+                                    )
+                                },
+                                LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT
+                                ).apply { marginStart = dp(context, 8) }
+                            )
+                        }
                     },
                     matchWrap()
                 )
             }
+            if (pending.size > 4) {
+                memoCard.addView(
+                    TextView(context).apply {
+                        text = "还有 ${pending.size - 4} 项…"
+                        textSize = 10f
+                        setTextColor(Color.parseColor("#50FFFFFF"))
+                        setPadding(dp(context, 13), dp(context, 3), 0, 0)
+                    },
+                    matchWrap()
+                )
+            }
+            container.addView(
+                memoCard,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(context, 16) }
+            )
         }
 
-        // 箴言（与旧版锁机页一致：优先用户自定义，随机一条）
+        // ── 箴言卡片（带左侧竖线的引用样式） ──────────────────
         container.addView(
-            TextView(context).apply {
-                text = pickMotto(context)
-                textSize = 13f
-                gravity = Gravity.CENTER
-                setTextColor(Color.parseColor("#9C8BC9"))
-                setPadding(dp(context, 20), dp(context, 22), dp(context, 20), 0)
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 16).toFloat()
+                    setColor(0x0AFFFFFF)
+                    setStroke(dp(context, 1), 0x18FFFFFF)
+                }
+                setPadding(dp(context, 16), dp(context, 14), dp(context, 16), dp(context, 14))
+                addView(
+                    View(context).apply {
+                        background = GradientDrawable().apply {
+                            cornerRadius = dp(context, 2).toFloat()
+                            setColor(Color.parseColor("#8B7CF6"))
+                        }
+                    },
+                    LinearLayout.LayoutParams(dp(context, 3), LinearLayout.LayoutParams.MATCH_PARENT)
+                        .apply { marginEnd = dp(context, 12) }
+                )
+                addView(
+                    TextView(context).apply {
+                        text = pickMotto(context)
+                        textSize = 13f
+                        setLineSpacing(dp(context, 3).toFloat(), 1f)
+                        setTextColor(Color.parseColor("#C0B4FF"))
+                        maxLines = 3
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                    },
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                )
             },
-            matchWrap()
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(context, 14) }
         )
 
-        // 解锁/暂停按钮：按强度显示（强度 4 不可提前解锁 → 不给按钮）
+        // 弹性占位：把按钮压到屏幕下部，消除底部大片空白
+        container.addView(
+            View(context),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+            )
+        )
+
+        // ── 底部操作区：全宽按钮（贴近拇指区域，视觉更稳） ──────
         if (lockState.unlockStrength < 4) {
             container.addView(
                 Button(context).apply {
                     text = if (lockState.unlockStrength == 3) "去解锁" else "答题解锁"
                     textSize = 15f
                     setTextColor(Color.WHITE)
+                    typeface = Typeface.DEFAULT_BOLD
                     isAllCaps = false
-                    background = GradientDrawable().apply {
-                        cornerRadius = dp(context, 14).toFloat()
-                        setColor(0xFF4F378B.toInt())
-                    }
-                    setPadding(dp(context, 28), dp(context, 12), dp(context, 28), dp(context, 12))
+                    background = GradientDrawable(
+                        GradientDrawable.Orientation.LEFT_RIGHT,
+                        intArrayOf(0xFF7C4DFF.toInt(), 0xFF5E35B1.toInt())
+                    ).apply { cornerRadius = dp(context, 16).toFloat() }
                     setOnClickListener {
                         try {
                             onStartChallenge()
@@ -568,27 +695,23 @@ object LockOverlayManager {
                     }
                 },
                 LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    gravity = Gravity.CENTER
-                    topMargin = dp(context, 26)
-                }
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(context, 52)
+                ).apply { topMargin = dp(context, 8) }
             )
             // 暂停按钮：设置了"允许中途暂停"且有剩余配额时显示
-            // （用户反馈"设置了允许中途暂停但锁机页面没显示暂停入口"）
             if (lockState.canPause && onRequestPause != null) {
                 container.addView(
                     Button(context).apply {
-                        text = "暂停（答题）"
+                        text = "暂停（答题换取 ${lockState.pauseMinutes} 分钟）"
                         textSize = 13f
                         setTextColor(Color.parseColor("#C0B4FF"))
                         isAllCaps = false
                         background = GradientDrawable().apply {
-                            cornerRadius = dp(context, 12).toFloat()
-                            setColor(0x334F378B.toInt()) // 半透明紫底，次级按钮观感
+                            cornerRadius = dp(context, 14).toFloat()
+                            setColor(0x1AFFFFFF)
+                            setStroke(dp(context, 1), 0x334F378B)
                         }
-                        setPadding(dp(context, 24), dp(context, 9), dp(context, 24), dp(context, 9))
                         setOnClickListener {
                             try {
                                 onRequestPause()
@@ -598,12 +721,9 @@ object LockOverlayManager {
                         }
                     },
                     LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        gravity = Gravity.CENTER
-                        topMargin = dp(context, 12)
-                    }
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(context, 44)
+                    ).apply { topMargin = dp(context, 10) }
                 )
             }
         } else {
@@ -613,9 +733,16 @@ object LockOverlayManager {
                     textSize = 12f
                     setTextColor(Color.parseColor("#EF9A9A"))
                     gravity = Gravity.CENTER
-                    setPadding(0, dp(context, 26), 0, 0)
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(context, 14).toFloat()
+                        setColor(0x14EF5350)
+                    }
+                    setPadding(dp(context, 16), dp(context, 14), dp(context, 16), dp(context, 14))
                 },
-                matchWrap()
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(context, 8) }
             )
         }
 
@@ -981,12 +1108,13 @@ object LockOverlayManager {
                 text = session.question.question
                 textSize = 16f
                 setTextColor(Color.WHITE)
-                setLineSpacing(dp(context, 4).toFloat(), 1f)
+                setLineSpacing(dp(context, 5).toFloat(), 1f)
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 14).toFloat()
-                    setColor(0xFF262031.toInt())
+                    cornerRadius = dp(context, 16).toFloat()
+                    setColor(0x14FFFFFF)
+                    setStroke(dp(context, 1), 0x26FFFFFF)
                 }
-                setPadding(dp(context, 16), dp(context, 14), dp(context, 16), dp(context, 14))
+                setPadding(dp(context, 16), dp(context, 16), dp(context, 16), dp(context, 16))
                 challengeQuestionText = this
             },
             matchWrap().apply { topMargin = dp(context, 14) }
@@ -1018,16 +1146,20 @@ object LockOverlayManager {
             TextView(context).apply {
                 text = session.feedback
                 textSize = 12f
-                setLineSpacing(dp(context, 3).toFloat(), 1f)
+                setLineSpacing(dp(context, 4).toFloat(), 1f)
                 setTextColor(
                     if (session.feedbackIsError) Color.parseColor("#EF9A9A")
                     else Color.parseColor("#A5D6A7")
                 )
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(if (session.feedbackIsError) 0x18EF5350 else 0x1866BB6A)
+                }
+                setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10))
                 visibility = if (session.feedback.isBlank()) View.GONE else View.VISIBLE
-                setPadding(0, dp(context, 8), 0, 0)
                 challengeFeedbackText = this
             },
-            matchWrap()
+            matchWrap().apply { topMargin = dp(context, 10) }
         )
 
         // ── 自绘键盘 ────────────────────────────────
