@@ -143,13 +143,55 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 // permissionRefreshTick 变化时重新计算 allGranted
                 val refreshTick = permissionRefreshTick
+                // 首次启动：必须手动点击「完成设置 / 稍后设置」才进入主界面，
+                // 授权完权限**不会自动跳转**（用户要求"选择完后点击进入软件"）。
+                // 非首次：权限被系统撤销时才重新显示权限页，授权完自动恢复。
+                var firstRun by remember { mutableStateOf(!appSettings.firstRunDone) }
+                var showDisclaimer by remember { mutableStateOf(!appSettings.firstRunDone) }
                 var showPermissionSetup by remember(refreshTick) {
-                    mutableStateOf(!isAllPermissionsGranted())
+                    mutableStateOf(firstRun || !isAllPermissionsGranted())
+                }
+                // 首次启动免责声明
+                if (showDisclaimer) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { /* 不允许直接关闭，必须选择 */ },
+                        title = { Text("免责声明与隐私说明") },
+                        text = {
+                            Text(
+                                text = "在使用「专注卫士」前，请仔细阅读以下内容：\n\n" +
+                                    "1. 本软件目前处于测试阶段，可能存在稳定性问题或误判，请理性使用。\n\n" +
+                                    "2. 屏幕检测功能会定期截取屏幕画面并上传到您配置的 AI 模型服务进行识别，" +
+                                    "请确保您使用的是可信的服务商，并留意画面中可能包含的个人隐私信息。\n\n" +
+                                    "3. 锁机功能为自我约束工具，无法阻止物理手段（如关机、拔电池），" +
+                                    "也不构成对设备的完全控制。\n\n" +
+                                    "4. 本项目为开源软件（MIT 协议），按「现状」提供，不附带任何担保。" +
+                                    "因使用本软件造成的任何后果，由使用者自行承担。",
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp
+                            )
+                        },
+                        confirmButton = {
+                            Button(onClick = {
+                                showDisclaimer = false
+                                // 同意免责声明后进入权限设置页（仍需手动点击进入主界面）
+                            }) { Text("同意并继续") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                android.os.Process.killProcess(android.os.Process.myPid())
+                            }) { Text("不同意，退出", color = Color(0xFFF44336)) }
+                        }
+                    )
                 }
 
                 if (showPermissionSetup) {
                     PermissionSetupScreen(
-                        onFinish = { showPermissionSetup = false },
+                        onFinish = {
+                            // 手动点击进入：标记首次流程完成
+                            appSettings.firstRunDone = true
+                            firstRun = false
+                            showPermissionSetup = false
+                        },
                         onRequestPermission = { permission -> requestPermission(permission) }
                     )
                 } else {
@@ -254,7 +296,15 @@ class MainActivity : ComponentActivity() {
                             }
                             composable("settings") {
                                 SettingsScreen(
-                                    onSave = { /* Save handled by screen */ }
+                                    onSave = { /* Save handled by screen */ },
+                                    onOpenTextKeywords = {
+                                        navController.navigate("text_keywords")
+                                    }
+                                )
+                            }
+                            composable("text_keywords") {
+                                com.focusguard.app.ui.screens.TextKeywordsScreen(
+                                    onBack = { navController.popBackStack() }
                                 )
                             }
                             composable("timer_lock") {

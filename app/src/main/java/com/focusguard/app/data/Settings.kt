@@ -45,6 +45,9 @@ class Settings(context: Context) {
         // 智能检测模式（风险驱动的秒级动态间隔）
         private const val KEY_SMART_SCHEDULE = "smart_schedule"
 
+        // 首次启动流程（免责声明 + 权限设置完成标志）
+        private const val KEY_FIRST_RUN_DONE = "first_run_done"
+
         // 屏幕文字特征关键词（完整词表，首次读取写入内置默认）
         private const val KEY_STUDY_KEYWORDS = "study_keywords"
         private const val KEY_ENTERTAINMENT_KEYWORDS = "entertainment_keywords"
@@ -276,6 +279,15 @@ gacha
     var customApiModel: String
         get() = prefs.getString(KEY_CUSTOM_API_MODEL, "") ?: ""
         set(value) = prefs.edit().putString(KEY_CUSTOM_API_MODEL, value).apply()
+
+    // ── 首次启动流程 ──────────────────────────────────
+    // 首次打开：先弹免责声明 → 权限设置页 → 用户手动点击
+    // 「完成设置 / 稍后设置」后才进入主界面（授权完不自动跳转）。
+
+    /** 首次启动流程是否已完成（免责声明已同意 + 已进入过主界面）。 */
+    var firstRunDone: Boolean
+        get() = prefs.getBoolean(KEY_FIRST_RUN_DONE, false)
+        set(value) = prefs.edit().putBoolean(KEY_FIRST_RUN_DONE, value).apply()
 
     // ── 屏幕文字特征关键词（L2 检测，完整词表可编辑） ──
     // 首次读取时写入内置默认词表；用户可在设置页查看/增删改。

@@ -261,6 +261,25 @@ object LockOverlayManager {
                     }
                     return super.onTouchEvent(event)
                 }
+
+                /**
+                 * 顶部下拉手势拦截（部分 ROM 上窗口优先于 SystemUI 手势区域时生效）。
+                 *
+                 * 屏幕顶部 ~1/4 高度内的 ACTION_DOWN 很可能是「下拉通知栏 /
+                 * 唤出状态栏」的起手动作：直接消费掉并立即压制系统栏。
+                 * 若 SystemUI 手势区域优先（事件到不了这里），则此层不生效，
+                 * 由 insets 监听与无障碍 dismiss 兜底（展开即收回）。
+                 */
+                override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+                    if (event.action == android.view.MotionEvent.ACTION_DOWN &&
+                        event.rawY < height / 4
+                    ) {
+                        hideSystemBars(this)
+                        notifyShadeDismiss()
+                        return true
+                    }
+                    return super.dispatchTouchEvent(event)
+                }
             }.apply {
                 background = buildBackground()
                 isFocusableInTouchMode = true

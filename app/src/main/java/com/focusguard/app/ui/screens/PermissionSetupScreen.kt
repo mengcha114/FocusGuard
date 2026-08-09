@@ -56,7 +56,7 @@ fun PermissionSetupScreen(
         listOf(
             PermissionItem(
                 key = "usage_stats",
-                title = "应用使用情况",
+                title = "应用使用情况（必需）",
                 description = "识别前台应用与统计使用时长，请在列表中找到「专注卫士」并开启",
                 icon = Icons.Default.QueryStats,
                 isGranted = PermissionChecker.isUsageStatsGranted(context)
@@ -71,10 +71,11 @@ fun PermissionSetupScreen(
             ),
             PermissionItem(
                 key = "accessibility",
-                title = "无障碍服务",
-                description = "锁机拦截、强制退出应用、读屏省 token，请在列表中开启「专注卫士」",
+                title = "无障碍服务（强烈建议）",
+                description = "锁机顶回、拦截通知栏、屏幕文字预过滤省 token。未开启时锁机仍有效，但防破解能力减弱。请在列表中开启「专注卫士」",
                 icon = Icons.Default.Accessibility,
-                isGranted = PermissionChecker.isAccessibilityEnabled(context)
+                isGranted = PermissionChecker.isAccessibilityEnabled(context),
+                isRequired = false
             ),
             PermissionItem(
                 key = "screen_capture",

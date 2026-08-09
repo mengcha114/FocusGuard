@@ -20,7 +20,10 @@ import com.focusguard.app.data.Settings
 import com.focusguard.app.token.TokenBudget
 
 @Composable
-fun SettingsScreen(onSave: () -> Unit) {
+fun SettingsScreen(
+    onSave: () -> Unit,
+    onOpenTextKeywords: () -> Unit = {}
+) {
     val context = LocalContext.current
     val settings = remember { Settings(context) }
     val tokenBudget = remember { TokenBudget(context) }
@@ -301,29 +304,24 @@ fun SettingsScreen(onSave: () -> Unit) {
         SettingsSection(title = "屏幕文字特征词", icon = Icons.Default.TextFields) {
             Text(
                 text = "「屏幕文字预过滤」命中这些词时直接判定（不截图、不调 AI）。\n" +
-                    "这是完整词表（默认内置，可增删改）：每行一个关键词，直接编辑即可。",
+                    "完整词表（默认内置，可增删改）在独立页面编辑，避免占用本页空间。",
                 fontSize = 11.sp,
                 lineHeight = 17.sp,
                 color = Color.White.copy(alpha = 0.5f)
             )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = studyKeywords,
-                onValueChange = { studyKeywords = it },
-                label = { Text("学习/工作特征词") },
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onOpenTextKeywords,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                minLines = 6
-            )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = entertainmentKeywords,
-                onValueChange = { entertainmentKeywords = it },
-                label = { Text("娱乐特征词") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                minLines = 6
-            )
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = "编辑特征词（${studyKeywords.lines().count { it.isNotBlank() }} + " +
+                        "${entertainmentKeywords.lines().count { it.isNotBlank() }} 个词）",
+                    color = Color(0xFFD0BCFF),
+                    fontSize = 13.sp
+                )
+            }
         }
 
         // ── 智能检测调度 ──────────────────────────────────────────

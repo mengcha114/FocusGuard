@@ -8,29 +8,59 @@ FocusGuard 是一款基于 AI 视觉识别与多层硬性防护的 Android 专�
 
 ## 🌟 核心功能
 
-1. **AI 视觉行为检测**：
-   - 适配 OpenAI 兼容接口、Anthropic Claude、Google Gemini 等多协议大模型。
-   - 三级梯队判断：应用包名分类 → 屏幕文字匹配 → AI 视觉深度理解。
-   - 智能秒级动态采样调度（风险评分 EWMA + 应用停留时长学习 + 提醒折半）。
+1. **AI 视觉行为检测**
+   - 适配 OpenAI 兼容接口、Anthropic Claude、Google Gemini 等多协议大模型
+   - 三级梯队判断：应用包名分类 → 屏幕文字匹配（特征词可自定义）→ AI 视觉深度理解
+   - 智能秒级动态采样调度（风险评分 EWMA + 应用停留时长学习 + 提醒折半）
 
-2. **多层锁机防护体系**：
-   - **Dhizuku / Lock Task 模式**（推荐）：通过 Device Owner 权限激活系统级 Kiosk 模式，屏蔽全部分屏、小窗、手势与 Home 键。
-   - **常驻全屏悬浮窗**（无 Dhizuku 场景）：高优先级 `TYPE_APPLICATION_OVERLAY` 结合键盘事件硬拦截与系统栏沉浸式屏蔽。
-   - **答题解锁机制**：本地即时生成挑战算术题，支持单题解锁、连对解锁、朋友凯撒密文辅助，可设置「换一题」与中途暂停配额。
+2. **多层锁机防护体系**
+   - **Dhizuku / Lock Task 模式**（推荐）：通过 Device Owner 权限激活系统级 Kiosk 模式，屏蔽分屏、小窗、手势与 Home 键
+   - **常驻全屏悬浮窗**（无 Dhizuku 场景）：高优先级 `TYPE_APPLICATION_OVERLAY` + 键盘事件硬拦截 + 系统栏沉浸式屏蔽，**答题界面同样绘制在悬浮窗内**——不依赖 Activity，系统手势物理上无法退出
+   - **答题解锁机制**：本地即时生成挑战题，支持单题解锁 / 连对解锁 / 朋友凯撒密文辅助，可设置「换一题」（限 5 次）与中途暂停配额
 
-3. **智能 AI 助手与备忘录**：
-   - 嵌入 AI 对话面板，支持 Markdown 渲染与 SSE 流式输出。
-   - 结构化待办清单（优先级、截止时间、逾期提示），支持 AI 在对话中直接追加或完成待办。
-
----
-
-## ⚠️ 已知问题与测试说明
-
-- **兼容性提示**：由于各厂商 ROM（华为/荣耀/小米/OPPO/vivo）对后台 Activity 启动、全屏 Intent 及悬浮窗交互限制差异巨大，部分系统上可能出现防护延迟或手势冲突。
-- **配置与 API**：需自行准备视觉模型 API 密钥（推荐 Moonshot / Kimi / OpenAI / DeepSeek / Claude）。
+3. **智能 AI 助手与备忘录**
+   - AI 对话面板：Markdown 渲染 + SSE 流式输出 + 对话持久化
+   - 结构化待办清单（优先级、截止时间、逾期提示），AI 可在对话中直接追加/完成待办
 
 ---
 
-## 📄 开源与协议
+## 🚀 构建
 
-本项目仅供学术研究与个人自律体验使用。
+```bash
+# 需要 JDK 17 + Android SDK
+./gradlew assembleDebug
+# 产物：app/build/outputs/apk/debug/app-debug.apk
+```
+
+CI：GitHub Actions 自动构建（`assembleDebug`），APK 从 Actions 产物下载。
+
+---
+
+## ⚠️ 免责声明与隐私说明
+
+- 本软件**处于测试阶段**，可能存在稳定性问题或误判，请理性使用
+- **屏幕检测会把截屏画面上传到您配置的 AI 模型服务**进行识别——请使用可信的服务商，并留意画面中可能包含的个人隐私信息
+- 锁机功能为**自我约束工具**，无法阻止物理手段（关机、拔电池），不构成对设备的完全控制
+- 因使用本软件造成的任何后果，由使用者自行承担
+
+---
+
+## 🤝 贡献
+
+欢迎提交 Issue 与 Pull Request。
+
+- 代码风格：Kotlin + Jetpack Compose，Material 3
+- 提交信息：Apache 简洁规范（`feat:` / `fix:` / `chore:` 前缀，单行）
+- 主要目录：
+  - `app/src/main/java/com/focusguard/app/enforce/` — 锁机 / 悬浮窗 / 答题
+  - `app/src/main/java/com/focusguard/app/detection/` — 检测流水线（分类 → 文字 → AI）
+  - `app/src/main/java/com/focusguard/app/ai/` — 多协议 AI 客户端
+  - `app/src/main/java/com/focusguard/app/service/` — 守护服务与自愈闹钟
+
+---
+
+## 📄 许可证
+
+[MIT License](LICENSE) © 2026 mengcha114
+
+本软件按「现状」提供，不附带任何担保，详见 [LICENSE](LICENSE)。
