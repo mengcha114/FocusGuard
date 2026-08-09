@@ -309,13 +309,13 @@ private fun AppEditSheet(
     val ruleStore = remember { UsageRuleStore(context) }
 
     // 初始值：用户手动设置优先，否则取自动识别分类
+    val initialCategory = remember {
+        categoryStore.getUserOverride(app.packageName) ?: app.category
+    }
     var selectedCategory by remember {
         mutableStateOf<AppCategory?>(initialCategory)
     }
     val existingRule = remember { ruleStore.getRule(app.packageName) }
-    val initialCategory = remember {
-        categoryStore.getUserOverride(app.packageName) ?: app.category
-    }
     val initialAllow = remember { existingRule?.triggerMinutes?.toString() ?: "" }
     val initialMax = remember { existingRule?.hardBlockMinutes?.toString() ?: "" }
     var allowMinutes by remember { mutableStateOf(initialAllow) }
