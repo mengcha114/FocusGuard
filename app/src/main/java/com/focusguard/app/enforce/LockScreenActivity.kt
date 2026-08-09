@@ -453,6 +453,14 @@ class LockScreenActivity : ComponentActivity() {
         // 暂停/番茄钟休息阶段退出 Lock Task，让用户自由使用。
         if (lockState.shouldBlockNow) {
             val ok = com.focusguard.app.enhance.LockTaskEnhancer.enter(this)
+            // 只有当 Dhizuku 进入 LockTask 成功时，才彻底隐藏悬浮窗（防冲突闪烁）
+            if (ok && LockOverlayManager.isShowing) {
+                try {
+                    LockOverlayManager.hideNow()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Dhizuku 模式隐藏悬浮窗失败：${e.message}")
+                }
+            }
             // enter 失败（Dhizuku 授权问题/白名单失败等）→ 立即退回悬浮窗方案：
             // 否则 Activity 没有 Lock Task 保护，可以被正常退出。
             // 悬浮窗盖住 Activity 并吞掉所有按键，锁死能力不降级。

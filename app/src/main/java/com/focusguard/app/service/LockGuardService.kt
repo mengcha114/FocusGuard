@@ -352,11 +352,11 @@ class LockGuardService : Service() {
             if (com.focusguard.app.enhance.DhizukuEnhancer.isReady() &&
                 com.focusguard.app.enhance.DhizukuEnhancer.isPermissionGranted()
             ) {
-                // 如果已经在前台且 LockTask 已生效，放行
+                // 如果已经在前台且 LockTask 已生效，彻底隐藏悬浮窗防止闪烁并放行
                 if (LockScreenActivity.foreground &&
                     com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
                 ) {
-                    if (LockOverlayManager.isShowing) LockOverlayManager.hide()
+                    if (LockOverlayManager.isShowing) LockOverlayManager.hideNow()
                     return
                 }
                 if (LockScreenActivity.instance == null) {
