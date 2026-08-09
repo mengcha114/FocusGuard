@@ -304,17 +304,20 @@ class LockScreenActivity : ComponentActivity() {
         instanceCreatedAt = System.currentTimeMillis()
         launchPendingAt = 0L
 
-        // 锁屏上也能显示（不强制点亮屏幕）：
-        // setShowWhenLocked 让息屏后按电源键能显示锁机页；
-        // 不设置 TURN_SCREEN_ON / KEEP_SCREEN_ON——否则按电源键息屏后
-        // 锁机页立即把屏幕重新点亮，"无法息屏"。
+        // 锁屏上硬压制：突破系统 keyguard 锁屏屏障
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setShowWhenLocked(true)
+                setTurnScreenOn(true)
             } else {
                 @Suppress("DEPRECATION")
-                window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+                window.addFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                )
             }
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } catch (e: Exception) {
             Log.w(TAG, "设置窗口标志失败：${e.message}")
         }

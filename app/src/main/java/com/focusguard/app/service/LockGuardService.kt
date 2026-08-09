@@ -345,16 +345,23 @@ class LockGuardService : Service() {
             // 注意：v2.0.0 起锁机主体一度改为悬浮窗，导致 LockScreenActivity
             // 从不启动、LockTaskEnhancer.enter 从未执行——用户"配置了 Dhizuku
             // 依然非常容易退出"的根因。
-            // 即使 Dhizuku 可用，如果有悬浮窗权限，依然优先使用全屏悬浮窗（v3.0.0 架构）
-            // 只有无悬浮窗权限且 Dhizuku 可用时，才启动 LockScreenActivity 并进入 Lock Task 模式
-            if (com.focusguard.app.enhance.DhizukuEnhancer.isReady() && !LockOverlayManager.canShow(applicationContext)) {
+            // ── Dhizuku 优先：系统级 Lock Task 方案 ──────────
+            // 当 Dhizuku 已连接且已授权时，优先启动 LockScreenActivity 并进入系统级 Lock Task 模式！
+            // 此模式下系统在底层彻底禁用 Home / 上滑 / 最近任务 / 通知栏下拉 / 状态栏展开，
+            // 这是最强的系统级锁死。
+            if (com.focusguard.app.enhance.DhizukuEnhancer.isReady() &&
+                com.focusguard.app.enhance.DhizukuEnhancer.isPermissionGranted()
+            ) {
+                // 如果已经在前台且 LockTask 已生效，放行
                 if (LockScreenActivity.foreground &&
                     com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
                 ) {
+                    if (LockOverlayManager.isShowing) LockOverlayManager.hide()
                     return
                 }
                 if (LockScreenActivity.instance == null) {
-                    Log.d(TAG, "无悬浮窗权限但 Dhizuku 可用，启动锁机页并进入 Lock Task")
+                    Log.d(TAG, "Dhizuku 已就绪且已授权，优先启动锁机 Activity 并进入系统级 Lock Task")
+                    if (LockOverlayManager.isShowing) LockOverlayManager.hideNow()
                     LockScreenActivity.show(applicationContext, forceActivity = true)
                 }
                 return
