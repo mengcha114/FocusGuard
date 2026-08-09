@@ -63,6 +63,12 @@ fun AiChatScreen() {
         .map { ChatMsg("ai", it.reason, it.getTimeFormatted()) }
         .reversed()
 
+    // 会话消息：持久化的手动对话历史 + 检测日志里 AI 给出的提醒（按时间正序）
+    fun loadAiReminders(): List<ChatMsg> = logStore.getAllLogs()
+        .filter { it.source == "AI_VISION" && it.reason.isNotBlank() }
+        .map { ChatMsg("ai", it.reason, it.getTimeFormatted()) }
+        .reversed()
+
     var messages by remember {
         mutableStateOf(
             chatHistory.getMessages()
@@ -292,6 +298,10 @@ fun AiChatScreen() {
                                                 }
                                                 messages = messages.dropLast(1) +
                                                     last.copy(text = newText)
+                                                // 流式实时持久化：每收到一段增量就同步落盘。
+                                                // 即使页面销毁、协程被取消，已流式收到的内容
+                                                // 也已在存储中——"聊天记录退出后不保存"的根治。
+                                                chatHistory.updateLastMessage(newText)
                                             }
                                         }
                                     }

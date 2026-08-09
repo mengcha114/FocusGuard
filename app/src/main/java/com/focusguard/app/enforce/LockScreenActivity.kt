@@ -69,6 +69,10 @@ class LockScreenActivity : ComponentActivity() {
         @Volatile
         private var launchPendingAt: Long = 0L
 
+        /** 悬浮窗/锁机页答题按钮连点去抖：300ms 内忽略重复点击。 */
+        @Volatile
+        private var lastStartClickAt: Long = 0L
+
         /** 锁机页是否处于"即将启动"窗口内（悬浮窗按钮点击后 ~4s 内）。 */
         val launching: Boolean
             get() {
@@ -203,6 +207,13 @@ class LockScreenActivity : ComponentActivity() {
          * - 强度 4：覆盖层不显示按钮，不会走到这里
          */
         fun startChallengeFromOverlay(context: Context, lockState: LockState) {
+            // 连点去抖：300ms 内忽略重复点击，避免两次 hideNow + 两次延迟启动
+            val clickNow = System.currentTimeMillis()
+            if (clickNow - lastStartClickAt < 300L) {
+                Log.d(TAG, "答题按钮连点已忽略")
+                return
+            }
+            lastStartClickAt = clickNow
 
             // 同步隐藏：悬浮窗按钮点击发生在主线程，立即移除窗口，
             // 避免答题页启动瞬间被悬浮窗盖住（"点了没反应/闪一下"）

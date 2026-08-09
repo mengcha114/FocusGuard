@@ -52,6 +52,21 @@ class ChatHistoryStore(context: Context) {
         save(list)
     }
 
+    /**
+     * 更新最后一条 AI 消息的文本（流式输出实时持久化用）。
+     *
+     * 流式回复每收到一段增量就调用一次——即使页面销毁、协程被取消，
+     * 已收到的内容也已落盘，用户重新进入能看到（部分）回复。
+     */
+    fun updateLastMessage(text: String) {
+        val list = getMessages().toMutableList()
+        if (list.isEmpty()) return
+        val lastIndex = list.indexOfLast { it.role == "ai" }
+        if (lastIndex < 0) return
+        list[lastIndex] = list[lastIndex].copy(text = text)
+        save(list)
+    }
+
     /** 清空对话历史。 */
     fun clear() {
         save(emptyList())
@@ -67,6 +82,8 @@ class ChatHistoryStore(context: Context) {
                     .put("time", entry.time)
             )
         }
-        prefs.edit().putString(KEY_MESSAGES, arr.toString()).apply()
+        // commit() 同步落盘：聊天记录数据量小（≤100 条），
+        // 防止进程被杀 / Activity 立即销毁时 apply() 异步写丢失
+        prefs.edit().putString(KEY_MESSAGES, arr.toString()).commit()
     }
 }
