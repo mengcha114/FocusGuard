@@ -249,6 +249,21 @@ object DhizukuEnhancer {
         }
     }
 
+    /** 通过 Dhizuku 接口调用 DevicePolicyManager.setStatusBarDisabled 屏蔽/解除通知栏。 */
+    fun setStatusBarDisabled(context: Context, disabled: Boolean): Boolean {
+        try {
+            if (!ensureReady(context)) return false
+            val dpm = wrappedDpm ?: return false
+            val comp = ownerComponent ?: return false
+            dpm.setStatusBarDisabled(comp, disabled)
+            Log.d(TAG, "设置 setStatusBarDisabled($disabled) 成功")
+            return true
+        } catch (e: Throwable) {
+            Log.w(TAG, "setStatusBarDisabled 失败：${e.message}")
+            return false
+        }
+    }
+
     /** 本应用是否已被允许进入 Lock Task 模式。 */
     fun isLockTaskPermitted(packageName: String): Boolean {
         val dpm = wrappedDpm ?: return false
