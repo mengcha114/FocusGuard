@@ -45,6 +45,10 @@ class Settings(context: Context) {
         // 智能检测模式（风险驱动的秒级动态间隔）
         private const val KEY_SMART_SCHEDULE = "smart_schedule"
 
+        // 屏幕文字特征自定义关键词
+        private const val KEY_CUSTOM_STUDY_KEYWORDS = "custom_study_keywords"
+        private const val KEY_CUSTOM_ENTERTAINMENT_KEYWORDS = "custom_entertainment_keywords"
+
         // Token 节约系统开关
         private const val KEY_TOKEN_SAVING_ENABLED = "token_saving_enabled"
         private const val KEY_SCREEN_HASH_DEDUP = "screen_hash_dedup"
@@ -215,6 +219,28 @@ class Settings(context: Context) {
     var customApiModel: String
         get() = prefs.getString(KEY_CUSTOM_API_MODEL, "") ?: ""
         set(value) = prefs.edit().putString(KEY_CUSTOM_API_MODEL, value).apply()
+
+    // ── 屏幕文字特征自定义关键词（L2 检测） ─────────────
+    // 用户可自定义"学习/工作特征词"与"娱乐特征词"（每行一个），
+    // 与内置词表合并参与屏幕文字打分。留空则只用内置词表。
+
+    /** 自定义学习/工作特征词（每行一个）。 */
+    var customStudyKeywords: String
+        get() = prefs.getString(KEY_CUSTOM_STUDY_KEYWORDS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CUSTOM_STUDY_KEYWORDS, value).apply()
+
+    /** 自定义娱乐特征词（每行一个）。 */
+    var customEntertainmentKeywords: String
+        get() = prefs.getString(KEY_CUSTOM_ENTERTAINMENT_KEYWORDS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_CUSTOM_ENTERTAINMENT_KEYWORDS, value).apply()
+
+    /** 自定义学习/工作特征词列表（去空行）。 */
+    fun customStudyKeywordList(): List<String> =
+        customStudyKeywords.lines().map { it.trim() }.filter { it.isNotBlank() }
+
+    /** 自定义娱乐特征词列表（去空行）。 */
+    fun customEntertainmentKeywordList(): List<String> =
+        customEntertainmentKeywords.lines().map { it.trim() }.filter { it.isNotBlank() }
 
     /**
      * 智能检测模式（默认开启）。

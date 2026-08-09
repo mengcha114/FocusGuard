@@ -215,10 +215,25 @@ object AppClassifier {
         return
     }
 
-    fun classifyByScreenText(text: String): String {
+    fun classifyByScreenText(text: String): String =
+        classifyByScreenText(text, emptyList(), emptyList())
+
+    /**
+     * 屏幕文字分类（L2 检测）。
+     *
+     * @param studyExtra 用户自定义学习/工作特征词（与内置词表合并）
+     * @param entertainmentExtra 用户自定义娱乐特征词（与内置词表合并）
+     */
+    fun classifyByScreenText(
+        text: String,
+        studyExtra: List<String>,
+        entertainmentExtra: List<String>
+    ): String {
         val lowerText = text.lowercase()
-        val studyScore = studyKeywords.count { lowerText.contains(it) }
-        val entertainmentScore = entertainmentKeywords.count { lowerText.contains(it) }
+        val mergedStudy = studyKeywords + studyExtra.filter { it.isNotBlank() }
+        val mergedEntertainment = entertainmentKeywords + entertainmentExtra.filter { it.isNotBlank() }
+        val studyScore = mergedStudy.count { lowerText.contains(it) }
+        val entertainmentScore = mergedEntertainment.count { lowerText.contains(it) }
 
         return when {
             studyScore > entertainmentScore && studyScore >= 2 -> "STUDY_WORK"
