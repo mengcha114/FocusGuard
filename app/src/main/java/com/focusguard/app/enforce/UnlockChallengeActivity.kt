@@ -271,6 +271,8 @@ class UnlockChallengeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         foreground = true
+        // 取消 onPause 的延迟挂载（正常恢复前台，如输入法弹起/窗口切换）
+        overlayHandler.removeCallbacks(overlayPending)
         // ── 无缝接替（0 露桌） ─────────────────────────
         // 点击答题时悬浮窗不先隐藏（防露桌），答题页在悬浮窗下方完成
         // 创建与首帧绘制；此处 onResume = 答题页已完全就绪并占据屏幕，
@@ -285,10 +287,13 @@ class UnlockChallengeActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         foreground = false
-        // 注意：切走惩罚不在这里——onPause 会被悬浮窗盖住、窗口切换、
-        // 输入法弹起等被动场景触发，误判会直接把答题页 finish（"第二次
-        // 点击答题后直接退出"的根因之一）。惩罚移到 onUserLeaveHint
-        // （只有用户明确 Home/上滑切走才触发）。
+        // 延迟确认挂载：300ms 后仍未恢复前台（侧滑返回 finish / 被压后台）
+        // → 挂悬浮窗盖屏。输入法弹起/窗口切换的正常 onPause 会在 300ms 内
+        // onResume → 取消，不误挂。这是"手势轻松退出"的最后防线之一。
+        // 注意：切走惩罚不在这里——onPause 会被被动场景触发，误判会直接
+        // finish 答题页；惩罚在 onUserLeaveHint（用户明确 Home/上滑才触发）。
+        overlayHandler.removeCallbacks(overlayPending)
+        overlayHandler.postDelayed(overlayPending, 300L)
     }
 
     override fun onUserLeaveHint() {
@@ -307,30 +312,51 @@ class UnlockChallengeActivity : ComponentActivity() {
             finish()
             return
         }
-        // 同步挂载全屏悬浮窗锁定
+        // 同步挂载全屏悬浮窗锁定（上滑/Home 切走）
         Log.d(TAG, "用户按 Home 或上滑切走答题页，挂载全屏悬浮窗锁定")
-        val stillLocked = try {
-            this::lockState.isInitialized && lockState.shouldBlockNow
-        } catch (e: Exception) {
-            false
-        }
-        if (stillLocked) {
-            if (com.focusguard.app.enforce.LockOverlayManager.canShow(applicationContext)) {
-                com.focusguard.app.enforce.LockOverlayManager.showNow(
-                    context = applicationContext,
-                    lockState = lockState,
-                    onStartChallenge = {
-                        com.focusguard.app.enforce.LockScreenActivity
-                            .startChallengeFromOverlay(applicationContext, lockState)
-                    },
-                    onRequestPause = {
-                        com.focusguard.app.enforce.LockScreenActivity
-                            .showForPause(applicationContext)
-                    }
-                )
-            } else {
-                LockScreenActivity.show(applicationContext)
-            }
+        ensureOverlayNow("onUserLeaveHint")
+    }
+
+    /** 延迟确认挂载用的 Handler（onPause 触发，onResume 取消）。 */
+    private val overlayHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** onPause 的延迟确认挂载任务：300ms 后仍未恢复前台 → 挂悬浮窗盖屏。 */
+    private val overlayPending = Runnable {
+        ensureOverlayNow("onPause 延迟确认")
+    }
+
+    private fun stillLocked(): Boolean = try {
+        this::lockState.isInitialized && lockState.shouldBlockNow
+    } catch (e: Exception) {
+        false
+    }
+
+    /**
+     * 锁机中且悬浮窗不在 → 立即挂载全屏悬浮窗（force 路径，绕过 hide 冷却）。
+     *
+     * 场景：华为 ROM 侧滑返回直接 finish 答题页（绕过 onBackPressed）、
+     * 上滑切走、被压到后台——任何"答题页离开屏幕"都必须瞬间被悬浮窗盖住，
+     * 否则桌面裸露 = 破解窗口。
+     */
+    private fun ensureOverlayNow(tag: String) {
+        if (!stillLocked()) return
+        if (com.focusguard.app.enforce.LockOverlayManager.isShowing) return
+        Log.d(TAG, "$tag：挂载全屏悬浮窗锁定")
+        if (com.focusguard.app.enforce.LockOverlayManager.canShow(applicationContext)) {
+            com.focusguard.app.enforce.LockOverlayManager.showNow(
+                context = applicationContext,
+                lockState = lockState,
+                onStartChallenge = {
+                    com.focusguard.app.enforce.LockScreenActivity
+                        .startChallengeFromOverlay(applicationContext, lockState)
+                },
+                onRequestPause = {
+                    com.focusguard.app.enforce.LockScreenActivity
+                        .showForPause(applicationContext)
+                }
+            )
+        } else {
+            LockScreenActivity.show(applicationContext)
         }
     }
 
@@ -353,16 +379,15 @@ class UnlockChallengeActivity : ComponentActivity() {
         foreground = false
         created = false
         launchRequestedAt = 0L
+        overlayHandler.removeCallbacks(overlayPending)
         Log.d(TAG, "答题页已关闭，防护恢复")
 
-        // 答题页关闭但锁机仍在 → 确保锁机页回到前台
-        val stillLocked = try {
-            this::lockState.isInitialized && lockState.shouldBlockNow
-        } catch (e: Exception) {
-            false
-        }
-        if (stillLocked && LockScreenActivity.instance == null) {
-            LockScreenActivity.show(applicationContext)
-        }
+        // ── 兜底挂载（核心防破解） ─────────────────────
+        // 华为 ROM 的侧滑返回手势可能绕过 onBackPressed() 直接 finish 本页，
+        // returnToLockScreen() 的"先挂悬浮窗再 finish"根本没机会执行——
+        // 因此任何销毁路径都在这时立即挂载悬浮窗盖屏（force 路径绕过
+        // hide 冷却：onResume 刚撤下悬浮窗时冷却未过，普通 show() 会拒绝）。
+        // 正常解锁（shouldBlockNow=false）不会挂载。
+        ensureOverlayNow("onDestroy 兜底")
     }
 }

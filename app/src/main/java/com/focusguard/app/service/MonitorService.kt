@@ -704,7 +704,19 @@ class MonitorService : Service() {
                     title = "🔒 已锁机",
                     message = outcome.reason
                 )
-                doEnforce(outcome)
+                val enforceAction = doEnforce(outcome)
+                // 补记执法日志：宽限期路径在 performDetection 里记录的是"警告"，
+                // 真正锁机发生在这里——不补记的话用户会看到"明明锁机了日志却显示警告"
+                logStore.addLog(
+                    DetectionLog(
+                        classification = outcome.classification,
+                        confidence = outcome.confidence,
+                        reason = "宽限期结束仍在娱乐，已执行锁机",
+                        action = enforceAction, // LOCK / APP_BLOCK
+                        source = outcome.source.name,
+                        appLabel = outcome.appLabel
+                    )
+                )
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // 服务停止，正常退出
             } catch (e: Exception) {
