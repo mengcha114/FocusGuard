@@ -30,7 +30,9 @@ class BootReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "BootReceiver"
         private val TRIGGER_ACTIONS = setOf(
+            "android.intent.action.LOCKED_BOOT_COMPLETED",
             Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_USER_UNLOCKED,
             "android.intent.action.QUICKBOOT_POWERON",
             "com.htc.intent.action.QUICKBOOT_POWERON",
             Intent.ACTION_MY_PACKAGE_REPLACED
@@ -55,12 +57,20 @@ class BootReceiver : BroadcastReceiver() {
                 LockGuardService.start(app)
             }
 
-            // 2. 无论如何都注册看门狗（自身开销极小，能兜住守护被杀）
+            // 2. 无论如何都注册看门狗与 5 秒自愈闹钟（秒级拉活防破解）
             GuardWatchdogWorker.schedule(app)
+            try {
+                com.focusguard.app.service.LockGuardAlarm.schedule(
+                    app,
+                    com.focusguard.app.service.LockGuardAlarm.RECOVERY_INTERVAL_MS
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "注册开机自愈闹钟失败：${e.message}")
+            }
 
-            // 3. 锁机状态仍在 → 立即恢复锁机页
+            // 3. 锁机状态仍在 → 立即恢复锁机页/全屏悬浮窗
             if (lockState.isLocked && lockState.shouldBlockNow) {
-                Log.d(TAG, "开机后锁机状态仍有效，恢复锁机页")
+                Log.d(TAG, "开机后锁机状态仍有效，恢复锁机页与悬浮窗")
                 LockScreenActivity.show(app)
             }
 

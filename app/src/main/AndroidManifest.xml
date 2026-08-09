@@ -142,6 +142,7 @@
 
         <service
             android:name=".service.LockGuardService"
+            android:directBootAware="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
