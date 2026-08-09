@@ -202,6 +202,44 @@ fun SettingsScreen(
         }
 
         // ── Token 节约系统 ────────────────────────────────────────
+        // ── 智能检测调度 ──────────────────────────────────────────
+        SettingsSection(title = "智能检测调度", icon = Icons.Default.AutoAwesome) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("智能模式（秒级动态间隔）", fontSize = 14.sp, color = Color.White)
+                    Text(
+                        text = "根据风险自动收紧/放宽检测节奏，比固定间隔更准也更省 token",
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.45f)
+                    )
+                }
+                Switch(
+                    checked = smartScheduleEnabled,
+                    onCheckedChange = { smartScheduleEnabled = it }
+                )
+            }
+
+            if (smartScheduleEnabled) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "智能模式：根据上面设置的检测时间进行智能调整",
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+            } else {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "已关闭：使用固定间隔（上方「检测间隔」分钟数）",
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.45f)
+                )
+            }
+        }
+
         SettingsSection(title = "Token 节约", icon = Icons.Default.Savings) {
             // 今日统计摘要
             val callsToday = tokenBudget.callsToday
@@ -322,44 +360,6 @@ fun SettingsScreen(
                         "${entertainmentKeywords.lines().count { it.isNotBlank() }} 个词）",
                     color = Color(0xFFD0BCFF),
                     fontSize = 13.sp
-                )
-            }
-        }
-
-        // ── 智能检测调度 ──────────────────────────────────────────
-        SettingsSection(title = "智能检测调度", icon = Icons.Default.AutoAwesome) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("智能模式（秒级动态间隔）", fontSize = 14.sp, color = Color.White)
-                    Text(
-                        text = "根据风险自动收紧/放宽检测节奏，比固定间隔更准也更省 token",
-                        fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.45f)
-                    )
-                }
-                Switch(
-                    checked = smartScheduleEnabled,
-                    onCheckedChange = { smartScheduleEnabled = it }
-                )
-            }
-
-            if (smartScheduleEnabled) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "智能模式：根据上面设置的检测时间进行智能调整",
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.5f)
-                )
-            } else {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "已关闭：使用固定间隔（上方「检测间隔」分钟数）",
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.45f)
                 )
             }
         }

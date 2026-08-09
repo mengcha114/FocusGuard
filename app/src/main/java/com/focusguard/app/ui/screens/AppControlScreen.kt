@@ -310,14 +310,23 @@ private fun AppEditSheet(
 
     // 初始值：用户手动设置优先，否则取自动识别分类
     var selectedCategory by remember {
-        mutableStateOf<AppCategory?>(
-            categoryStore.getUserOverride(app.packageName) ?: app.category
-        )
+        mutableStateOf<AppCategory?>(initialCategory)
     }
     val existingRule = remember { ruleStore.getRule(app.packageName) }
-    var allowMinutes by remember { mutableStateOf(existingRule?.triggerMinutes?.toString() ?: "") }
-    var maxMinutes by remember { mutableStateOf(existingRule?.hardBlockMinutes?.toString() ?: "") }
+    val initialCategory = remember {
+        categoryStore.getUserOverride(app.packageName) ?: app.category
+    }
+    val initialAllow = remember { existingRule?.triggerMinutes?.toString() ?: "" }
+    val initialMax = remember { existingRule?.hardBlockMinutes?.toString() ?: "" }
+    var allowMinutes by remember { mutableStateOf(initialAllow) }
+    var maxMinutes by remember { mutableStateOf(initialMax) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    // 是否有未保存的更改：任一字段与初始值不同即为"脏"。
+    // 无更改 → 保存按钮灰色（禁用感）；有更改 → 亮色可保存；改回原值自动恢复灰色。
+    val isDirty = selectedCategory != initialCategory ||
+        allowMinutes != initialAllow ||
+        maxMinutes != initialMax
 
     // 防篡改答题验证（首次免费，之后每次保存规则都要答题）
     var showVerify by remember { mutableStateOf(false) }
@@ -459,7 +468,12 @@ private fun AppEditSheet(
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F378B))
+                    enabled = isDirty,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isDirty) Color(0xFF7C4DFF) else Color(0xFF3A3A40),
+                        disabledContainerColor = Color(0xFF3A3A40),
+                        disabledContentColor = Color.White.copy(alpha = 0.4f)
+                    )
                 ) { Text("保存") }
             }
         }
