@@ -54,15 +54,6 @@ fun SettingsScreen(
     var appBlockMinutes by remember { mutableIntStateOf(settings.appBlockMinutes) }
     var customMottos by remember { mutableStateOf(settings.customMottos) }
 
-    // 二次修改答题验证
-    var showVerifyDialog by remember { mutableStateOf(false) }
-    val challengeGenerator = remember { com.focusguard.app.challenge.ChallengeGenerator() }
-    var verifyQuestion by remember {
-        mutableStateOf(challengeGenerator.generate(2))
-    }
-    var verifyAnswer by remember { mutableStateOf("") }
-    var verifyError by remember { mutableStateOf<String?>(null) }
-
     // Token 节约系统开关
     var tokenSavingEnabled by remember { mutableStateOf(settings.tokenSavingEnabled) }
     var screenHashDedup by remember { mutableStateOf(settings.screenHashDedupEnabled) }
@@ -74,8 +65,6 @@ fun SettingsScreen(
     var studyKeywords by remember { mutableStateOf(settings.studyKeywords) }
     var entertainmentKeywords by remember { mutableStateOf(settings.entertainmentKeywords) }
 
-    var saved by remember { mutableStateOf(false) }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -84,6 +73,9 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("设置", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White)
+
+        // ═══════ 分组一：AI 检测 ═══════
+        SettingsGroupHeader("AI 检测")
 
         // ── API 设置 ──────────────────────────────────────────────
         SettingsSection(title = "API 设置", icon = Icons.Default.Api) {
@@ -346,27 +338,11 @@ fun SettingsScreen(
             }
 
             if (smartScheduleEnabled) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "算法说明：\n" +
-                        "• 风险评分（EWMA）：娱乐=1、中性=0.35、学习=0，" +
-                        "按 45% 权重滚动平均——单次误判不会剧烈跳变，连续娱乐会迅速收紧\n" +
-                        "• 间隔映射：interval = 基准 × 2^(1-风险) × (1/6)^风险，" +
-                        "风险 0 时放宽到 2 倍，风险 1 时压到 1/6\n" +
-                        "• 停留学习（奈奎斯特采样）：记录每个应用的平均前台停留时长，" +
-                        "检测间隔不超过其一半——短视频停留 40s 就按 20s 采样\n" +
-                        "• 提醒折半：每弹一次提醒间隔减半（最多 3 次），" +
-                        "配合下方「连续违规次数」让执法快速到来\n" +
-                        "• 边界：20 秒 ~ 10 分钟；熄屏自动省电；接口失败退避 ≥60s",
+                    text = "智能模式：根据上面设置的检测时间进行智能调整",
                     fontSize = 11.sp,
-                    lineHeight = 17.sp,
                     color = Color.White.copy(alpha = 0.5f)
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "上方「检测间隔」作为基准值参与计算；实时调度状态见主页守护卡片",
-                    fontSize = 11.sp,
-                    color = Color(0xFF8AB4F8)
                 )
             } else {
                 Spacer(Modifier.height(6.dp))
@@ -377,6 +353,9 @@ fun SettingsScreen(
                 )
             }
         }
+
+        // ═══════ 分组二：执法与锁机 ═══════
+        SettingsGroupHeader("执法与锁机")
 
         // ── 执法模式 ──────────────────────────────────────────────
         SettingsSection(title = "执法模式", icon = Icons.Default.Gavel) {
@@ -559,6 +538,9 @@ fun SettingsScreen(
             )
         }
 
+        // ═══════ 分组三：外观与习惯 ═══════
+        SettingsGroupHeader("外观与习惯")
+
         // ── 界面主题 ──────────────────────────────────────────────
         SettingsSection(title = "界面主题", icon = Icons.Default.Palette) {
             Row(
@@ -598,6 +580,9 @@ fun SettingsScreen(
                 minLines = 3
             )
         }
+
+        // ═══════ 分组四：系统与调试 ═══════
+        SettingsGroupHeader("系统与调试")
 
         // ── 调试与导出 ────────────────────────────────────────────
         SettingsSection(title = "调试", icon = Icons.Default.BugReport) {
@@ -662,10 +647,9 @@ fun SettingsScreen(
             )
         }
 
-        // ── 保存按钮 ──────────────────────────────────────────────
-        // 防篡改：首次配置免费；之后每次修改设置都要答题验证
-        // （防止被监管的人随意改动限制）。
-        fun doSave() {
+        // ── 自动保存 ─────────────────────────────────────────────
+        // 任一设置变化即持久化，无需手动点保存（onChange 即生效）。
+        fun saveAll() {
             settings.apiBaseUrl = apiBaseUrl
             settings.apiKey = apiKey
             settings.modelName = modelName
@@ -695,105 +679,46 @@ fun SettingsScreen(
             settings.smartScheduleEnabled = smartScheduleEnabled
             settings.appBlockMinutes = appBlockMinutes.coerceIn(1, 480)
             settings.customMottos = customMottos
-            // 记录一次修改（防篡改答题计数）
-            settings.settingsEditCount = settings.settingsEditCount + 1
-            saved = true
-            onSave()
         }
 
-        Button(
-            onClick = {
-                if (settings.settingsEditCount > 0) {
-                    // 二次修改：先答题验证
-                    showVerifyDialog = true
-                } else {
-                    doSave()
-                }
-            },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF388E3C))
+        // ── 自动保存 ─────────────────────────────────────────────
+        // 任一设置变化即持久化（onChange 即生效；含初始组合的一次写入，无害）。
+        // 防抖提示：停止操作 2 秒后弹出「已自动保存」。
+        var isFirstSave by remember { mutableStateOf(true) }
+        LaunchedEffect(
+            apiBaseUrl, apiKey, modelName, apiFormat, aiCustomPrompt,
+            intervalMinutes, confidenceThreshold, consecutiveViolations, whitelist,
+            enforcementMode, themeMode, tokenSavingEnabled, screenHashDedup,
+            screenTextPrefilter, decisionCacheEnabled, adaptiveInterval, dailyCallLimit,
+            aiLockMinutes, aiLockStrength, aiAlertEnabled, aiAlertDelaySeconds,
+            appBlockMinutes, customMottos, smartScheduleEnabled,
+            studyKeywords, entertainmentKeywords
         ) {
-            Text("保存设置", fontSize = 18.sp)
+            if (isFirstSave) {
+                // 首次组合：只保存不提示（避免一进页面就弹"已保存"）
+                isFirstSave = false
+                saveAll()
+                return@LaunchedEffect
+            }
+            // 防抖：状态变化后等 2 秒（期间再变化会取消重启），无变化才保存
+            kotlinx.coroutines.delay(2000)
+            saveAll()
+            try {
+                Toast.makeText(context, "已自动保存", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                // Toast 失败不影响
+            }
         }
 
-        if (saved) {
-            Text(
-                text = "已保存",
-                color = Color(0xFF4CAF50),
-                fontSize = 13.sp,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-        }
-
-        // ── 二次修改答题验证对话框 ────────────────────────────────
-        if (showVerifyDialog) {
-            AlertDialog(
-                onDismissRequest = { showVerifyDialog = false },
-                title = { Text("修改设置需先答题") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = "为防止设置被随意篡改，每次修改前请先回答一道题：",
-                            fontSize = 13.sp,
-                            color = Color.White.copy(alpha = 0.6f)
-                        )
-                        Text(
-                            text = verifyQuestion.question,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White
-                        )
-                        OutlinedTextField(
-                            value = verifyAnswer,
-                            onValueChange = { verifyAnswer = it; verifyError = null },
-                            label = { Text("你的答案") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        verifyError?.let {
-                            Text(
-                                text = it,
-                                fontSize = 12.sp,
-                                color = Color(0xFFF44336)
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val ok = challengeGenerator.isAnswerCorrect(
-                                verifyAnswer, verifyQuestion.answer
-                            )
-                            if (ok) {
-                                showVerifyDialog = false
-                                verifyAnswer = ""
-                                doSave()
-                            } else {
-                                verifyError = "回答错误，请重试"
-                            }
-                        }
-                    ) {
-                        Text("验证并保存")
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = {
-                            showVerifyDialog = false
-                            verifyAnswer = ""
-                            verifyError = null
-                        }
-                    ) {
-                        Text("取消", color = Color.White.copy(alpha = 0.5f))
-                    }
-                },
-                containerColor = Color(0xFF241F27),
-                shape = RoundedCornerShape(20.dp)
-            )
-        }
+        Text(
+            text = "设置自动保存，改动即时生效",
+            fontSize = 11.sp,
+            color = Color.White.copy(alpha = 0.4f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
 
         Spacer(Modifier.height(16.dp))
     }
@@ -880,6 +805,19 @@ private fun TokenStatChip(
 }
 
 @Composable
+/** 设置分组标题（分隔不同类别，让设置页更清晰）。 */
+@Composable
+private fun SettingsGroupHeader(title: String) {
+    Spacer(Modifier.height(10.dp))
+    Text(
+        text = title,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        color = Color(0xFFD0BCFF),
+        modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
+    )
+}
+
 fun SettingsSection(
     title: String,
     icon: ImageVector,
