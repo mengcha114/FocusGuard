@@ -132,7 +132,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
 
             Text(
                 text = "说明：每行一个关键词，至少命中 2 个且倾向明显才判定。" +
-                    "「刷」这类泛词可能误伤（如"刷新"），可按需删改。",
+                    "「刷」这类泛词可能误伤（如「刷新」），可按需删改。",
                 fontSize = 11.sp,
                 lineHeight = 17.sp,
                 color = Color.White.copy(alpha = 0.45f)
