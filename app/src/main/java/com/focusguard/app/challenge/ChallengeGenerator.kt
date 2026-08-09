@@ -50,14 +50,24 @@ class ChallengeGenerator {
      */
     fun generate(difficulty: Int = 2, numericOnly: Boolean = false): ChallengeQuestion {
         val level = difficulty.coerceIn(1, 3)
-        val kindCount = 14
         /** 中文答案题型索引（自绘键盘无法输入）。 */
         val chineseAnswerKinds = setOf(4) // 4 = weekdayOffset（答案形如"星期三"）
-        // 避免连续同类型，最多重掷 4 次；numericOnly 时还要跳过中文答案题
-        var kind = Random.nextInt(kindCount)
+        // 加权题型池：常规题权重 6；「找规律/数列」类答案规律简单、容易被记住
+        // （arithmeticSequence=6、fibonacciNext=5、digitSum=11），权重降到 2。
+        // 概率从 1/14（约 7%）降到 2/72（约 2.8%）。
+        val easyRememberKinds = setOf(5, 6, 11)
+        val weightedPool = (0..13).flatMap { k ->
+            val weight = when {
+                k in easyRememberKinds -> 2
+                else -> 6
+            }
+            List(weight) { k }
+        }
+        // 避免连续同类型，最多重掷 12 次；numericOnly 时还要跳过中文答案题
+        var kind = weightedPool[Random.nextInt(weightedPool.size)]
         var retry = 0
         while ((kind == lastKind || (numericOnly && kind in chineseAnswerKinds)) && retry < 12) {
-            kind = Random.nextInt(kindCount)
+            kind = weightedPool[Random.nextInt(weightedPool.size)]
             retry++
         }
         // 极端情况下（连续重掷仍命中）强制换成加法，绝不出中文答案题

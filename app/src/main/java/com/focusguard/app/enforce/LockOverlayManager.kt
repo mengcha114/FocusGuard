@@ -993,15 +993,19 @@ object LockOverlayManager {
 
         challengePassedCallback = onPassed
         challengeLetterPage = false
-        challengeSession = ChallengeSession(
-            // numericOnly：自绘键盘无法输入中文，排除星期推算题
-            question = challengeGenerator.generate(
-                difficulty = if (requiredCorrect >= 3) 3 else 2,
-                numericOnly = true
-            ),
-            requiredCorrect = requiredCorrect.coerceAtLeast(1),
-            forPause = forPause
-        )
+        // 已有未完成的答题会话（用户点「返回锁机界面」再进）→ 恢复同一题，
+        // 防止用"退出重进"绕过「换一题」5 次限制反复刷题。
+        if (challengeSession == null) {
+            challengeSession = ChallengeSession(
+                // numericOnly：自绘键盘无法输入中文，排除星期推算题
+                question = challengeGenerator.generate(
+                    difficulty = if (requiredCorrect >= 3) 3 else 2,
+                    numericOnly = true
+                ),
+                requiredCorrect = requiredCorrect.coerceAtLeast(1),
+                forPause = forPause
+            )
+        }
         // 锁机时钟停掉（答题界面没有倒计时视图）
         clockRunnable?.let { uiHandler.removeCallbacks(it) }
         clockRunnable = null
@@ -1033,7 +1037,10 @@ object LockOverlayManager {
             return
         }
         isChallengeMode = false
-        challengeSession = null
+        // 注意：challengeSession 故意**不清空**——「返回锁机界面」只是暂停答题，
+        // 再进时恢复同一题（enterChallengeMode 会复用），防止退出重进换题绕过限制。
+        // 会话只在答题通过（onSubmitAnswer → challengeSession = null）或
+        // 锁机结束（cleanupOnMain）时清空。
         challengePassedCallback = null
         clearChallengeViewRefs()
 

@@ -758,6 +758,9 @@ class MonitorService : Service() {
     }
 
     private fun updateNotification(outcome: DetectionOutcome) {
+        // 只有检测到娱乐时才更新常驻通知（并配合提醒弹窗）。
+        // 学习/工作/中性时不更新——避免任何形式的通知打扰/角标变化。
+        if (outcome.classification != "ENTERTAINMENT") return
         try {
             val manager = getSystemService(android.app.NotificationManager::class.java)
             manager.notify(FocusGuardApp.NOTIFICATION_ID, buildNotification(outcome))
