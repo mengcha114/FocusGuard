@@ -69,6 +69,23 @@ fun AiChatScreen() {
                 .map { ChatMsg(it.role, it.text, it.time) } + loadAiReminders()
         )
     }
+
+    // 进入页面时清理：上次对话中途退出可能留下占位"…"（流式被取消，
+    // 占位已入库但未收到任何增量）→ 标记为中断，避免看到永远的"…"
+    LaunchedEffect(Unit) {
+        val saved = chatHistory.getMessages()
+        if (saved.isNotEmpty()) {
+            val last = saved.last()
+            if (last.role == "ai" && last.text == "…") {
+                chatHistory.updateLastMessage("（回复未完成，可重发此问题）")
+                messages = messages.map {
+                    if (it.role == "ai" && it.text == "…") {
+                        it.copy(text = "（回复未完成，可重发此问题）")
+                    } else it
+                }
+            }
+        }
+    }
     var input by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -228,9 +245,14 @@ fun AiChatScreen() {
                         sending = true
                         scope.launch {
                             try {
-                                // 占位 AI 消息（打字动画期间显示跳动点）
+                                // 占位 AI 消息（打字动画期间显示跳动点）。
+                                // 关键：占位必须**同步入库存**——流式 onDelta 的
+                                // updateLastMessage 靠"最后一条 ai 消息"定位本条回复，
+                                // 占位不入库会导致：store 无 ai 消息时增量被静默丢弃
+                                //（中途退出 = 本轮回复丢失），或误覆盖上一轮回复。
                                 val placeholder = ChatMsg("ai", "…", now)
                                 messages = messages + placeholder
+                                chatHistory.addMessage("ai", "…", now)
 
                                 val history = messages.filter { it !== placeholder }.map {
                                     ChatMessage(
@@ -323,12 +345,12 @@ fun AiChatScreen() {
                                 }
 
                                 // 流结束后：把最后一条 AI 消息（占位/增量）替换为完整回复，
-                                // 并持久化。绝不追加第二条 AI 消息（避免重复）。
+                                // 并持久化（更新占位所在的那条记录，绝不追加第二条）。
                                 val last = messages.lastOrNull()
                                 if (last != null && last.role == "ai") {
                                     messages = messages.dropLast(1) +
                                         last.copy(text = displayReply)
-                                    chatHistory.addMessage("ai", displayReply, last.time)
+                                    chatHistory.updateLastMessage(displayReply)
                                 }
                             } catch (e: Exception) {
                                 // 流式/网络异常：把占位消息替换为错误说明并保存——
@@ -340,7 +362,7 @@ fun AiChatScreen() {
                                 if (lastMsg != null && lastMsg.role == "ai") {
                                     messages = messages.dropLast(1) +
                                         lastMsg.copy(text = errMsg)
-                                    chatHistory.addMessage("ai", errMsg, lastMsg.time)
+                                    chatHistory.updateLastMessage(errMsg)
                                 }
                             } finally {
                                 sending = false
