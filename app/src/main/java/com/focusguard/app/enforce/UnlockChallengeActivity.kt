@@ -254,8 +254,7 @@ class UnlockChallengeActivity : ComponentActivity() {
             false
         }
         if (stillLocked) {
-
-            Log.d(TAG, "答题页被切走（第 ${lockState.challengeSwitchCount} 次），响应切屏")
+            Log.d(TAG, "答题页被切走，响应切屏")
         }
     }
 

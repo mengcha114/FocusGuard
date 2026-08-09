@@ -63,12 +63,6 @@ fun AiChatScreen() {
         .map { ChatMsg("ai", it.reason, it.getTimeFormatted()) }
         .reversed()
 
-    // 会话消息：持久化的手动对话历史 + 检测日志里 AI 给出的提醒（按时间正序）
-    fun loadAiReminders(): List<ChatMsg> = logStore.getAllLogs()
-        .filter { it.source == "AI_VISION" && it.reason.isNotBlank() }
-        .map { ChatMsg("ai", it.reason, it.getTimeFormatted()) }
-        .reversed()
-
     var messages by remember {
         mutableStateOf(
             chatHistory.getMessages()
@@ -253,11 +247,10 @@ fun AiChatScreen() {
                                     if (prompt.isNotBlank()) {
                                         append("【核心人设/角色指令】你必须严格使用以下人设口吻回答一切问题：")
                                         append(prompt)
-                                        append("。在每一句回答中都必须保持这个性格和口吻（例如若设定为猫娘则句尾必须带'喵'，若设定为妈妈则用关心唠叨的语气）。
-
-")
+                                        append("。在每一句回答中都必须保持这个性格和口吻（例如若设定为猫娘则句尾必须带'喵'，若设定为妈妈则用关心唠叨的语气）。\n\n")
                                     }
-                                    append("你是专注卫士的 AI 助手，回答简短、友好、有耐心，使用中文。")                                    append(
+                                    append("你是专注卫士的 AI 助手，回答简短、友好、有耐心，使用中文。")
+                                    append(
                                         "\n你拥有 lock_phone 工具：当用户请求锁机、自律、管住自己、限制使用手机时，" +
                                             "在你的回复末尾单独输出一行 __LOCK__:<分钟数>（例如 __LOCK__:30 表示锁机 30 分钟），" +
                                             "应用会自动执行锁机。其余情况不要输出该标记。"
