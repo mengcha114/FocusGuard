@@ -120,10 +120,7 @@ class LockScreenActivity : ComponentActivity() {
             // 悬浮窗优先仅限无 Dhizuku 场景：Dhizuku（Lock Task）可用时
             // 必须走 Activity——Lock Task 让 Activity 无法被任何手势退出，
             // 且 UI 是完整的 Compose 锁机页；此时显示悬浮窗反而会盖住它。
-            if (!forceActivity &&
-                !com.focusguard.app.enhance.DhizukuEnhancer.isReady() &&
-                LockOverlayManager.canShow(appCtx)
-            ) {
+            if (!forceActivity && LockOverlayManager.canShow(appCtx)) {
                 try {
                     val ls = LockState(appCtx)
                     if (ls.isLocked && ls.shouldBlockNow) {
@@ -223,11 +220,6 @@ class LockScreenActivity : ComponentActivity() {
             }
             lastStartClickAt = clickNow
 
-            // ── 悬浮窗内答题（v3.0.0 架构：手势物理上无法退出） ────
-            // 强度 1/2：答题 UI 直接画在当前悬浮窗里，**不启动任何 Activity**。
-            // 悬浮窗不属于任何 Task → 底部上滑/侧滑返回/最近任务都无法移走它，
-            // 手势退出在物理上不可能发生（Activity 方案永远做不到）。
-            // 强度 3（朋友凯撒密文）需输入任意文本，仍走 Activity。
             val appCtx = context.applicationContext
             try {
                 if (lockState.unlockStrength == 3) {
@@ -235,6 +227,7 @@ class LockScreenActivity : ComponentActivity() {
                     show(context, forceActivity = true)
                     return
                 }
+                // 优先走悬浮窗内自绘键盘答题（0 露桌、手势无法退出）
                 if (LockOverlayManager.canShow(appCtx)) {
                     val required = if (lockState.unlockStrength == 2) 5 else 1
                     LockOverlayManager.enterChallengeMode(
@@ -245,7 +238,7 @@ class LockScreenActivity : ComponentActivity() {
                         onPassed = { forPause -> handleOverlayChallengePassed(appCtx, forPause) }
                     )
                 } else {
-                    // 无悬浮窗权限 → 退回 Activity 答题（保留原有加固）
+                    // 无悬浮窗权限 → 退回 Activity 答题（内部自绘键盘）
                     UnlockChallengeActivity.markLaunchPending()
                     val required = if (lockState.unlockStrength == 2) 5 else 1
                     UnlockChallengeActivity.show(appCtx, required)

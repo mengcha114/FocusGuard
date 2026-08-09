@@ -189,19 +189,94 @@ fun UnlockChallengeScreen(
                 }
             }
 
-            // ── 答案输入 ──────────────────────────────
-            OutlinedTextField(
-                value = userAnswer,
-                onValueChange = { userAnswer = it },
-                label = { Text("输入你的答案") },
+            // ── 答案显示区（自绘键盘） ──────────────────
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                singleLine = true,
-                enabled = !switching,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Text
+                color = Color(0xFF1E1A26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4F378B))
+            ) {
+                Box(
+                    modifier = Modifier.padding(14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = userAnswer.ifEmpty { "请点击下方键盘输入答案" },
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (userAnswer.isEmpty()) Color.White.copy(alpha = 0.4f) else Color.White
+                    )
+                }
+            }
+
+            // ── 自绘键盘 ──────────────────────────────
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val numRows = listOf(
+                    listOf("1", "2", "3"),
+                    listOf("4", "5", "6"),
+                    listOf("7", "8", "9"),
+                    listOf("-", "0", ".")
                 )
-            )
+                numRows.forEach { rowKeys ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        rowKeys.forEach { key ->
+                            Button(
+                                onClick = {
+                                    if (!switching && userAnswer.length < 24) {
+                                        userAnswer += key
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2740))
+                            ) {
+                                Text(key, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    }
+                }
+
+                // 功能行：清空、退格
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (!switching) userAnswer = ""
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2740))
+                    ) {
+                        Text("清空", fontSize = 14.sp, color = Color.White)
+                    }
+                    Button(
+                        onClick = {
+                            if (!switching && userAnswer.isNotEmpty()) {
+                                userAnswer = userAnswer.dropLast(1)
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2740))
+                    ) {
+                        Text("⌫", fontSize = 18.sp, color = Color.White)
+                    }
+                }
+            }
 
             // ── 反馈 ──────────────────────────────────
             feedbackMessage?.let { msg ->
