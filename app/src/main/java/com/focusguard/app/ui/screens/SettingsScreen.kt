@@ -55,6 +55,15 @@ fun SettingsScreen(
     var appBlockMinutes by remember { mutableIntStateOf(settings.appBlockMinutes) }
     var customMottos by remember { mutableStateOf(settings.customMottos) }
 
+    // 降低限制方向修改的答题验证（增强限制无需答题）
+    var showVerifyDialog by remember { mutableStateOf(false) }
+    val challengeGenerator = remember { com.focusguard.app.challenge.ChallengeGenerator() }
+    var verifyQuestion by remember {
+        mutableStateOf(challengeGenerator.generate(2))
+    }
+    var verifyAnswer by remember { mutableStateOf("") }
+    var verifyError by remember { mutableStateOf<String?>(null) }
+
     // Token 节约系统开关
     var tokenSavingEnabled by remember { mutableStateOf(settings.tokenSavingEnabled) }
     var screenHashDedup by remember { mutableStateOf(settings.screenHashDedupEnabled) }
@@ -682,9 +691,45 @@ fun SettingsScreen(
             settings.customMottos = customMottos
         }
 
+        // ── 方向判定：修改是否在「降低对自己的限制」 ──────────────
+        // 增强限制（锁得更久/更容易触发/更难解锁）→ 直接保存；
+        // 降低限制（缩短锁机/更难触发/更容易解锁）→ 需答题验证（防被监管对象篡改）。
+        fun isLoosening(): Boolean {
+            val newInterval = intervalMinutes.toIntOrNull()
+                ?: settings.intervalMinutes
+            val newViolations = consecutiveViolations.toIntOrNull()
+                ?: settings.consecutiveViolations
+            val newAlertDelay = aiAlertDelaySeconds.coerceIn(0, 120)
+            val enforceRank = mapOf(
+                Settings.EnforcementMode.WARN to 0,
+                Settings.EnforcementMode.APP_BLOCK to 1,
+                Settings.EnforcementMode.LOCK to 2
+            )
+            return when {
+                // 锁机时长 / 仅锁该软件时长 缩短 → 降低限制
+                aiLockMinutes < settings.lockMinutesOnViolation -> true
+                appBlockMinutes < settings.appBlockMinutes -> true
+                // 连续违规次数调大 → 更难触发锁机
+                newViolations > settings.consecutiveViolations -> true
+                // 解锁强度调低（1 < 4 更容易解锁）
+                aiLockStrength < settings.aiLockStrength -> true
+                // 执法模式降级（LOCK → APP_BLOCK → WARN）
+                (enforceRank[enforcementMode] ?: 2) <
+                    (enforceRank[settings.enforcementMode] ?: 2) -> true
+                // 检测间隔调大 → 检测变少
+                newInterval > settings.intervalMinutes -> true
+                // 提醒宽限期调长 → 锁机来得更晚
+                newAlertDelay > settings.aiAlertDelaySeconds -> true
+                // 智能调度关闭（可能放宽节奏）
+                !smartScheduleEnabled && settings.smartScheduleEnabled -> true
+                else -> false
+            }
+        }
+
         // ── 自动保存 ─────────────────────────────────────────────
         // 任一设置变化即持久化（onChange 即生效；含初始组合的一次写入，无害）。
-        // 防抖提示：停止操作 2 秒后弹出「已自动保存」。
+        // 防抖提示：停止操作 2 秒后弹出「已自动保存」；
+        // 方向为「降低限制」时不直接保存，改为弹答题验证。
         var isFirstSave by remember { mutableStateOf(true) }
         LaunchedEffect(
             apiBaseUrl, apiKey, modelName, apiFormat, aiCustomPrompt,
@@ -701,14 +746,95 @@ fun SettingsScreen(
                 saveAll()
                 return@LaunchedEffect
             }
-            // 防抖：状态变化后等 2 秒（期间再变化会取消重启），无变化才保存
+            // 防抖：状态变化后等 2 秒（期间再变化会取消重启），无变化才处理
             kotlinx.coroutines.delay(2000)
-            saveAll()
-            try {
-                Toast.makeText(context, "已自动保存", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                // Toast 失败不影响
+            if (isLoosening()) {
+                // 降低限制：弹答题验证（通过后才保存）
+                if (!showVerifyDialog) {
+                    verifyQuestion = challengeGenerator.generate(2)
+                    verifyAnswer = ""
+                    verifyError = null
+                    showVerifyDialog = true
+                }
+            } else {
+                saveAll()
+                try {
+                    Toast.makeText(context, "已自动保存", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    // Toast 失败不影响
+                }
             }
+        }
+
+        // ── 降低限制的答题验证对话框 ─────────────────────────────
+        if (showVerifyDialog) {
+            AlertDialog(
+                onDismissRequest = { showVerifyDialog = false },
+                title = { Text("降低限制需先答题") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "你正在降低对自己的限制（如缩短锁机/调大间隔）。为防止限制被随意解除，请先回答一道题：",
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = verifyQuestion.question,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White
+                        )
+                        OutlinedTextField(
+                            value = verifyAnswer,
+                            onValueChange = { verifyAnswer = it; verifyError = null },
+                            label = { Text("你的答案") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        verifyError?.let {
+                            Text(
+                                text = it,
+                                fontSize = 12.sp,
+                                color = Color(0xFFF44336)
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val ok = challengeGenerator.isAnswerCorrect(
+                                verifyAnswer, verifyQuestion.answer
+                            )
+                            if (ok) {
+                                showVerifyDialog = false
+                                verifyAnswer = ""
+                                saveAll()
+                                Toast.makeText(context, "已自动保存", Toast.LENGTH_SHORT).show()
+                            } else {
+                                verifyError = "回答错误，请重试"
+                            }
+                        }
+                    ) {
+                        Text("验证并保存")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showVerifyDialog = false
+                            verifyAnswer = ""
+                            verifyError = null
+                            Toast.makeText(context, "修改未保存", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("取消", color = Color.White.copy(alpha = 0.5f))
+                    }
+                },
+                containerColor = Color(0xFF241F27),
+                shape = RoundedCornerShape(20.dp)
+            )
         }
 
         Text(
