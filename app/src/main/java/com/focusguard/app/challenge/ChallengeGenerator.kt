@@ -44,17 +44,24 @@ class ChallengeGenerator {
      * 生成一道题目。
      *
      * @param difficulty 1=简单 2=中等 3=困难，超出范围会被收敛
+     * @param numericOnly true 时只出**答案为数字/字母**的题型，排除中文答案题
+     *   （星期推算）。悬浮窗内答题用自绘键盘（数字+字母），无法输入中文，
+     *   因此必须排除；其余 13 类题型全部保留，难度不降。
      */
-    fun generate(difficulty: Int = 2): ChallengeQuestion {
+    fun generate(difficulty: Int = 2, numericOnly: Boolean = false): ChallengeQuestion {
         val level = difficulty.coerceIn(1, 3)
         val kindCount = 14
-        // 避免连续同类型，最多重掷 4 次
+        /** 中文答案题型索引（自绘键盘无法输入）。 */
+        val chineseAnswerKinds = setOf(4) // 4 = weekdayOffset（答案形如"星期三"）
+        // 避免连续同类型，最多重掷 4 次；numericOnly 时还要跳过中文答案题
         var kind = Random.nextInt(kindCount)
         var retry = 0
-        while (kind == lastKind && retry < 4) {
+        while ((kind == lastKind || (numericOnly && kind in chineseAnswerKinds)) && retry < 12) {
             kind = Random.nextInt(kindCount)
             retry++
         }
+        // 极端情况下（连续重掷仍命中）强制换成加法，绝不出中文答案题
+        if (numericOnly && kind in chineseAnswerKinds) kind = 0
         lastKind = kind
 
         return try {

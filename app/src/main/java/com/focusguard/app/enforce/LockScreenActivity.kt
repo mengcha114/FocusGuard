@@ -168,9 +168,23 @@ class LockScreenActivity : ComponentActivity() {
          */
         fun showForPause(context: Context) {
             val appCtx = context.applicationContext
-            // ── 无缝接替（0 露桌） ─────────────────────────
-            // 悬浮窗不先隐藏：锁机页在悬浮窗下方创建，其 onCreate 立即发起
-            // 答题流程，答题页 onResume 就绪后统一撤下悬浮窗。
+            val ls = LockState(appCtx)
+            // 悬浮窗内答题换取暂停（同样不启动 Activity，手势无法退出）
+            if (LockOverlayManager.canShow(appCtx)) {
+                try {
+                    LockOverlayManager.enterChallengeMode(
+                        context = appCtx,
+                        lockState = ls,
+                        requiredCorrect = 1,
+                        forPause = true,
+                        onPassed = { forPause -> handleOverlayChallengePassed(appCtx, forPause) }
+                    )
+                    return
+                } catch (e: Exception) {
+                    Log.w(TAG, "悬浮窗暂停答题失败，退回 Activity：${e.message}")
+                }
+            }
+            // 无悬浮窗权限 → Activity 兜底
             markLaunchPending()
             try {
                 val intent = Intent(appCtx, LockScreenActivity::class.java).apply {
@@ -209,32 +223,75 @@ class LockScreenActivity : ComponentActivity() {
             }
             lastStartClickAt = clickNow
 
-            // ── 无缝接替（0 露桌） ─────────────────────────
-            // 悬浮窗**不先隐藏**：目标页面（答题页/锁机页）在悬浮窗下方完成
-            // 创建与首帧绘制，其 onResume 就绪后才由它撤下悬浮窗——
-            // 撤下瞬间露出的直接是目标页面，桌面 0 毫秒暴露。
-            // 也正因为悬浮窗未被移除，"移除悬浮窗瞬间 startActivity"的
-            // InputDispatcher native 竞态自然消失，150ms 延时不再需要。
-            if (lockState.unlockStrength == 3) {
-                LockScreenActivity.markLaunchPending()
-            } else {
-                UnlockChallengeActivity.markLaunchPending()
-            }
+            // ── 悬浮窗内答题（v3.0.0 架构：手势物理上无法退出） ────
+            // 强度 1/2：答题 UI 直接画在当前悬浮窗里，**不启动任何 Activity**。
+            // 悬浮窗不属于任何 Task → 底部上滑/侧滑返回/最近任务都无法移走它，
+            // 手势退出在物理上不可能发生（Activity 方案永远做不到）。
+            // 强度 3（朋友凯撒密文）需输入任意文本，仍走 Activity。
+            val appCtx = context.applicationContext
             try {
-                when (lockState.unlockStrength) {
-                    // 强度 3（朋友辅助）：必须进锁机页输入密文。
-                    // forceActivity=true——否则 show() 默认悬浮窗优先。
-                    3 -> show(context, forceActivity = true)
-                    else -> {
-                        val required = if (lockState.unlockStrength == 2) 5 else 1
-                        UnlockChallengeActivity.show(
-                            context.applicationContext,
-                            required
-                        )
-                    }
+                if (lockState.unlockStrength == 3) {
+                    LockScreenActivity.markLaunchPending()
+                    show(context, forceActivity = true)
+                    return
+                }
+                if (LockOverlayManager.canShow(appCtx)) {
+                    val required = if (lockState.unlockStrength == 2) 5 else 1
+                    LockOverlayManager.enterChallengeMode(
+                        context = appCtx,
+                        lockState = lockState,
+                        requiredCorrect = required,
+                        forPause = false,
+                        onPassed = { forPause -> handleOverlayChallengePassed(appCtx, forPause) }
+                    )
+                } else {
+                    // 无悬浮窗权限 → 退回 Activity 答题（保留原有加固）
+                    UnlockChallengeActivity.markLaunchPending()
+                    val required = if (lockState.unlockStrength == 2) 5 else 1
+                    UnlockChallengeActivity.show(appCtx, required)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "启动解锁流程失败：${e.message}")
+            }
+        }
+
+        /**
+         * 悬浮窗内答题通过的统一处理（不依赖任何 Activity 存活）。
+         *
+         * @param forPause true=换取一次暂停；false=解除锁机
+         */
+        fun handleOverlayChallengePassed(context: Context, forPause: Boolean) {
+            val appCtx = context.applicationContext
+            val ls = LockState(appCtx)
+            try {
+                if (forPause) {
+                    ls.startPause()
+                    Log.d(TAG, "悬浮窗答题通过：获得 ${ls.pauseMinutes} 分钟暂停")
+                } else {
+                    ls.releaseLock()
+                    Log.d(TAG, "悬浮窗答题通过：已解除锁机")
+                }
+                // 若锁机页 Activity 恰好存在（强度 3 路径遗留），退出 Lock Task 并关闭
+                instance?.let { act ->
+                    try {
+                        com.focusguard.app.enhance.LockTaskEnhancer.exit(act)
+                        act.finish()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "关闭锁机页失败：${e.message}")
+                    }
+                }
+                if (!forPause) {
+                    LockGuardService.stop(appCtx)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "处理答题通过失败：${e.message}")
+            } finally {
+                // 悬浮窗撤下：解锁后不再遮挡；暂停期间同样放行
+                try {
+                    LockOverlayManager.hideNow()
+                } catch (e: Exception) {
+                    Log.w(TAG, "撤下悬浮窗失败：${e.message}")
+                }
             }
         }
     }
@@ -384,11 +441,14 @@ class LockScreenActivity : ComponentActivity() {
         // ── 无缝接替（0 露桌） ─────────────────────────
         // 悬浮窗不先隐藏，锁机页在悬浮窗下方完成创建与绘制；
         // 此处 onResume = 锁机页已就绪，撤下悬浮窗露出锁机页
-        // （强度 3 密文输入 / 暂停流程的答题中转都依赖这一撤）。
-        try {
-            LockOverlayManager.hideNow()
-        } catch (e: Exception) {
-            Log.w(TAG, "撤下悬浮窗失败：${e.message}")
+        // （强度 3 密文输入路径依赖这一撤）。
+        // 但**答题模式下绝不撤**：答题 UI 就在悬浮窗里，撤了等于关掉答题。
+        if (!LockOverlayManager.isChallengeMode) {
+            try {
+                LockOverlayManager.hideNow()
+            } catch (e: Exception) {
+                Log.w(TAG, "撤下悬浮窗失败：${e.message}")
+            }
         }
         // 每次回到前台重新应用沉浸模式（部分 ROM 会重置系统栏状态）
         applyImmersiveMode()

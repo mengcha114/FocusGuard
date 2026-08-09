@@ -277,10 +277,13 @@ class UnlockChallengeActivity : ComponentActivity() {
         // 点击答题时悬浮窗不先隐藏（防露桌），答题页在悬浮窗下方完成
         // 创建与首帧绘制；此处 onResume = 答题页已完全就绪并占据屏幕，
         // 此时才撤下悬浮窗——撤下瞬间露出的直接是答题页，桌面 0 毫秒暴露。
-        try {
-            com.focusguard.app.enforce.LockOverlayManager.hideNow()
-        } catch (e: Exception) {
-            Log.w(TAG, "撤下悬浮窗失败：${e.message}")
+        // 答题模式下绝不撤悬浮窗（悬浮窗里正在答题）
+        if (!com.focusguard.app.enforce.LockOverlayManager.isChallengeMode) {
+            try {
+                com.focusguard.app.enforce.LockOverlayManager.hideNow()
+            } catch (e: Exception) {
+                Log.w(TAG, "撤下悬浮窗失败：${e.message}")
+            }
         }
     }
 

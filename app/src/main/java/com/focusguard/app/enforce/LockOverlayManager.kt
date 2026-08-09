@@ -86,6 +86,51 @@ object LockOverlayManager {
     private var clockRunnable: Runnable? = null
     private var lastHideAt = 0L
 
+    // ── 悬浮窗内答题模式（防手势退出的核心） ────────────
+    // 答题 UI 直接画在同一个 TYPE_APPLICATION_OVERLAY 窗口里：
+    // 悬浮窗不属于任何 Task，系统手势（底部上滑/侧滑返回/最近任务）
+    // 物理上无法作用于它——这是 Activity 方案永远做不到的。
+    // 切换只是 root 的子 View 替换，没有任何窗口生命周期，零露桌。
+
+    /** 当前是否处于答题模式（守护巡检据此完全放行，不打断答题）。 */
+    @Volatile
+    var isChallengeMode: Boolean = false
+        private set
+
+    /** 答题会话状态（object 级字段：窗口被 ROM 回收重建后进度不丢）。 */
+    private var challengeSession: ChallengeSession? = null
+
+    /** 答题通过回调：参数为 forPause（true=换取暂停，false=解锁）。 */
+    private var challengePassedCallback: ((Boolean) -> Unit)? = null
+
+    private val challengeGenerator by lazy {
+        com.focusguard.app.challenge.ChallengeGenerator()
+    }
+
+    // 答题界面的可变视图引用（按键只更新文本，不整屏重建）
+    private var challengeAnswerText: TextView? = null
+    private var challengeFeedbackText: TextView? = null
+    private var challengeProgressText: TextView? = null
+    private var challengeQuestionText: TextView? = null
+    private var challengeRefreshButton: Button? = null
+    private var challengeKeyboardBox: LinearLayout? = null
+
+    /** 键盘是否显示字母页（默认数字页）。 */
+    private var challengeLetterPage = false
+
+    /** 悬浮窗内答题的会话状态。 */
+    private data class ChallengeSession(
+        var question: com.focusguard.app.challenge.ChallengeQuestion,
+        var input: String = "",
+        var correctCount: Int = 0,
+        val requiredCorrect: Int,
+        val forPause: Boolean,
+        var feedback: String = "",
+        var feedbackIsError: Boolean = false,
+        /** 反馈展示中（正在等待自动换题），此期间禁用输入。 */
+        var switching: Boolean = false
+    )
+
     /** 是否具备悬浮窗权限——决定锁机走"悬浮窗主体"还是"Activity 兜底"。 */
     fun canShow(context: Context): Boolean = Settings.canDrawOverlays(context)
 
@@ -201,7 +246,13 @@ object LockOverlayManager {
                 isFocusableInTouchMode = true
                 isFocusable = true
             }
-            root.addView(buildContent(appContext, lockState, onStartChallenge, onRequestPause))
+            // 窗口重建时若处于答题模式 → 恢复答题界面（进度保留）
+            val session = challengeSession
+            if (isChallengeMode && session != null) {
+                root.addView(buildChallengeContent(appContext, lockState, session))
+            } else {
+                root.addView(buildContent(appContext, lockState, onStartChallenge, onRequestPause))
+            }
 
             wm.addView(root, buildLayoutParams())
             root.requestFocus()
@@ -595,6 +646,572 @@ object LockOverlayManager {
         uiHandler.post(runnable)
     }
 
+    // ══════════════════════════════════════════════════════
+    // 悬浮窗内答题模式
+    // ══════════════════════════════════════════════════════
+
+    /**
+     * 进入悬浮窗内答题模式（必须主线程；非主线程自动 post）。
+     *
+     * 与 Activity 方案的本质区别：**不启动任何 Activity**，
+     * 答题 UI 就画在当前悬浮窗里。悬浮窗不属于任何 Task →
+     * 底部上滑、侧滑返回、最近任务都无法把它移走，
+     * 手势退出在物理上不可能发生。
+     *
+     * @param requiredCorrect 需连续答对的题数（强度 1 → 1，强度 2 → 5）
+     * @param forPause true=答对后换取暂停；false=答对后解锁
+     * @param onPassed 答题通过回调（在主线程调用）
+     */
+    fun enterChallengeMode(
+        context: Context,
+        lockState: LockState,
+        requiredCorrect: Int,
+        forPause: Boolean,
+        onPassed: (Boolean) -> Unit
+    ) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            uiHandler.post { enterChallengeMode(context, lockState, requiredCorrect, forPause, onPassed) }
+            return
+        }
+        // 窗口未挂载 → 先挂载（force：绕过 hide 冷却）
+        if (!isShowing) {
+            showNow(
+                context = context,
+                lockState = lockState,
+                onStartChallenge = {},
+                onRequestPause = null
+            )
+        }
+        val root = overlayRoot
+        if (root == null) {
+            Log.w(TAG, "悬浮窗不可用，无法进入答题模式")
+            return
+        }
+
+        challengePassedCallback = onPassed
+        challengeLetterPage = false
+        challengeSession = ChallengeSession(
+            // numericOnly：自绘键盘无法输入中文，排除星期推算题
+            question = challengeGenerator.generate(
+                difficulty = if (requiredCorrect >= 3) 3 else 2,
+                numericOnly = true
+            ),
+            requiredCorrect = requiredCorrect.coerceAtLeast(1),
+            forPause = forPause
+        )
+        // 锁机时钟停掉（答题界面没有倒计时视图）
+        clockRunnable?.let { uiHandler.removeCallbacks(it) }
+        clockRunnable = null
+        timeText = null
+        statusText = null
+
+        isChallengeMode = true
+        val session = challengeSession ?: return
+        root.removeAllViews()
+        root.addView(buildChallengeContent(context.applicationContext, lockState, session))
+        root.requestFocus()
+        hideSystemBars(root)
+        Log.d(TAG, "已进入悬浮窗内答题模式（需答对 ${session.requiredCorrect} 题）")
+    }
+
+    /** 退出答题模式，恢复锁机主界面（必须主线程；非主线程自动 post）。 */
+    fun exitChallengeMode(
+        context: Context,
+        lockState: LockState,
+        onStartChallenge: () -> Unit,
+        onRequestPause: (() -> Unit)?
+    ) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            uiHandler.post {
+                exitChallengeMode(context, lockState, onStartChallenge, onRequestPause)
+            }
+            return
+        }
+        isChallengeMode = false
+        challengeSession = null
+        challengePassedCallback = null
+        clearChallengeViewRefs()
+
+        val root = overlayRoot ?: return
+        lastChallengeCallback = onStartChallenge
+        lastPauseCallback = onRequestPause
+        currentLockState = lockState
+        root.removeAllViews()
+        root.addView(
+            buildContent(context.applicationContext, lockState, onStartChallenge, onRequestPause)
+        )
+        root.requestFocus()
+        hideSystemBars(root)
+        startClock()
+        Log.d(TAG, "已退出答题模式，恢复锁机界面")
+    }
+
+    private fun clearChallengeViewRefs() {
+        challengeAnswerText = null
+        challengeFeedbackText = null
+        challengeProgressText = null
+        challengeQuestionText = null
+        challengeRefreshButton = null
+        challengeKeyboardBox = null
+    }
+
+    /** 构建答题界面（纯传统 View；禁止 Compose——ComposeView 挂 WM 会崩）。 */
+    private fun buildChallengeContent(
+        context: Context,
+        lockState: LockState,
+        session: ChallengeSession
+    ): View {
+        val scroll = android.widget.ScrollView(context).apply {
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(context, 20), dp(context, 26), dp(context, 20), dp(context, 20))
+        }
+
+        // ── 标题 + 进度 ──────────────────────────────
+        container.addView(
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(
+                    TextView(context).apply {
+                        text = "解锁挑战"
+                        textSize = 19f
+                        setTextColor(Color.WHITE)
+                        typeface = Typeface.DEFAULT_BOLD
+                    },
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                )
+                addView(
+                    TextView(context).apply {
+                        text = "${session.correctCount} / ${session.requiredCorrect}"
+                        textSize = 14f
+                        setTextColor(Color.parseColor("#66BB6A"))
+                        typeface = Typeface.DEFAULT_BOLD
+                        challengeProgressText = this
+                    },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                )
+            },
+            matchWrap()
+        )
+
+        container.addView(
+            TextView(context).apply {
+                text = if (session.forPause) {
+                    "答对后可换取一次暂停"
+                } else {
+                    "答对 ${session.requiredCorrect} 题即可解锁；答错会给出解析并换题"
+                }
+                textSize = 11f
+                setTextColor(Color.parseColor("#70FFFFFF"))
+                setPadding(0, dp(context, 4), 0, 0)
+            },
+            matchWrap()
+        )
+
+        // ── 题目卡 ──────────────────────────────────
+        container.addView(
+            TextView(context).apply {
+                text = session.question.question
+                textSize = 16f
+                setTextColor(Color.WHITE)
+                setLineSpacing(dp(context, 4).toFloat(), 1f)
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 14).toFloat()
+                    setColor(0xFF262031.toInt())
+                }
+                setPadding(dp(context, 16), dp(context, 14), dp(context, 16), dp(context, 14))
+                challengeQuestionText = this
+            },
+            matchWrap().apply { topMargin = dp(context, 14) }
+        )
+
+        // ── 答案显示区 ──────────────────────────────
+        container.addView(
+            TextView(context).apply {
+                text = session.input.ifEmpty { "请输入答案" }
+                textSize = 22f
+                gravity = Gravity.CENTER
+                setTextColor(
+                    if (session.input.isEmpty()) Color.parseColor("#50FFFFFF") else Color.WHITE
+                )
+                typeface = Typeface.DEFAULT_BOLD
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(0xFF1A1622.toInt())
+                    setStroke(dp(context, 1), 0xFF4F378B.toInt())
+                }
+                setPadding(dp(context, 12), dp(context, 12), dp(context, 12), dp(context, 12))
+                challengeAnswerText = this
+            },
+            matchWrap().apply { topMargin = dp(context, 12) }
+        )
+
+        // ── 反馈区 ──────────────────────────────────
+        container.addView(
+            TextView(context).apply {
+                text = session.feedback
+                textSize = 12f
+                setLineSpacing(dp(context, 3).toFloat(), 1f)
+                setTextColor(
+                    if (session.feedbackIsError) Color.parseColor("#EF9A9A")
+                    else Color.parseColor("#A5D6A7")
+                )
+                visibility = if (session.feedback.isBlank()) View.GONE else View.VISIBLE
+                setPadding(0, dp(context, 8), 0, 0)
+                challengeFeedbackText = this
+            },
+            matchWrap()
+        )
+
+        // ── 自绘键盘 ────────────────────────────────
+        val keyboardBox = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        challengeKeyboardBox = keyboardBox
+        container.addView(keyboardBox, matchWrap().apply { topMargin = dp(context, 12) })
+        renderKeyboard(context, lockState, session)
+
+        // ── 返回锁机 ────────────────────────────────
+        container.addView(
+            Button(context).apply {
+                text = "返回锁机界面"
+                textSize = 13f
+                setTextColor(Color.parseColor("#C0B4FF"))
+                isAllCaps = false
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(0x334F378B.toInt())
+                }
+                setPadding(dp(context, 20), dp(context, 9), dp(context, 20), dp(context, 9))
+                setOnClickListener {
+                    val ctx = lastContext ?: context
+                    exitChallengeMode(
+                        ctx, lockState,
+                        onStartChallenge = lastChallengeCallback ?: {},
+                        onRequestPause = lastPauseCallback
+                    )
+                }
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+                topMargin = dp(context, 14)
+            }
+        )
+
+        scroll.addView(
+            container,
+            android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        return scroll
+    }
+
+    /**
+     * 渲染自绘键盘（数字页 / 字母页可切换）。
+     *
+     * 为什么自绘而不用系统输入法：非 Activity 窗口挂 IME 在部分 ROM
+     * （尤其华为）上不稳定，历史上导致过"打开输入法就闪退"。自绘键盘
+     * 零 IME 依赖，彻底规避该类问题。
+     */
+    private fun renderKeyboard(
+        context: Context,
+        lockState: LockState,
+        session: ChallengeSession
+    ) {
+        val box = challengeKeyboardBox ?: return
+        box.removeAllViews()
+
+        val rows: List<List<String>> = if (challengeLetterPage) {
+            listOf(
+                listOf("A", "B", "C", "D", "E", "F", "G"),
+                listOf("H", "I", "J", "K", "L", "M", "N"),
+                listOf("O", "P", "Q", "R", "S", "T", "U"),
+                listOf("V", "W", "X", "Y", "Z", "⌫")
+            )
+        } else {
+            listOf(
+                listOf("1", "2", "3"),
+                listOf("4", "5", "6"),
+                listOf("7", "8", "9"),
+                listOf("-", "0", ".")
+            )
+        }
+
+        rows.forEach { row ->
+            box.addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    row.forEach { key ->
+                        addView(
+                            buildKeyButton(context, key, session) {
+                                when (key) {
+                                    "⌫" -> onKeyBackspace(session)
+                                    else -> onKeyInput(session, key)
+                                }
+                            },
+                            LinearLayout.LayoutParams(
+                                0, dp(context, 46), 1f
+                            ).apply {
+                                marginStart = dp(context, 3)
+                                marginEnd = dp(context, 3)
+                                topMargin = dp(context, 3)
+                                bottomMargin = dp(context, 3)
+                            }
+                        )
+                    }
+                },
+                matchWrap()
+            )
+        }
+
+        // 功能键行：ABC/123 切换、清空、退格（数字页）、提交
+        box.addView(
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(
+                    buildKeyButton(
+                        context,
+                        if (challengeLetterPage) "123" else "ABC",
+                        session
+                    ) {
+                        challengeLetterPage = !challengeLetterPage
+                        renderKeyboard(context, lockState, session)
+                    },
+                    LinearLayout.LayoutParams(0, dp(context, 46), 1f).apply {
+                        marginStart = dp(context, 3); marginEnd = dp(context, 3)
+                    }
+                )
+                if (!challengeLetterPage) {
+                    addView(
+                        buildKeyButton(context, "⌫", session) { onKeyBackspace(session) },
+                        LinearLayout.LayoutParams(0, dp(context, 46), 1f).apply {
+                            marginStart = dp(context, 3); marginEnd = dp(context, 3)
+                        }
+                    )
+                }
+                addView(
+                    buildKeyButton(context, "清空", session) {
+                        if (!session.switching) {
+                            session.input = ""
+                            refreshAnswerText(session)
+                        }
+                    },
+                    LinearLayout.LayoutParams(0, dp(context, 46), 1f).apply {
+                        marginStart = dp(context, 3); marginEnd = dp(context, 3)
+                    }
+                )
+            },
+            matchWrap()
+        )
+
+        // 提交 + 换一题
+        box.addView(
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(
+                    Button(context).apply {
+                        text = "提交答案"
+                        textSize = 15f
+                        setTextColor(Color.WHITE)
+                        isAllCaps = false
+                        background = GradientDrawable().apply {
+                            cornerRadius = dp(context, 12).toFloat()
+                            setColor(0xFF7C4DFF.toInt())
+                        }
+                        setOnClickListener { onSubmitAnswer(context, lockState, session) }
+                    },
+                    LinearLayout.LayoutParams(0, dp(context, 50), 1.6f).apply {
+                        marginStart = dp(context, 3)
+                        marginEnd = dp(context, 3)
+                        topMargin = dp(context, 8)
+                    }
+                )
+                addView(
+                    Button(context).apply {
+                        val used = lockState.challengeRefreshCount
+                        val exhausted = used >= 5
+                        text = if (exhausted) "换题已满(5/5)" else "换一题($used/5)"
+                        textSize = 12f
+                        isAllCaps = false
+                        isEnabled = !exhausted
+                        setTextColor(
+                            if (exhausted) Color.parseColor("#50FFFFFF")
+                            else Color.parseColor("#C0B4FF")
+                        )
+                        background = GradientDrawable().apply {
+                            cornerRadius = dp(context, 12).toFloat()
+                            setColor(if (exhausted) 0x22FFFFFF else 0x334F378B.toInt())
+                        }
+                        challengeRefreshButton = this
+                        setOnClickListener {
+                            if (session.switching) return@setOnClickListener
+                            if (lockState.challengeRefreshCount >= 5) return@setOnClickListener
+                            lockState.recordChallengeRefresh()
+                            nextQuestion(context, lockState, session)
+                        }
+                    },
+                    LinearLayout.LayoutParams(0, dp(context, 50), 1f).apply {
+                        marginStart = dp(context, 3)
+                        marginEnd = dp(context, 3)
+                        topMargin = dp(context, 8)
+                    }
+                )
+            },
+            matchWrap()
+        )
+    }
+
+    /** 构建一个键盘按键。 */
+    private fun buildKeyButton(
+        context: Context,
+        label: String,
+        session: ChallengeSession,
+        onClick: () -> Unit
+    ): Button = Button(context).apply {
+        text = label
+        textSize = if (label.length > 1) 13f else 17f
+        setTextColor(Color.WHITE)
+        isAllCaps = false
+        setPadding(0, 0, 0, 0)
+        background = GradientDrawable().apply {
+            cornerRadius = dp(context, 10).toFloat()
+            setColor(0xFF2E2740.toInt())
+        }
+        setOnClickListener {
+            try {
+                onClick()
+            } catch (e: Exception) {
+                Log.w(TAG, "键盘按键异常：${e.message}")
+            }
+        }
+    }
+
+    private fun onKeyInput(session: ChallengeSession, key: String) {
+        if (session.switching) return
+        if (session.input.length >= 24) return
+        session.input += key
+        refreshAnswerText(session)
+    }
+
+    private fun onKeyBackspace(session: ChallengeSession) {
+        if (session.switching) return
+        if (session.input.isNotEmpty()) {
+            session.input = session.input.dropLast(1)
+            refreshAnswerText(session)
+        }
+    }
+
+    private fun refreshAnswerText(session: ChallengeSession) {
+        challengeAnswerText?.let { tv ->
+            tv.text = session.input.ifEmpty { "请输入答案" }
+            tv.setTextColor(
+                if (session.input.isEmpty()) Color.parseColor("#50FFFFFF") else Color.WHITE
+            )
+        }
+    }
+
+    /** 提交答案：判分 → 通过则回调，否则显示解析并自动换题。 */
+    private fun onSubmitAnswer(
+        context: Context,
+        lockState: LockState,
+        session: ChallengeSession
+    ) {
+        if (session.switching) return
+        if (session.input.isBlank()) return
+
+        val correct = challengeGenerator.isAnswerCorrect(session.input, session.question.answer)
+        if (correct) {
+            session.correctCount += 1
+            challengeProgressText?.text = "${session.correctCount} / ${session.requiredCorrect}"
+            if (session.correctCount >= session.requiredCorrect) {
+                Log.d(TAG, "悬浮窗答题通过（forPause=${session.forPause}）")
+                val cb = challengePassedCallback
+                val forPause = session.forPause
+                isChallengeMode = false
+                challengeSession = null
+                challengePassedCallback = null
+                clearChallengeViewRefs()
+                cb?.invoke(forPause)
+                return
+            }
+            showFeedback(
+                session,
+                "回答正确！还需 ${session.requiredCorrect - session.correctCount} 题",
+                isError = false
+            )
+            session.switching = true
+            uiHandler.postDelayed({
+                session.switching = false
+                nextQuestion(context, lockState, session)
+            }, 900L)
+        } else {
+            val msg = buildString {
+                append("回答错误。正确答案：${session.question.answer}")
+                if (session.question.explanation.isNotBlank()) {
+                    append("\n解析：${session.question.explanation}")
+                }
+            }
+            showFeedback(session, msg, isError = true)
+            session.switching = true
+            uiHandler.postDelayed({
+                session.switching = false
+                nextQuestion(context, lockState, session)
+            }, 2800L)
+        }
+    }
+
+    private fun showFeedback(session: ChallengeSession, msg: String, isError: Boolean) {
+        session.feedback = msg
+        session.feedbackIsError = isError
+        challengeFeedbackText?.let { tv ->
+            tv.text = msg
+            tv.visibility = View.VISIBLE
+            tv.setTextColor(
+                if (isError) Color.parseColor("#EF9A9A") else Color.parseColor("#A5D6A7")
+            )
+        }
+    }
+
+    /** 换下一题（不清空进度）。 */
+    private fun nextQuestion(
+        context: Context,
+        lockState: LockState,
+        session: ChallengeSession
+    ) {
+        session.question = challengeGenerator.generate(
+            difficulty = if (session.requiredCorrect >= 3) 3 else 2,
+            numericOnly = true
+        )
+        session.input = ""
+        session.feedback = ""
+        session.feedbackIsError = false
+        challengeQuestionText?.text = session.question.question
+        challengeFeedbackText?.visibility = View.GONE
+        refreshAnswerText(session)
+        // 刷新换题按钮状态（次数可能已达上限）
+        challengeRefreshButton?.let { btn ->
+            val used = lockState.challengeRefreshCount
+            val exhausted = used >= 5
+            btn.text = if (exhausted) "换题已满(5/5)" else "换一题($used/5)"
+            btn.isEnabled = !exhausted
+            btn.setTextColor(
+                if (exhausted) Color.parseColor("#50FFFFFF") else Color.parseColor("#C0B4FF")
+            )
+        }
+    }
+
     /** 取一条箴言：优先用户自定义（每行一条随机），否则内置库。 */
     private fun pickMotto(context: Context): String {
         val custom = runCatching {
@@ -641,5 +1258,6 @@ object LockOverlayManager {
         timeText = null
         statusText = null
         isShowing = false
+        clearChallengeViewRefs()
     }
 }

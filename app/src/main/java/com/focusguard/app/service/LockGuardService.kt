@@ -305,6 +305,14 @@ class LockGuardService : Service() {
                 return
             }
 
+            // ── 悬浮窗内答题模式：完全放行（v3.0.0） ────────
+            // 答题 UI 就画在悬浮窗里，窗口本身即防线。此时不做任何
+            // 拉起/隐藏动作，只在窗口被 ROM 回收时重建（重建保留进度）。
+            if (LockOverlayManager.isChallengeMode) {
+                LockOverlayManager.verifyAttached(applicationContext, lockState)
+                return
+            }
+
             // 答题页让位规则（无缝接替架构）：
             // 点击答题后悬浮窗**保持显示**（目标页面在悬浮窗下方创建并绘制，
             // 其 onResume 就绪后自行撤下悬浮窗——桌面 0 毫秒暴露）。
