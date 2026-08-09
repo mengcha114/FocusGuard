@@ -50,12 +50,16 @@ object LockTaskEnhancer {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 try {
-                    val dpm = activity.getSystemService(android.app.admin.DevicePolicyManager::class.java)
                     if (DhizukuEnhancer.isReady()) {
+                        // 1. LOCK_TASK_FEATURE_NONE (0)：彻底关闭通知栏下拉、状态栏信息、System Info 与 Keyguard 扩展
+                        DhizukuEnhancer.setLockTaskFeatures(activity, android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+                        // 2. 状态栏彻底硬屏蔽
                         DhizukuEnhancer.setStatusBarDisabled(activity, true)
+                        // 3. 禁用 Keyguard 屏障干扰
+                        DhizukuEnhancer.setKeyguardDisabled(activity, true)
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "设置 setStatusBarDisabled 失败: ${e.message}")
+                    Log.w(TAG, "设置 DPM 特性失败: ${e.message}")
                 }
             }
             activity.startLockTask()
@@ -78,6 +82,7 @@ object LockTaskEnhancer {
                 runCatching {
                     if (DhizukuEnhancer.isReady()) {
                         DhizukuEnhancer.setStatusBarDisabled(activity, false)
+                        DhizukuEnhancer.setKeyguardDisabled(activity, false)
                     }
                 }
             }

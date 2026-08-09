@@ -249,6 +249,40 @@ object DhizukuEnhancer {
         }
     }
 
+    /** 通过 Dhizuku 接口设置 Lock Task 允许的 Feature 特性（如禁用状态栏下拉、通知栏与锁屏屏障）。 */
+    fun setLockTaskFeatures(context: Context, flags: Int): Boolean {
+        try {
+            if (!ensureReady(context)) return false
+            val dpm = wrappedDpm ?: return false
+            val comp = ownerComponent ?: return false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                dpm.setLockTaskFeatures(comp, flags)
+                Log.d(TAG, "设置 setLockTaskFeatures($flags) 成功")
+            }
+            return true
+        } catch (e: Throwable) {
+            Log.w(TAG, "setLockTaskFeatures 失败：${e.message}")
+            return false
+        }
+    }
+
+    /** 通过 Dhizuku 接口设置 Keyguard（锁屏屏障）禁用状态。 */
+    fun setKeyguardDisabled(context: Context, disabled: Boolean): Boolean {
+        try {
+            if (!ensureReady(context)) return false
+            val dpm = wrappedDpm ?: return false
+            val comp = ownerComponent ?: return false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                dpm.setKeyguardDisabled(comp, disabled)
+                Log.d(TAG, "设置 setKeyguardDisabled($disabled) 成功")
+            }
+            return true
+        } catch (e: Throwable) {
+            Log.w(TAG, "setKeyguardDisabled 失败：${e.message}")
+            return false
+        }
+    }
+
     /** 通过 Dhizuku 接口调用 DevicePolicyManager.setStatusBarDisabled 屏蔽/解除通知栏。 */
     fun setStatusBarDisabled(context: Context, disabled: Boolean): Boolean {
         try {

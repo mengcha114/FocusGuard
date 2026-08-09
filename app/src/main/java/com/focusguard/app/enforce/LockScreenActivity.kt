@@ -413,7 +413,7 @@ class LockScreenActivity : ComponentActivity() {
             val controller = androidx.core.view.WindowInsetsControllerCompat(window, window.decorView)
             controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior =
-                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         } catch (e: Exception) {
             Log.w(TAG, "进入沉浸模式失败：${e.message}")
         }
