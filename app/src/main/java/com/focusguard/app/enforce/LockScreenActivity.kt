@@ -33,6 +33,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +64,7 @@ class LockScreenActivity : ComponentActivity() {
     companion object {
         private const val TAG = "LockScreenActivity"
         private const val EXTRA_REQUEST_PAUSE = "request_pause"
+        private const val EXTRA_FRIEND_UNLOCK = "friend_unlock"
         private const val LAUNCH_WINDOW_MS = 4_000L
 
         /** 最近一次发起启动的时间戳（延迟启动窗口，供 guardTick 让位）。 */
@@ -239,7 +241,16 @@ class LockScreenActivity : ComponentActivity() {
             try {
                 if (lockState.unlockStrength == 3) {
                     LockScreenActivity.markLaunchPending()
-                    show(context, forceActivity = true)
+                    val intent = Intent(appCtx, LockScreenActivity::class.java).apply {
+                        putExtra(EXTRA_FRIEND_UNLOCK, true)
+                        addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                        )
+                    }
+                    appCtx.startActivity(intent)
                     return
                 }
                 // 优先走悬浮窗内自绘键盘答题（0 露桌、手势无法退出）
@@ -309,12 +320,17 @@ class LockScreenActivity : ComponentActivity() {
     /** 答题成功后是解锁（false）还是换取一次暂停（true）。 */
     private var pendingPause = false
 
+    /** 强度 3 专用入口请求序号；每次递增都可靠触发 Compose 滚动与聚焦。 */
+    private var friendUnlockRequestId by mutableIntStateOf(0)
+
     /** 失焦置顶节流：防止覆盖层/窗口动画触发失焦→置顶→再失焦 的高频循环（ANR/闪退源）。 */
     private var lastFocusReassertAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockState = LockState(this)
+        friendUnlockRequestId =
+            if (intent.getBooleanExtra(EXTRA_FRIEND_UNLOCK, false)) 1 else 0
         instance = this
         instanceCreatedAt = System.currentTimeMillis()
         launchPendingAt = 0L
@@ -359,6 +375,7 @@ class LockScreenActivity : ComponentActivity() {
         setContent {
             LockScreenContent(
                 lockState = lockState,
+                friendUnlockRequestId = friendUnlockRequestId,
                 onStartChallenge = { count -> startChallenge(count) },
                 onUnlocked = {
                     // 先退出系统级 Lock Task，再释放锁机
@@ -369,6 +386,17 @@ class LockScreenActivity : ComponentActivity() {
                     finish()
                 }
             )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_FRIEND_UNLOCK, false)) {
+            friendUnlockRequestId += 1
+        }
+        if (intent.getBooleanExtra(EXTRA_REQUEST_PAUSE, false)) {
+            startChallenge(-1)
         }
     }
 
@@ -781,6 +809,7 @@ class LockScreenActivity : ComponentActivity() {
 @Composable
 private fun LockScreenContent(
     lockState: LockState,
+    friendUnlockRequestId: Int = 0,
     onStartChallenge: (Int) -> Unit,
     onUnlocked: () -> Unit
 ) {
@@ -877,6 +906,15 @@ private fun LockScreenContent(
     val progress = if (totalSeconds <= 0) 0f
         else (shownSeconds.toFloat() / totalSeconds).coerceIn(0f, 1f)
 
+    val pageScrollState = rememberScrollState()
+    LaunchedEffect(friendUnlockRequestId) {
+        if (friendUnlockRequestId > 0) {
+            // 等首帧完成布局后滚到底部的朋友密码区。
+            kotlinx.coroutines.delay(120L)
+            pageScrollState.animateScrollTo(pageScrollState.maxValue)
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -908,7 +946,7 @@ private fun LockScreenContent(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(pageScrollState)
                 // 顶部留出状态栏高度（窗口已 edge-to-edge 铺满，
                 // 背景延伸到状态栏区域，内容不被刘海/挖孔压住）
                 .padding(start = 24.dp, end = 24.dp, top = 52.dp, bottom = 28.dp),
@@ -1015,6 +1053,7 @@ private fun LockScreenContent(
                         3 -> FriendUnlockSection(
                             cipher = lockState.friendCipher,
                             shift = lockState.friendShift,
+                            focusRequestId = friendUnlockRequestId,
                             onVerified = onUnlocked
                         )
                         2 -> UnlockButtonWithHint(
@@ -1410,12 +1449,21 @@ private fun UnlockButtonWithHint(
 private fun FriendUnlockSection(
     cipher: String,
     shift: Int,
+    focusRequestId: Int = 0,
     onVerified: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var input by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var showHint by remember { mutableStateOf(false) }
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+
+    LaunchedEffect(focusRequestId) {
+        if (focusRequestId > 0) {
+            kotlinx.coroutines.delay(250L)
+            focusRequester.requestFocus()
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1459,7 +1507,9 @@ private fun FriendUnlockSection(
             onValueChange = { input = it; errorMsg = null },
             label = { Text("朋友解密后的密码") },
             placeholder = { Text("输入明文密码") },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester),
             shape = RoundedCornerShape(12.dp),
             singleLine = true
         )
