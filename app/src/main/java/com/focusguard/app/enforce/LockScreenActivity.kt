@@ -451,36 +451,91 @@ class LockScreenActivity : ComponentActivity() {
 
         // Dhizuku 增强：应封锁时进入系统级 Lock Task（Home/上滑/最近任务全部失效）；
         // 暂停/番茄钟休息阶段退出 Lock Task，让用户自由使用。
+        //
+        // 关键：**不在主线程同步做 Dhizuku IPC**。
+        // ensureReady / setLockTaskFeatures / setStatusBarDisabled 都是跨进程
+        // Binder 调用，首次调用要等 Dhizuku 服务端进程唤醒（数百毫秒到数秒）。
+        // 过去在 onResume 里同步执行 → 主线程被 Binder 阻塞 → Compose 首帧
+        // 画不出来 = 「第一次开启锁机白屏无响应」，第二次因已缓存所以正常。
+        // 现在：DPM 配置放后台线程，startLockTask() 回主线程执行（必须主线程）。
         if (lockState.shouldBlockNow) {
-            val ok = com.focusguard.app.enhance.LockTaskEnhancer.enter(this)
-            // 只有当 Dhizuku 进入 LockTask 成功时，才彻底隐藏悬浮窗（防冲突闪烁）
-            if (ok && LockOverlayManager.isShowing) {
-                try {
-                    LockOverlayManager.hideNow()
-                } catch (e: Exception) {
-                    Log.w(TAG, "Dhizuku 模式隐藏悬浮窗失败：${e.message}")
-                }
-            }
-            // enter 失败（Dhizuku 授权问题/白名单失败等）→ 立即退回悬浮窗方案：
-            // 否则 Activity 没有 Lock Task 保护，可以被正常退出。
-            // 悬浮窗盖住 Activity 并吞掉所有按键，锁死能力不降级。
-            if (!ok && LockOverlayManager.canShow(this)) {
-                Log.w(TAG, "Lock Task 进入失败，悬浮窗接管锁机")
-                LockOverlayManager.show(
-                    context = this,
-                    lockState = lockState,
-                    force = true,
-                    onStartChallenge = {
-                        startChallengeFromOverlay(applicationContext, lockState)
-                    },
-                    onRequestPause = {
-                        showForPause(applicationContext)
-                    }
-                )
-            }
+            enterLockTaskAsync()
         } else {
             com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
         }
+    }
+
+    /** Lock Task 是否已发起（避免 onResume 反复触发导致闪烁）。 */
+    private var lockTaskRequested = false
+
+    /** 供 Composable（番茄钟阶段切换）调用的异步进入入口。 */
+    fun requestEnterLockTask() {
+        lockTaskRequested = false
+        enterLockTaskAsync()
+    }
+
+    /**
+     * 异步进入 Lock Task：后台线程做 Dhizuku Binder 配置，主线程只调
+     * startLockTask()。失败则回退悬浮窗方案。
+     */
+    private fun enterLockTaskAsync() {
+        // 已生效或已发起 → 不重复触发（重复 enter 会造成窗口反复切换 = 闪烁）
+        if (com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive) {
+            if (LockOverlayManager.isShowing) {
+                try {
+                    LockOverlayManager.hideNow()
+                } catch (e: Exception) {
+                    Log.w(TAG, "隐藏悬浮窗失败：${e.message}")
+                }
+            }
+            return
+        }
+        if (lockTaskRequested) return
+        lockTaskRequested = true
+
+        Thread {
+            // 后台完成 Dhizuku 连接与 DPM 策略配置（纯 Binder，无 UI 操作）
+            val ready = try {
+                com.focusguard.app.enhance.LockTaskEnhancer.prepare(applicationContext)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Dhizuku 准备失败：${e.message}")
+                false
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (ready) {
+                    // startLockTask 必须在主线程且 Activity 处于 resumed
+                    val ok = com.focusguard.app.enhance.LockTaskEnhancer.startOnUi(this)
+                    if (ok) {
+                        // LockTask 生效 → 撤下悬浮窗（消除两个界面互相切换的闪烁）
+                        if (LockOverlayManager.isShowing) {
+                            try {
+                                LockOverlayManager.hideNow()
+                            } catch (e: Exception) {
+                                Log.w(TAG, "隐藏悬浮窗失败：${e.message}")
+                            }
+                        }
+                        return@runOnUiThread
+                    }
+                }
+                // Dhizuku 不可用或 startLockTask 失败 → 悬浮窗兜底
+                lockTaskRequested = false
+                if (LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing) {
+                    Log.w(TAG, "Lock Task 不可用，悬浮窗接管锁机")
+                    LockOverlayManager.show(
+                        context = this,
+                        lockState = lockState,
+                        force = true,
+                        onStartChallenge = {
+                            startChallengeFromOverlay(applicationContext, lockState)
+                        },
+                        onRequestPause = {
+                            showForPause(applicationContext)
+                        }
+                    )
+                }
+            }
+        }.start()
     }
 
     override fun onPause() {
@@ -620,10 +675,12 @@ private fun LockScreenContent(
                     // 新阶段开始：重置进度环基准
                     totalSeconds = phaseSeconds.coerceAtLeast(1)
                 }
-                // 阶段切换：休息→工作 重新进入 Lock Task；工作→休息 释放
+                // 阶段切换：休息→工作 重新进入 Lock Task；工作→休息 释放。
+                // 进入走 Activity 的异步路径（Binder 配置在后台线程，
+                // 避免番茄钟切阶段时主线程被阻塞造成界面卡住）。
                 if (isWorkPhase != lastWorkPhase && activity != null) {
                     if (isWorkPhase) {
-                        com.focusguard.app.enhance.LockTaskEnhancer.enter(activity)
+                        (activity as? LockScreenActivity)?.requestEnterLockTask()
                     } else {
                         com.focusguard.app.enhance.LockTaskEnhancer.exit(activity)
                     }

@@ -29,20 +29,20 @@ object LockTaskEnhancer {
         private set
 
     /**
-     * 尝试进入 Lock Task 模式。
+     * 【后台线程调用】准备 Lock Task：Dhizuku 连接 + 白名单 + DPM 策略配置。
      *
-     * 流程：初始化 Dhizuku → 确保本包在白名单 → startLockTask。
-     * 已在白名单时跳过授权（少一次 IPC）。
+     * 全部是跨进程 Binder 调用，首次可能耗时数百毫秒到数秒——
+     * 因此必须在后台线程执行，绝不能放主线程（否则首帧画不出来 = 白屏 ANR）。
      *
-     * @return 是否成功进入
+     * @return 是否已具备进入 Lock Task 的条件
      */
-    fun enter(activity: Activity): Boolean {
+    fun prepare(context: android.content.Context): Boolean {
         return try {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return false
-            if (!DhizukuEnhancer.ensureReady(activity)) return false
+            if (!DhizukuEnhancer.ensureReady(context)) return false
 
-            if (!DhizukuEnhancer.isLockTaskPermitted(activity.packageName)) {
-                if (!DhizukuEnhancer.grantLockTask(activity)) {
+            if (!DhizukuEnhancer.isLockTaskPermitted(context.packageName)) {
+                if (!DhizukuEnhancer.grantLockTask(context)) {
                     Log.w(TAG, "加入 Lock Task 白名单失败，放弃进入")
                     return false
                 }
@@ -50,41 +50,71 @@ object LockTaskEnhancer {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 try {
-                    if (DhizukuEnhancer.isReady()) {
-                        // 1. LOCK_TASK_FEATURE_NONE (0)：彻底关闭通知栏下拉、状态栏信息、System Info 与 Keyguard 扩展
-                        DhizukuEnhancer.setLockTaskFeatures(activity, android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
-                        // 2. 状态栏彻底硬屏蔽
-                        DhizukuEnhancer.setStatusBarDisabled(activity, true)
-                        // 3. 禁用 Keyguard 屏障干扰
-                        DhizukuEnhancer.setKeyguardDisabled(activity, true)
-                    }
+                    // 1. LOCK_TASK_FEATURE_NONE (0)：彻底关闭通知栏下拉、状态栏信息、System Info 与 Keyguard 扩展
+                    DhizukuEnhancer.setLockTaskFeatures(
+                        context,
+                        android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_NONE
+                    )
+                    // 2. 状态栏彻底硬屏蔽
+                    DhizukuEnhancer.setStatusBarDisabled(context, true)
+                    // 3. 禁用 Keyguard 屏障干扰
+                    DhizukuEnhancer.setKeyguardDisabled(context, true)
                 } catch (e: Throwable) {
                     Log.w(TAG, "设置 DPM 特性失败: ${e.message}")
                 }
             }
+            true
+        } catch (e: Throwable) {
+            Log.w(TAG, "准备 Lock Task 失败：${e.message}")
+            false
+        }
+    }
+
+    /**
+     * 【主线程调用】真正启动 Lock Task（startLockTask 要求主线程 + resumed）。
+     *
+     * @return 是否成功进入
+     */
+    fun startOnUi(activity: Activity): Boolean {
+        return try {
             activity.startLockTask()
             lockTaskActive = true
             Log.d(TAG, "已进入系统级 Lock Task 模式")
             true
         } catch (e: Throwable) {
-            Log.w(TAG, "进入 Lock Task 失败：${e.message}")
+            Log.w(TAG, "startLockTask 失败：${e.message}")
             lockTaskActive = false
             false
         }
     }
 
-    /** 退出 Lock Task 模式（解锁 / 番茄钟休息 / 暂停时调用）。 */
+    /**
+     * 兼容旧调用点的同步进入（内部先 prepare 再 startOnUi）。
+     * 注意：会阻塞调用线程，主线程慎用。
+     */
+    fun enter(activity: Activity): Boolean {
+        if (!prepare(activity.applicationContext)) return false
+        return startOnUi(activity)
+    }
+
+    /**
+     * 退出 Lock Task 模式（解锁 / 番茄钟休息 / 暂停时调用）。
+     *
+     * stopLockTask 必须主线程同步执行；DPM 策略解除（Binder IPC）放后台线程，
+     * 避免解锁瞬间主线程被阻塞造成卡顿。
+     */
     fun exit(activity: Activity) {
         try {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
-            activity.stopLockTask()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                runCatching {
-                    if (DhizukuEnhancer.isReady()) {
-                        DhizukuEnhancer.setStatusBarDisabled(activity, false)
-                        DhizukuEnhancer.setKeyguardDisabled(activity, false)
+            runCatching { activity.stopLockTask() }
+            val appCtx = activity.applicationContext
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && DhizukuEnhancer.isReady()) {
+                Thread {
+                    runCatching {
+                        DhizukuEnhancer.setStatusBarDisabled(appCtx, false)
+                        DhizukuEnhancer.setKeyguardDisabled(appCtx, false)
                     }
-                }
+                }.start()
             }
         } catch (e: Throwable) {
             Log.w(TAG, "退出 Lock Task 失败：${e.message}")

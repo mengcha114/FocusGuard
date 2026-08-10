@@ -140,6 +140,19 @@ class LockGuardService : Service() {
                 Log.w(TAG, "Shizuku 自愈失败（可忽略）：${e.message}")
             }
         }.start()
+
+        // Dhizuku 预热：服务创建时一次性完成 Binder 绑定与 DPM 包装构造。
+        // 必须放在独立线程且只做一次——guardTick 运行在后台协程里，
+        // 若在 tick 中调用 ensureReady 触发首次 Binder 初始化，会与
+        // 锁机页 Activity 的 onResume（主线程）争抢 Dhizuku 服务，
+        // 表现为「第一次开启锁机白屏无响应」。预热后 guardTick 只读缓存。
+        Thread {
+            try {
+                com.focusguard.app.enhance.DhizukuEnhancer.ensureReady(applicationContext)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Dhizuku 预热失败（可忽略）：${e.message}")
+            }
+        }.start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -349,7 +362,7 @@ class LockGuardService : Service() {
             // 当 Dhizuku 已连接且已授权时，优先启动 LockScreenActivity 并进入系统级 Lock Task 模式！
             // 此模式下系统在底层彻底禁用 Home / 上滑 / 最近任务 / 通知栏下拉 / 状态栏展开，
             // 这是最强的系统级锁死。
-            if (com.focusguard.app.enhance.DhizukuEnhancer.ensureReady(applicationContext)) {
+            if (com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()) {
                 // 如果已经在前台且 LockTask 已生效，彻底隐藏悬浮窗防止闪烁并放行
                 if (LockScreenActivity.foreground &&
                     com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive

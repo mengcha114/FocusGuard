@@ -58,6 +58,16 @@ object DhizukuEnhancer {
     fun isReady(): Boolean = initialized && wrappedDpm != null && ownerComponent != null
 
     /**
+     * guardTick 专用就绪检查：只读缓存，不触发任何 IPC / Binder 操作。
+     *
+     * guardTick 运行在后台协程（Dispatchers.Default），在此调用 ensureReady
+     * 会触发 Dhizuku Binder 初始化（部分操作需要主线程），造成死锁 → 白屏/ANR。
+     * 改为只检查已缓存的 initialized 标志，仅首次锁机前调用一次 ensureReady
+     * 完成初始化，后续 tick 均走轻量只读路径。
+     */
+    fun isReadyCached(): Boolean = isReady()
+
+    /**
      * 建立 Dhizuku 连接（幂等）。
      * 只要求 Dhizuku 已安装并激活为 Device Owner，**不要求已授权本应用**。
      * 支持 Android 8.0+（Dhizuku 官方支持范围，Lock Task 需要 API 21+）。
