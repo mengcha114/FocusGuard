@@ -148,4 +148,16 @@ object LockTaskEnhancer {
             lockTaskActive = false
         }
     }
+
+    /**
+     * 撤销已经由 [prepare] 写入、但尚未进入 LockTask 的持久 DPM 策略。
+     * 供异步准备期间锁机结束/Activity 销毁时补偿，全部 Binder 操作在后台执行。
+     */
+    fun releasePreparedPolicies(context: android.content.Context) {
+        val appCtx = context.applicationContext
+        Thread {
+            runCatching { DhizukuEnhancer.setStatusBarDisabled(appCtx, false) }
+            runCatching { DhizukuEnhancer.setKeyguardDisabled(appCtx, false) }
+        }.start()
+    }
 }

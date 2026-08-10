@@ -498,6 +498,10 @@ class LockScreenActivity : ComponentActivity() {
     /** Lock Task 是否已发起（避免 onResume 反复触发导致闪烁）。 */
     private var lockTaskRequested = false
 
+    /** 异步准备代次：新请求使旧后台任务失效，防止旧任务晚到后误锁。 */
+    @Volatile
+    private var lockTaskRequestGeneration = 0L
+
     /** 供 Composable（番茄钟阶段切换）调用的异步进入入口。 */
     fun requestEnterLockTask() {
         lockTaskRequested = false
@@ -525,6 +529,7 @@ class LockScreenActivity : ComponentActivity() {
         }
         if (lockTaskRequested) return
         lockTaskRequested = true
+        val generation = ++lockTaskRequestGeneration
 
         // 只有从未确认过 Dhizuku 可用时才显示悬浮窗。曾成功授权/就绪的设备
         // 首次冷启动直接保留 Activity 页面，避免“先旧悬浮窗、再新 Activity”。
@@ -554,12 +559,33 @@ class LockScreenActivity : ComponentActivity() {
         }
 
         Thread {
-            // 后台完成 Dhizuku 连接与 DPM 策略配置（纯 Binder，无 UI 操作）
-            val ready = try {
-                com.focusguard.app.enhance.LockTaskEnhancer.prepare(applicationContext)
-            } catch (e: Throwable) {
-                Log.w(TAG, "Dhizuku 准备失败：${e.message}")
-                false
+            // 后台完成 Dhizuku 连接与 DPM 策略配置。手机刚重启时 Dhizuku
+            // Provider 可能晚几秒启动；历史上成功使用过 Dhizuku 的设备在此
+            // 有界重试，期间 Activity 始终是可见防线，不先切旧悬浮窗页面。
+            val preferDhizuku = com.focusguard.app.enhance.DhizukuEnhancer
+                .shouldPreferActivity(applicationContext)
+            val maxPrepareAttempts = if (preferDhizuku) 8 else 1
+            var ready = false
+            for (attempt in 1..maxPrepareAttempts) {
+                if (!isLockTaskRequestCurrent(generation)) {
+                    handleStaleLockTaskRequest(generation, prepared = false)
+                    return@Thread
+                }
+                ready = try {
+                    com.focusguard.app.enhance.LockTaskEnhancer.prepare(applicationContext)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Dhizuku 准备失败：${e.message}")
+                    false
+                }
+                if (ready) break
+                if (attempt < maxPrepareAttempts) {
+                    Log.d(TAG, "重启续锁等待 Dhizuku 就绪：$attempt/$maxPrepareAttempts")
+                    try {
+                        Thread.sleep(500L)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                }
             }
             if (!ready) {
                 // Dhizuku 不可用 → 悬浮窗常驻接管（过渡期挂的那个就地留用）
@@ -586,17 +612,43 @@ class LockScreenActivity : ComponentActivity() {
                 }
                 return@Thread
             }
+            // prepare 已写入状态栏/Keyguard 策略；紧邻 startLockTask 前再次验证。
+            // 若等待期间锁机已结束或 Activity 已失效，必须补偿撤销策略。
+            if (!isLockTaskRequestCurrent(generation)) {
+                handleStaleLockTaskRequest(generation, prepared = true)
+                return@Thread
+            }
             // 就绪 → 主线程尝试 startLockTask，最多重试 3 次
-            tryStartLockTask(attempt = 1)
+            tryStartLockTask(attempt = 1, generation = generation)
         }.start()
+    }
+
+    private fun isLockTaskRequestCurrent(generation: Long): Boolean =
+        generation == lockTaskRequestGeneration &&
+            instance === this &&
+            !isFinishing &&
+            !isDestroyed &&
+            lockState.shouldBlockNow
+
+    private fun handleStaleLockTaskRequest(generation: Long, prepared: Boolean) {
+        // 旧代任务被新请求替代时不能撤策略，新请求可能正在使用同一套 DPM 配置。
+        if (generation != lockTaskRequestGeneration) return
+        lockTaskRequested = false
+        if (prepared) {
+            com.focusguard.app.enhance.LockTaskEnhancer
+                .releasePreparedPolicies(applicationContext)
+        }
     }
 
     /**
      * 主线程重试 startLockTask（Activity 尚未 resumed / 白名单刚生效时首次会失败）。
      */
-    private fun tryStartLockTask(attempt: Int) {
+    private fun tryStartLockTask(attempt: Int, generation: Long) {
         runOnUiThread {
-            if (isFinishing || isDestroyed) return@runOnUiThread
+            if (!isLockTaskRequestCurrent(generation)) {
+                handleStaleLockTaskRequest(generation, prepared = true)
+                return@runOnUiThread
+            }
             if (com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive) {
                 hideOverlayIfShowing()
                 return@runOnUiThread
@@ -609,7 +661,10 @@ class LockScreenActivity : ComponentActivity() {
             }
             if (attempt < 3) {
                 Log.w(TAG, "startLockTask 第 $attempt 次失败，400ms 后重试")
-                window.decorView.postDelayed({ tryStartLockTask(attempt + 1) }, 400L)
+                window.decorView.postDelayed(
+                    { tryStartLockTask(attempt + 1, generation) },
+                    400L
+                )
                 return@runOnUiThread
             }
             // 三次都失败 → 悬浮窗常驻接管（过渡期那个继续留着，不再撤）

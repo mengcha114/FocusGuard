@@ -393,7 +393,7 @@ class LockGuardService : Service() {
                 if (LockScreenActivity.instance == null || !LockScreenActivity.foreground) {
                     if (now - lastLockReassertAt < REASSERT_COOLDOWN_MS) return
                     lastLockReassertAt = now
-                    Log.d(TAG, "Dhizuku 就绪但 LockTask 未生效，拉起锁机页并保持悬浮窗兜底")
+                    Log.d(TAG, "Dhizuku 模式下 LockTask 尚未生效，拉起 Activity 等待续锁")
                     LockScreenActivity.show(applicationContext, forceActivity = true)
                 }
                 return

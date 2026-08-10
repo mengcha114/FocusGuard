@@ -177,10 +177,11 @@ object DhizukuEnhancer {
         if (isReady()) return true
         try {
             if (!connect(context)) {
-                markReadinessChecked(
-                    context,
-                    clearEverReady = lastError == "Dhizuku 未安装或未激活为设备所有者"
-                )
+                // 开机后 Dhizuku Provider/服务通常晚于本应用启动，init=false 只
+                // 表示“此刻不可达”，不能据此清除历史成功状态。否则重启续锁会
+                // 从 Activity 错误降级为悬浮窗。明确连接成功但授权为 false 时，
+                // 下方分支仍会清除历史标志。
+                markReadinessChecked(context, clearEverReady = false)
                 return false
             }
             val permissionGranted = isPermissionGranted()
