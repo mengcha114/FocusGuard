@@ -298,12 +298,12 @@ class UnlockChallengeActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         foreground = false
-        // 延迟确认挂载：800ms 后仍未恢复前台（侧滑返回 finish / 被压后台）
-        // → 挂悬浮窗盖屏。华为任务栈/输入法切换可能短暂 pause 数百毫秒，
-        // 800ms 宽限避免把正常进入答题误判成离开；真正离开仍会被守护接管。
-        // onResume → 取消，不误挂。这是"手势轻松退出"的最后防线之一。
+        // 不在 onPause 定时顶回锁机页。华为在 IME、系统栏、窗口焦点调整时会
+        // 产生持续超过 800ms 的短暂 pause；旧逻辑此时在 LockTask 生效分支
+        // 明确 show(singleTask LockScreenActivity)，会清掉栈顶答题页，造成
+        // “点击答题后自动返回”。真正离开由守护服务在启动宽限后处理，销毁时
+        // onDestroy 仍同步恢复防线。
         overlayHandler.removeCallbacks(overlayPending)
-        overlayHandler.postDelayed(overlayPending, 800L)
     }
 
     override fun onUserLeaveHint() {
@@ -317,10 +317,8 @@ class UnlockChallengeActivity : ComponentActivity() {
     /** 延迟确认挂载用的 Handler（onPause 触发，onResume 取消）。 */
     private val overlayHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
-    /** onPause 的延迟确认挂载任务：800ms 后仍未恢复前台 → 恢复锁机防线。 */
-    private val overlayPending = Runnable {
-        ensureOverlayNow("onPause 延迟确认")
-    }
+    /** 保留可取消回调槽，避免生命周期旧任务残留；onPause 不再安排顶回。 */
+    private val overlayPending = Runnable { }
 
     private fun stillLocked(): Boolean = try {
         this::lockState.isInitialized && lockState.shouldBlockNow

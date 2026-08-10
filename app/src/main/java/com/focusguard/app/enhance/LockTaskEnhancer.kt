@@ -1,6 +1,8 @@
 package com.focusguard.app.enhance
 
 import android.app.Activity
+import android.app.ActivityManager
+import android.content.Context
 import android.os.Build
 import android.util.Log
 
@@ -49,18 +51,21 @@ object LockTaskEnhancer {
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                try {
-                    // 1. LOCK_TASK_FEATURE_NONE (0)：彻底关闭通知栏下拉、状态栏信息、System Info 与 Keyguard 扩展
-                    DhizukuEnhancer.setLockTaskFeatures(
-                        context,
-                        android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_NONE
+                // 三项都是本应用承诺的 Dhizuku 强防护，任一失败都不能假装
+                // prepare 成功；否则首次可能只进入弱 LockTask，通知栏/锁屏仍可用。
+                val featuresOk = DhizukuEnhancer.setLockTaskFeatures(
+                    context,
+                    android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_NONE
+                )
+                val statusBarOk = DhizukuEnhancer.setStatusBarDisabled(context, true)
+                val keyguardOk = DhizukuEnhancer.setKeyguardDisabled(context, true)
+                if (!featuresOk || !statusBarOk || !keyguardOk) {
+                    Log.w(
+                        TAG,
+                        "DPM 强防护未全部生效：features=$featuresOk, " +
+                            "statusBar=$statusBarOk, keyguard=$keyguardOk"
                     )
-                    // 2. 状态栏彻底硬屏蔽
-                    DhizukuEnhancer.setStatusBarDisabled(context, true)
-                    // 3. 禁用 Keyguard 屏障干扰
-                    DhizukuEnhancer.setKeyguardDisabled(context, true)
-                } catch (e: Throwable) {
-                    Log.w(TAG, "设置 DPM 特性失败: ${e.message}")
+                    return false
                 }
             }
             true
@@ -78,9 +83,22 @@ object LockTaskEnhancer {
     fun startOnUi(activity: Activity): Boolean {
         return try {
             activity.startLockTask()
-            lockTaskActive = true
-            Log.d(TAG, "已进入系统级 Lock Task 模式")
-            true
+            // 华为首次写入白名单后，startLockTask() 可能不抛异常但系统状态尚未
+            // 真正切入 Kiosk。必须回读 framework 状态，不能只用“未抛异常”乐观判定。
+            val manager = activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val active = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                manager.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
+            } else {
+                @Suppress("DEPRECATION")
+                manager.isInLockTaskMode
+            }
+            lockTaskActive = active
+            if (active) {
+                Log.d(TAG, "已确认进入系统级 Lock Task 模式")
+            } else {
+                Log.w(TAG, "startLockTask 已返回，但系统尚未进入 Lock Task")
+            }
+            active
         } catch (e: Throwable) {
             Log.w(TAG, "startLockTask 失败：${e.message}")
             lockTaskActive = false
