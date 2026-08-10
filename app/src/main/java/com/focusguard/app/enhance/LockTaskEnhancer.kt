@@ -65,6 +65,14 @@ object LockTaskEnhancer {
                         "DPM 强防护未全部生效：features=$featuresOk, " +
                             "statusBar=$statusBarOk, keyguard=$keyguardOk"
                     )
+                    // DPM 调用可能部分成功；失败返回前撤销已写入的持久策略，
+                    // 避免没有进入锁机却留下状态栏/Keyguard 被禁用。
+                    if (statusBarOk) {
+                        runCatching { DhizukuEnhancer.setStatusBarDisabled(context, false) }
+                    }
+                    if (keyguardOk) {
+                        runCatching { DhizukuEnhancer.setKeyguardDisabled(context, false) }
+                    }
                     return false
                 }
             }

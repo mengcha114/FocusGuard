@@ -15,7 +15,6 @@ local.properties
 .DS_Store
 
 # 签名密钥
-# 仓库公开后不再内置签名密钥（防伪造 APK / 签名劫持）：
-# CI 每次构建用 keytool 临时生成同名调试密钥（见 build-apk.yml），
-# 本地如有需要请自行生成到 keystore/focusguard-debug.jks。
+# 仓库公开后不内置签名密钥；CI 从 GitHub Actions Secrets 恢复长期证书。
+# 本机长期证书保存在仓库外的受限目录，keystore/ 始终不得提交。
 keystore/

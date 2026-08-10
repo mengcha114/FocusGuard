@@ -1,6 +1,8 @@
 package com.focusguard.app
 
 import android.Manifest
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
@@ -94,6 +96,11 @@ class MainActivity : ComponentActivity() {
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         serviceRunning = com.focusguard.app.service.MonitorService.isRunning ||
             appSettings.serviceRunning
+
+        // vc63 一次性迁移：历史版本已经授权 Dhizuku 的用户不会再次触发授权
+        // 回调，因此首次运行本版本时主动完成初始化并重启一次。标志在准备成功后
+        // 写入，后续启动不再重启，避免循环。
+        migrateExistingDhizukuAuthorizationOnce()
 
         // ── 锁机状态检查（放在 setContent 之前）──────────
         // 用户通过切出等方式绕过锁机后再打开应用时，必须立刻回到锁机页。
@@ -464,19 +471,39 @@ class MainActivity : ComponentActivity() {
                 } else {
                     // 未授权：拉起 Dhizuku 授权界面（连接已建立，这次一定能弹出来）
                     enhancer.requestPermission(this) { granted ->
-                        runOnUiThread {
-                            if (granted) {
-                                val ok = enhancer.grantLockTask(this)
-                                Toast.makeText(
-                                    this,
-                                    if (ok) {
-                                        "Dhizuku 已授权，Lock Task 已启用：锁机将无法通过手势退出"
+                        if (granted) {
+                            Thread {
+                                // 授权阶段只初始化连接与白名单，不提前禁用系统栏/
+                                // Keyguard；这些强策略只在真正锁机时由 prepare 启用。
+                                val ok = enhancer.ensureReady(applicationContext) &&
+                                    (enhancer.isLockTaskPermitted(packageName) ||
+                                        enhancer.grantLockTask(applicationContext))
+                                val restartReady = ok && markDhizukuRestartCompleted()
+                                runOnUiThread {
+                                    if (restartReady) {
+                                        Toast.makeText(
+                                            this,
+                                            "Dhizuku 已授权并初始化完成，应用即将自动重启",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        restartAfterDhizukuAuthorization()
+                                    } else if (ok) {
+                                        Toast.makeText(
+                                            this,
+                                            "Dhizuku 已初始化；当前锁机中，将在下次安全进入应用时完成重启",
+                                            Toast.LENGTH_LONG
+                                        ).show()
                                     } else {
-                                        "Dhizuku 已授权，但加入 Lock Task 白名单失败：${enhancer.lastError}"
-                                    },
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } else {
+                                        Toast.makeText(
+                                            this,
+                                            "Dhizuku 已授权，但系统级锁机初始化失败：${enhancer.lastError}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            }.start()
+                        } else {
+                            runOnUiThread {
                                 Toast.makeText(
                                     this,
                                     "Dhizuku 授权被拒绝或取消",
@@ -488,6 +515,84 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** 首次 Dhizuku 授权后重启主进程，清理授权前的 Binder/DPM 缓存。 */
+    private fun restartAfterDhizukuAuthorization() {
+        android.os.Handler(mainLooper).postDelayed({
+            // 紧邻实际重启动作再次检查，消除初始化/Toast 延迟期间进入锁机的竞态。
+            if (isLockActiveNow()) {
+                Thread { clearDhizukuRestartCompleted() }.start()
+                return@postDelayed
+            }
+            val restartIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            } ?: return@postDelayed
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                7360,
+                restartIntent,
+                PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.ELAPSED_REALTIME,
+                android.os.SystemClock.elapsedRealtime() + 1_000L,
+                pendingIntent
+            )
+            finishAffinity()
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }, 300L)
+    }
+
+    private fun isLockActiveNow(): Boolean = runCatching {
+        com.focusguard.app.data.LockState(this).shouldBlockNow
+    }.getOrDefault(true)
+
+    /** 后台同步落盘；杀进程前必须确认一次性标志已经持久化。 */
+    private fun markDhizukuRestartCompleted(): Boolean {
+        if (isLockActiveNow()) return false
+        return getSharedPreferences("dhizuku_enhancer", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("post_grant_restart_v1", true)
+            .commit()
+    }
+
+    private fun clearDhizukuRestartCompleted() {
+        getSharedPreferences("dhizuku_enhancer", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("post_grant_restart_v1", false)
+            .commit()
+    }
+
+    private fun migrateExistingDhizukuAuthorizationOnce() {
+        val prefs = getSharedPreferences("dhizuku_enhancer", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("post_grant_restart_v1", false)) return
+        val locked = runCatching {
+            com.focusguard.app.data.LockState(this).shouldBlockNow
+        }.getOrDefault(false)
+        // 锁机过程中绝不杀进程；等用户正常进入主界面时再执行一次性迁移。
+        if (locked) return
+        Thread {
+            val enhancer = com.focusguard.app.enhance.DhizukuEnhancer
+            if (!enhancer.connect(applicationContext) || !enhancer.isPermissionGranted()) {
+                return@Thread
+            }
+            val ready = enhancer.ensureReady(applicationContext) &&
+                (enhancer.isLockTaskPermitted(packageName) ||
+                    enhancer.grantLockTask(applicationContext))
+            if (!ready) return@Thread
+            // 必须同步持久化，并在耗时初始化结束后再次确认仍未进入锁机。
+            if (!markDhizukuRestartCompleted()) return@Thread
+            runOnUiThread {
+                Toast.makeText(
+                    this,
+                    "正在完成 Dhizuku 初始化，应用将自动重启一次",
+                    Toast.LENGTH_LONG
+                ).show()
+                restartAfterDhizukuAuthorization()
+            }
+        }.start()
     }
 
     private fun startGuard() {

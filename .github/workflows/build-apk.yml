@@ -38,17 +38,22 @@ jobs:
       - name: 清理本机路径配置
         run: rm -f local.properties
 
-      # 仓库公开后不再内置签名密钥（防伪造 APK / 签名劫持）。
-      # 每次构建用 keytool 临时生成同名同密码的调试密钥：
-      # debug 包是卸载重装场景，签名每次不同没有影响。
-      - name: 生成临时签名密钥
+      # 稳定签名密钥只保存在 GitHub Actions Secrets，不进入公开仓库。
+      # 所有构建使用同一证书，支持后续 APK 覆盖安装升级。
+      - name: 恢复稳定签名密钥
+        env:
+          FOCUSGUARD_KEYSTORE_BASE64: ${{ secrets.FOCUSGUARD_KEYSTORE_BASE64 }}
+          FOCUSGUARD_STORE_PASSWORD: ${{ secrets.FOCUSGUARD_STORE_PASSWORD }}
+          FOCUSGUARD_KEY_ALIAS: ${{ secrets.FOCUSGUARD_KEY_ALIAS }}
+          FOCUSGUARD_KEY_PASSWORD: ${{ secrets.FOCUSGUARD_KEY_PASSWORD }}
         run: |
+          test -n "$FOCUSGUARD_KEYSTORE_BASE64"
           mkdir -p keystore
-          keytool -genkeypair -v \
-            -keystore keystore/focusguard-debug.jks \
-            -storepass focusguard -keypass focusguard \
-            -alias focusguard -keyalg RSA -keysize 2048 -validity 3650 \
-            -dname "CN=FocusGuard Debug, OU=Dev, O=FocusGuard, L=Beijing, ST=Beijing, C=CN"
+          printf '%s' "$FOCUSGUARD_KEYSTORE_BASE64" | base64 --decode > keystore/focusguard-release.p12
+          chmod 600 keystore/focusguard-release.p12
+          printf 'FOCUSGUARD_STORE_PASSWORD=%s\n' "$FOCUSGUARD_STORE_PASSWORD" >> "$GITHUB_ENV"
+          printf 'FOCUSGUARD_KEY_ALIAS=%s\n' "$FOCUSGUARD_KEY_ALIAS" >> "$GITHUB_ENV"
+          printf 'FOCUSGUARD_KEY_PASSWORD=%s\n' "$FOCUSGUARD_KEY_PASSWORD" >> "$GITHUB_ENV"
 
       - name: 构建 Debug APK
         run: ./gradlew assembleDebug --no-daemon

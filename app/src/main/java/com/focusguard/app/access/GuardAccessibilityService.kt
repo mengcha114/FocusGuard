@@ -117,27 +117,9 @@ class GuardAccessibilityService : AccessibilityService() {
         // 答题页正常交互（输入框/输入法）必须放行——悬浮窗在此阶段让位，
         // 只放行答题交互本身，通知栏/侧边栏/分屏依然强制拦截。
         if (UnlockChallengeActivity.active) {
-            when (event.eventType) {
-                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                    val pkg = event.packageName?.toString() ?: return
-                    // 系统界面（通知栏/最近任务/语音助手/侧边栏宿主）出现 → 收起/顶回
-                    if (pkg in blockedSystemPackages) {
-                        Log.d(TAG, "答题中检测到系统界面 $pkg，收起通知栏/拦截")
-                        dismissNotificationShade()
-                        if (isSideBarPackage(pkg)) {
-                            Log.d(TAG, "答题中检测到侧边栏 $pkg，立即顶回锁屏")
-                            try {
-                                performGlobalAction(GLOBAL_ACTION_HOME)
-                                LockScreenActivity.reassert(this)
-                            } catch (e: Exception) {
-                                Log.w(TAG, "答题中顶回锁屏失败：${e.message}")
-                            }
-                        }
-                    }
-                }
-                // 分屏/小窗/侧边栏悬浮窗检测：答题期间依然生效
-                AccessibilityEvent.TYPE_WINDOWS_CHANGED -> handleWindowsChanged()
-            }
+            // 页面切换时窗口列表会短暂同时包含锁机页与答题页。通用窗口检查
+            // 会将两个应用窗口误判成分屏，并 HOME + reassert(singleTask 锁机页)，
+            // 直接清除答题页。答题 active 期间只保留上方通知栏收起，不做顶回。
             return
         }
 

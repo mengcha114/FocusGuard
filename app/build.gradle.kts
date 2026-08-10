@@ -11,18 +11,22 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 62
+        versionCode = 63
         versionName = "3.6.0"
     }
 
-    // 固定签名：仓库内置 keystore，任何机器/任何次构建签名都一致，
-    // 从而支持覆盖安装升级（此前用随机 debug key 导致"签名不一致"无法升级）
+    // 固定签名：CI 从 GitHub Secrets 恢复同一 PKCS12，密钥不进入公开仓库；
+    // 所有后续构建证书一致，支持覆盖安装升级。
     signingConfigs {
         create("shared") {
-            storeFile = rootProject.file("keystore/focusguard-debug.jks")
-            storePassword = "focusguard"
-            keyAlias = "focusguard"
-            keyPassword = "focusguard"
+            storeFile = rootProject.file("keystore/focusguard-release.p12")
+            storeType = "PKCS12"
+            storePassword = System.getenv("FOCUSGUARD_STORE_PASSWORD")
+                ?: providers.gradleProperty("focusguardStorePassword").orNull ?: ""
+            keyAlias = System.getenv("FOCUSGUARD_KEY_ALIAS")
+                ?: providers.gradleProperty("focusguardKeyAlias").orNull ?: ""
+            keyPassword = System.getenv("FOCUSGUARD_KEY_PASSWORD")
+                ?: providers.gradleProperty("focusguardKeyPassword").orNull ?: ""
         }
     }
 
