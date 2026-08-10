@@ -416,6 +416,19 @@ class LockScreenActivity : ComponentActivity() {
 
     private fun applyImmersiveMode() {
         try {
+            // Edge-to-edge：让内容绘制延伸到状态栏/导航栏区域。
+            // 不设置的话系统会为状态栏保留一条区域，Compose 背景画不到那里，
+            // 表现为「通知栏位置黑一块」。
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+            // 状态栏/导航栏透明，露出下面的渐变背景
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
             val controller = androidx.core.view.WindowInsetsControllerCompat(window, window.decorView)
             controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior =
@@ -823,7 +836,9 @@ private fun LockScreenContent(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 28.dp),
+                // 顶部留出状态栏高度（窗口已 edge-to-edge 铺满，
+                // 背景延伸到状态栏区域，内容不被刘海/挖孔压住）
+                .padding(start = 24.dp, end = 24.dp, top = 52.dp, bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // ── 顶栏：时钟 + 日期 ─────────────────────────

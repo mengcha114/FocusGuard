@@ -23,7 +23,15 @@
     
     <style name="Theme.FocusGuard.Block" parent="Theme.FocusGuard">
         <item name="android:windowBackground">@color/md_theme_background</item>
-        <item name="android:windowFullscreen">true</item>
+        <!-- 关键：不要 windowFullscreen（它会让窗口避开状态栏区域，
+             导致通知栏位置黑一条）。改为 edge-to-edge：
+             状态栏/导航栏透明 + 内容延伸绘制，系统栏由代码 hide。 -->
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowTranslucentNavigation">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 
     <!-- 弹窗提醒：透明背景，由 Compose 绘制轻遮罩 + 居中卡片 -->
