@@ -121,8 +121,9 @@ class LockScreenActivity : ComponentActivity() {
             // 必须走 Activity——Lock Task 让 Activity 无法被任何手势退出，
             // 且 UI 是完整的 Compose 锁机页；此时显示悬浮窗反而会盖住它，
             // 并造成"侧滑先闪悬浮窗页、再被 Activity 盖住"的双页交错闪烁。
-            val dhizukuMode = com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()
-            if (!forceActivity && !dhizukuMode && LockOverlayManager.canShow(appCtx)) {
+            // 只有 LockTask 真正生效时才禁用悬浮窗路径（此时 Activity 已被系统锁死）
+            val lockTaskOn = com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
+            if (!forceActivity && !lockTaskOn && LockOverlayManager.canShow(appCtx)) {
                 try {
                     val ls = LockState(appCtx)
                     if (ls.isLocked && ls.shouldBlockNow) {
@@ -478,22 +479,48 @@ class LockScreenActivity : ComponentActivity() {
 
     /**
      * 异步进入 Lock Task：后台线程做 Dhizuku Binder 配置，主线程只调
-     * startLockTask()。失败则回退悬浮窗方案。
+     * startLockTask()。
+     *
+     * 关键设计（修复"Dhizuku 已授权却能直接退出"）：
+     * 1. **Dhizuku 就绪期间必须有防线**：prepare 期间（首次数百毫秒到数秒）
+     *    没有任何防线，用户此刻上滑就能直接退出。因此 prepare 前先挂悬浮窗
+     *    临时兜底，LockTask 真正生效后再撤下（悬浮窗只在这段过渡期存在）。
+     * 2. **startLockTask 失败要重试**：Activity 未 resumed / 白名单刚写入尚未
+     *    生效等原因会让首次 startLockTask 抛异常。此前失败就永久放弃了，
+     *    导致完全没有 Lock Task 保护。现在最多重试 3 次（间隔 400ms）。
+     * 3. **重试全部失败才交给悬浮窗常驻**（不再是"什么都没有"）。
      */
     private fun enterLockTaskAsync() {
-        // 已生效或已发起 → 不重复触发（重复 enter 会造成窗口反复切换 = 闪烁）
+        // 已生效 → 撤下过渡期悬浮窗即可
         if (com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive) {
-            if (LockOverlayManager.isShowing) {
-                try {
-                    LockOverlayManager.hideNow()
-                } catch (e: Exception) {
-                    Log.w(TAG, "隐藏悬浮窗失败：${e.message}")
-                }
-            }
+            hideOverlayIfShowing()
             return
         }
         if (lockTaskRequested) return
         lockTaskRequested = true
+
+        // ── 过渡期兜底：prepare 完成前先用悬浮窗挡住 ──────────
+        // 否则 Dhizuku 首次初始化的这几百毫秒里锁机毫无防线，
+        // 用户一上滑就退出了（"授权了 Dhizuku 还能直接退出"的根因）。
+        if (!com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive &&
+            LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing
+        ) {
+            try {
+                LockOverlayManager.show(
+                    context = this,
+                    lockState = lockState,
+                    force = true,
+                    onStartChallenge = {
+                        startChallengeFromOverlay(applicationContext, lockState)
+                    },
+                    onRequestPause = {
+                        showForPause(applicationContext)
+                    }
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "过渡期悬浮窗挂载失败：${e.message}")
+            }
+        }
 
         Thread {
             // 后台完成 Dhizuku 连接与 DPM 策略配置（纯 Binder，无 UI 操作）
@@ -503,31 +530,62 @@ class LockScreenActivity : ComponentActivity() {
                 Log.w(TAG, "Dhizuku 准备失败：${e.message}")
                 false
             }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                if (ready) {
-                    // startLockTask 必须在主线程且 Activity 处于 resumed
-                    val ok = com.focusguard.app.enhance.LockTaskEnhancer.startOnUi(this)
-                    if (ok) {
-                        // LockTask 生效 → 撤下悬浮窗（消除两个界面互相切换的闪烁）
-                        if (LockOverlayManager.isShowing) {
-                            try {
-                                LockOverlayManager.hideNow()
-                            } catch (e: Exception) {
-                                Log.w(TAG, "隐藏悬浮窗失败：${e.message}")
-                            }
+            if (!ready) {
+                // Dhizuku 不可用 → 悬浮窗常驻接管（过渡期挂的那个就地留用）
+                runOnUiThread {
+                    lockTaskRequested = false
+                    Log.w(TAG, "Dhizuku 不可用，悬浮窗常驻接管锁机")
+                    if (LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing) {
+                        try {
+                            LockOverlayManager.show(
+                                context = this,
+                                lockState = lockState,
+                                force = true,
+                                onStartChallenge = {
+                                    startChallengeFromOverlay(applicationContext, lockState)
+                                },
+                                onRequestPause = {
+                                    showForPause(applicationContext)
+                                }
+                            )
+                        } catch (e: Exception) {
+                            Log.w(TAG, "悬浮窗接管失败：${e.message}")
                         }
-                        return@runOnUiThread
                     }
                 }
-                // Dhizuku 不可用或 startLockTask 失败 → 悬浮窗兜底。
-                // 注意：Dhizuku 已就绪时不挂悬浮窗——startLockTask 可能只是因为
-                // Activity 尚未 resumed 而失败，下次 onResume 会重试；此时挂悬浮窗
-                // 会造成两个界面交错闪烁。
-                lockTaskRequested = false
-                val dhizukuMode = com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()
-                if (!dhizukuMode && LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing) {
-                    Log.w(TAG, "Lock Task 不可用，悬浮窗接管锁机")
+                return@Thread
+            }
+            // 就绪 → 主线程尝试 startLockTask，最多重试 3 次
+            tryStartLockTask(attempt = 1)
+        }.start()
+    }
+
+    /**
+     * 主线程重试 startLockTask（Activity 尚未 resumed / 白名单刚生效时首次会失败）。
+     */
+    private fun tryStartLockTask(attempt: Int) {
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            if (com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive) {
+                hideOverlayIfShowing()
+                return@runOnUiThread
+            }
+            val ok = com.focusguard.app.enhance.LockTaskEnhancer.startOnUi(this)
+            if (ok) {
+                Log.d(TAG, "Lock Task 已生效（第 $attempt 次尝试），撤下过渡期悬浮窗")
+                hideOverlayIfShowing()
+                return@runOnUiThread
+            }
+            if (attempt < 3) {
+                Log.w(TAG, "startLockTask 第 $attempt 次失败，400ms 后重试")
+                window.decorView.postDelayed({ tryStartLockTask(attempt + 1) }, 400L)
+                return@runOnUiThread
+            }
+            // 三次都失败 → 悬浮窗常驻接管（过渡期那个继续留着，不再撤）
+            Log.w(TAG, "startLockTask 重试耗尽，悬浮窗常驻接管锁机")
+            lockTaskRequested = false
+            if (LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing) {
+                try {
                     LockOverlayManager.show(
                         context = this,
                         lockState = lockState,
@@ -539,9 +597,21 @@ class LockScreenActivity : ComponentActivity() {
                             showForPause(applicationContext)
                         }
                     )
+                } catch (e: Exception) {
+                    Log.w(TAG, "悬浮窗接管失败：${e.message}")
                 }
             }
-        }.start()
+        }
+    }
+
+    /** 撤下悬浮窗（Lock Task 生效后调用，消除双页交错）。 */
+    private fun hideOverlayIfShowing() {
+        if (!LockOverlayManager.isShowing) return
+        try {
+            LockOverlayManager.hideNow()
+        } catch (e: Exception) {
+            Log.w(TAG, "隐藏悬浮窗失败：${e.message}")
+        }
     }
 
     override fun onPause() {
