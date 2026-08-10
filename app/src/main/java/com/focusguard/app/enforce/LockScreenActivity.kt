@@ -119,8 +119,10 @@ class LockScreenActivity : ComponentActivity() {
             val appCtx = context.applicationContext
             // 悬浮窗优先仅限无 Dhizuku 场景：Dhizuku（Lock Task）可用时
             // 必须走 Activity——Lock Task 让 Activity 无法被任何手势退出，
-            // 且 UI 是完整的 Compose 锁机页；此时显示悬浮窗反而会盖住它。
-            if (!forceActivity && LockOverlayManager.canShow(appCtx)) {
+            // 且 UI 是完整的 Compose 锁机页；此时显示悬浮窗反而会盖住它，
+            // 并造成"侧滑先闪悬浮窗页、再被 Activity 盖住"的双页交错闪烁。
+            val dhizukuMode = com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()
+            if (!forceActivity && !dhizukuMode && LockOverlayManager.canShow(appCtx)) {
                 try {
                     val ls = LockState(appCtx)
                     if (ls.isLocked && ls.shouldBlockNow) {
@@ -518,9 +520,13 @@ class LockScreenActivity : ComponentActivity() {
                         return@runOnUiThread
                     }
                 }
-                // Dhizuku 不可用或 startLockTask 失败 → 悬浮窗兜底
+                // Dhizuku 不可用或 startLockTask 失败 → 悬浮窗兜底。
+                // 注意：Dhizuku 已就绪时不挂悬浮窗——startLockTask 可能只是因为
+                // Activity 尚未 resumed 而失败，下次 onResume 会重试；此时挂悬浮窗
+                // 会造成两个界面交错闪烁。
                 lockTaskRequested = false
-                if (LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing) {
+                val dhizukuMode = com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()
+                if (!dhizukuMode && LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing) {
                     Log.w(TAG, "Lock Task 不可用，悬浮窗接管锁机")
                     LockOverlayManager.show(
                         context = this,

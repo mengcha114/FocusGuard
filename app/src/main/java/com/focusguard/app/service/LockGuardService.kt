@@ -363,16 +363,32 @@ class LockGuardService : Service() {
             // 此模式下系统在底层彻底禁用 Home / 上滑 / 最近任务 / 通知栏下拉 / 状态栏展开，
             // 这是最强的系统级锁死。
             if (com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()) {
-                // 如果已经在前台且 LockTask 已生效，彻底隐藏悬浮窗防止闪烁并放行
+                // Dhizuku 模式下**永不使用悬浮窗**：Lock Task 由系统锁死，
+                // 悬浮窗只会造成"侧滑时先闪一下悬浮窗页再被 Activity 盖住"的
+                // 双页交错闪烁。这里无条件确保悬浮窗不在。
+                if (LockOverlayManager.isShowing) LockOverlayManager.hideNow()
+
+                // Activity 在前台且 LockTask 已生效 → 系统已锁死，放行
                 if (LockScreenActivity.foreground &&
                     com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
                 ) {
-                    if (LockOverlayManager.isShowing) LockOverlayManager.hideNow()
                     return
                 }
+                // Activity 不在（被销毁/尚未创建）→ 拉起（内部会异步进 Lock Task）
                 if (LockScreenActivity.instance == null) {
-                    Log.d(TAG, "Dhizuku 已就绪且已授权，优先启动锁机 Activity 并进入系统级 Lock Task")
-                    if (LockOverlayManager.isShowing) LockOverlayManager.hideNow()
+                    if (now - lastLockReassertAt < REASSERT_COOLDOWN_MS) return
+                    lastLockReassertAt = now
+                    Log.d(TAG, "Dhizuku 就绪，拉起锁机 Activity 并进入系统级 Lock Task")
+                    LockScreenActivity.show(applicationContext, forceActivity = true)
+                    return
+                }
+                // Activity 存在但不在前台（侧滑/Home 切走）→ 重新置顶。
+                // 用 REORDER_TO_FRONT 置顶已有实例，不新建窗口，
+                // 避免"销毁-重建"过程中露出下层画面。
+                if (!LockScreenActivity.foreground) {
+                    if (now - lastLockReassertAt < REASSERT_COOLDOWN_MS) return
+                    lastLockReassertAt = now
+                    Log.d(TAG, "Dhizuku 模式：锁机页掉出前台，立即置顶")
                     LockScreenActivity.show(applicationContext, forceActivity = true)
                 }
                 return

@@ -240,7 +240,12 @@ class UnlockChallengeActivity : ComponentActivity() {
             false
         }
         if (stillLocked) {
-            if (com.focusguard.app.enforce.LockOverlayManager.canShow(applicationContext)) {
+            // Dhizuku 模式：锁机页 Activity + LockTask 是防线，不挂悬浮窗
+            // （否则退出答题时先闪悬浮窗页再被 Activity 盖住 = 双页交错）
+            val dhizukuMode = com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()
+            if (!dhizukuMode &&
+                com.focusguard.app.enforce.LockOverlayManager.canShow(applicationContext)
+            ) {
                 com.focusguard.app.enforce.LockOverlayManager.showNow(
                     context = applicationContext,
                     lockState = lockState,
@@ -254,7 +259,7 @@ class UnlockChallengeActivity : ComponentActivity() {
                     }
                 )
             } else {
-                LockScreenActivity.show(applicationContext)
+                LockScreenActivity.show(applicationContext, forceActivity = dhizukuMode)
             }
         }
         finish()
@@ -344,6 +349,12 @@ class UnlockChallengeActivity : ComponentActivity() {
     private fun ensureOverlayNow(tag: String) {
         if (!stillLocked()) return
         if (com.focusguard.app.enforce.LockOverlayManager.isShowing) return
+        // Dhizuku 模式：不挂悬浮窗，直接把锁机 Activity 置顶（LockTask 锁死）
+        if (com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()) {
+            Log.d(TAG, "$tag：Dhizuku 模式，置顶锁机 Activity")
+            LockScreenActivity.show(applicationContext, forceActivity = true)
+            return
+        }
         Log.d(TAG, "$tag：挂载全屏悬浮窗锁定")
         if (com.focusguard.app.enforce.LockOverlayManager.canShow(applicationContext)) {
             com.focusguard.app.enforce.LockOverlayManager.showNow(

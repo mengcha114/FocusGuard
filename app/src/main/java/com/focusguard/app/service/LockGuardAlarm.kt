@@ -94,7 +94,16 @@ object LockGuardAlarm {
                 // 防线在位性检查：悬浮窗丢了直接补挂（进程活着但窗口被系统清理）
                 val overlayOk = com.focusguard.app.enforce.LockOverlayManager.isShowing
                 val activityOk = com.focusguard.app.enforce.LockScreenActivity.foreground
-                if (!overlayOk && !activityOk &&
+                // Dhizuku 模式下防线是 Activity + LockTask，不挂悬浮窗
+                // （否则与 Activity 交错闪烁）
+                val dhizukuMode = com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()
+                if (dhizukuMode && !activityOk &&
+                    !com.focusguard.app.enforce.UnlockChallengeActivity.foreground
+                ) {
+                    Log.w(TAG, "自愈闹钟：Dhizuku 模式防线丢失，拉起锁机 Activity")
+                    com.focusguard.app.enforce.LockScreenActivity
+                        .show(appCtx, forceActivity = true)
+                } else if (!dhizukuMode && !overlayOk && !activityOk &&
                     com.focusguard.app.enforce.LockOverlayManager.canShow(appCtx) &&
                     !com.focusguard.app.enforce.UnlockChallengeActivity.foreground
                 ) {
