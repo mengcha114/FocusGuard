@@ -94,18 +94,26 @@ object LockGuardAlarm {
                 // 防线在位性检查：悬浮窗丢了直接补挂（进程活着但窗口被系统清理）
                 val overlayOk = com.focusguard.app.enforce.LockOverlayManager.isShowing
                 val activityOk = com.focusguard.app.enforce.LockScreenActivity.foreground
+                val challengeActive =
+                    com.focusguard.app.enforce.UnlockChallengeActivity.active
+                val preferActivity =
+                    com.focusguard.app.enhance.DhizukuEnhancer.isReadinessUnknown(appCtx) ||
+                        com.focusguard.app.enhance.DhizukuEnhancer.shouldPreferActivity(appCtx)
                 // LockTask 真正生效时防线是 Activity（系统锁死），不挂悬浮窗；
                 // 未生效则必须悬浮窗兜底。
                 val lockTaskOn = com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
-                if (lockTaskOn && !activityOk &&
-                    !com.focusguard.app.enforce.UnlockChallengeActivity.foreground
+                if ((lockTaskOn || preferActivity) && !activityOk &&
+                    !challengeActive
                 ) {
-                    Log.w(TAG, "自愈闹钟：LockTask 模式防线丢失，拉起锁机 Activity")
+                    if (preferActivity) {
+                        com.focusguard.app.enhance.DhizukuEnhancer.warmUpAsync(appCtx)
+                    }
+                    Log.w(TAG, "自愈闹钟：Dhizuku/LockTask 路径防线丢失，拉起锁机 Activity")
                     com.focusguard.app.enforce.LockScreenActivity
                         .show(appCtx, forceActivity = true)
-                } else if (!lockTaskOn && !overlayOk && !activityOk &&
+                } else if (!lockTaskOn && !preferActivity && !overlayOk && !activityOk &&
                     com.focusguard.app.enforce.LockOverlayManager.canShow(appCtx) &&
-                    !com.focusguard.app.enforce.UnlockChallengeActivity.foreground
+                    !challengeActive
                 ) {
                     Log.w(TAG, "自愈闹钟：检测到防线丢失，立即补挂悬浮窗")
                     com.focusguard.app.enforce.LockOverlayManager.show(

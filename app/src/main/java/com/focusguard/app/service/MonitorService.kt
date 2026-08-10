@@ -440,8 +440,9 @@ class MonitorService : Service() {
             if (!lockState.isLocked || !lockState.shouldBlockNow) return
             // 悬浮窗已是主体：只要它还挂着就算受控，无需再拉 Activity
             if (com.focusguard.app.enforce.LockOverlayManager.isShowing) return
-            // 答题页在前台时让位（输入法场景）
-            if (com.focusguard.app.enforce.UnlockChallengeActivity.foreground) return
+            // 答题页启动中或已创建时均让位；只认 foreground 会在
+            // startActivity→onResume 的窗口里把锁机页顶回，造成答题自动退出。
+            if (com.focusguard.app.enforce.UnlockChallengeActivity.active) return
             // 锁机页在前台也算受控
             if (com.focusguard.app.enforce.LockScreenActivity.instance != null) return
 

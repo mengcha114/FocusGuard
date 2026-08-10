@@ -146,13 +146,7 @@ class LockGuardService : Service() {
         // 若在 tick 中调用 ensureReady 触发首次 Binder 初始化，会与
         // 锁机页 Activity 的 onResume（主线程）争抢 Dhizuku 服务，
         // 表现为「第一次开启锁机白屏无响应」。预热后 guardTick 只读缓存。
-        Thread {
-            try {
-                com.focusguard.app.enhance.DhizukuEnhancer.ensureReady(applicationContext)
-            } catch (e: Throwable) {
-                Log.w(TAG, "Dhizuku 预热失败（可忽略）：${e.message}")
-            }
-        }.start()
+        com.focusguard.app.enhance.DhizukuEnhancer.warmUpAsync(applicationContext)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -349,6 +343,18 @@ class LockGuardService : Service() {
                 return
             }
 
+            // 冷启动尚无可信 Dhizuku 探测结果：等待后台预热后再选页面，避免
+            // 已授权用户先闪悬浮窗，也避免无 Dhizuku 用户先闪 Activity。
+            if (com.focusguard.app.enhance.DhizukuEnhancer
+                    .isReadinessUnknown(applicationContext)
+            ) {
+                com.focusguard.app.enhance.DhizukuEnhancer.warmUpAsync(applicationContext)
+                // 未知态立即用 Activity 建立可见防线；后台探测失败后 Activity
+                // 自身会降级悬浮窗，等待期间绝不留空窗。
+                LockScreenActivity.show(applicationContext, forceActivity = true)
+                return
+            }
+
             // ── Dhizuku 优先：系统级 Lock Task 方案 ──────────
             // Lock Task 生效后系统禁用 Home/上滑/最近任务，锁机页**无法被任何
             // 手势退出**——这是最强的锁死（比悬浮窗更彻底，且 UI 用回完整好看的
@@ -362,7 +368,10 @@ class LockGuardService : Service() {
             // 当 Dhizuku 已连接且已授权时，优先启动 LockScreenActivity 并进入系统级 Lock Task 模式！
             // 此模式下系统在底层彻底禁用 Home / 上滑 / 最近任务 / 通知栏下拉 / 状态栏展开，
             // 这是最强的系统级锁死。
-            if (com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()) {
+            if (com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached() ||
+                com.focusguard.app.enhance.DhizukuEnhancer
+                    .shouldPreferActivity(applicationContext)
+            ) {
                 val lockTaskOn = com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
 
                 // ── Lock Task 已生效：系统级锁死，撤下悬浮窗（消除双页交错） ──
@@ -377,17 +386,10 @@ class LockGuardService : Service() {
                     return
                 }
 
-                // ── Lock Task 尚未生效：必须有防线，否则用户可直接退出 ──
-                // 这是"授权了 Dhizuku 却能直接退出"的关键：Dhizuku 初始化/
-                // startLockTask 重试期间若不挂悬浮窗，就是完全无防护的窗口。
-                if (LockOverlayManager.canShow(applicationContext)) {
-                    if (LockOverlayManager.isShowing) {
-                        LockOverlayManager.verifyAttached(applicationContext, lockState)
-                    } else {
-                        ensureOverlay()
-                    }
-                }
-                // 同时把锁机页拉起/置顶（它会异步重试进入 Lock Task）
+                // ── Lock Task 尚未生效：立即拉起 Activity ─────────────
+                // Dhizuku 已就绪时绝不再抢先挂旧悬浮窗，否则首次必然出现
+                // “悬浮窗 → Activity”切换。Activity 本身是可见防线，并负责
+                // startLockTask 三次重试；明确失败后才由 Activity 降级悬浮窗。
                 if (LockScreenActivity.instance == null || !LockScreenActivity.foreground) {
                     if (now - lastLockReassertAt < REASSERT_COOLDOWN_MS) return
                     lastLockReassertAt = now

@@ -117,13 +117,25 @@ class LockScreenActivity : ComponentActivity() {
          */
         fun show(context: Context, forceActivity: Boolean = false) {
             val appCtx = context.applicationContext
+            val readinessUnknown = com.focusguard.app.enhance.DhizukuEnhancer
+                .isReadinessUnknown(appCtx)
+            if (readinessUnknown) {
+                // 未知态也立即显示 Activity：它本身就是可见防线，不能为了等待
+                // Dhizuku 探测而留下空窗。后台确认失败后再降级悬浮窗。
+                com.focusguard.app.enhance.DhizukuEnhancer.warmUpAsync(appCtx)
+            }
             // 悬浮窗优先仅限无 Dhizuku 场景：Dhizuku（Lock Task）可用时
             // 必须走 Activity——Lock Task 让 Activity 无法被任何手势退出，
             // 且 UI 是完整的 Compose 锁机页；此时显示悬浮窗反而会盖住它，
             // 并造成"侧滑先闪悬浮窗页、再被 Activity 盖住"的双页交错闪烁。
-            // 只有 LockTask 真正生效时才禁用悬浮窗路径（此时 Activity 已被系统锁死）
+            // Dhizuku 曾成功就绪时，即使本次进程的内存缓存还没预热完成，也直接
+            // 展示 Activity。否则首次锁机会先露出悬浮窗，准备完成后才切回来。
             val lockTaskOn = com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
-            if (!forceActivity && !lockTaskOn && LockOverlayManager.canShow(appCtx)) {
+            val preferActivity = com.focusguard.app.enhance.DhizukuEnhancer
+                .shouldPreferActivity(appCtx) || readinessUnknown
+            if (!forceActivity && !lockTaskOn && !preferActivity &&
+                LockOverlayManager.canShow(appCtx)
+            ) {
                 try {
                     val ls = LockState(appCtx)
                     if (ls.isLocked && ls.shouldBlockNow) {
@@ -387,7 +399,9 @@ class LockScreenActivity : ComponentActivity() {
 
         pendingPause = count < 0
         val required = kotlin.math.abs(count).coerceAtLeast(1)
-        val launched = UnlockChallengeActivity.show(applicationContext, required)
+        // 使用 Activity Context，让答题页压在锁机页同一个 task 中；
+        // applicationContext 会强制 NEW_TASK，正是答题页被顶回的根因之一。
+        val launched = UnlockChallengeActivity.show(this, required)
         if (!launched) {
             pendingPause = false
             Toast.makeText(this, "无法打开答题界面，请重试", Toast.LENGTH_SHORT).show()
@@ -512,10 +526,14 @@ class LockScreenActivity : ComponentActivity() {
         if (lockTaskRequested) return
         lockTaskRequested = true
 
-        // ── 过渡期兜底：prepare 完成前先用悬浮窗挡住 ──────────
-        // 否则 Dhizuku 首次初始化的这几百毫秒里锁机毫无防线，
-        // 用户一上滑就退出了（"授权了 Dhizuku 还能直接退出"的根因）。
-        if (!com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive &&
+        // 只有从未确认过 Dhizuku 可用时才显示悬浮窗。曾成功授权/就绪的设备
+        // 首次冷启动直接保留 Activity 页面，避免“先旧悬浮窗、再新 Activity”。
+        val preferActivity = com.focusguard.app.enhance.DhizukuEnhancer
+            .shouldPreferActivity(applicationContext) ||
+            com.focusguard.app.enhance.DhizukuEnhancer
+                .isReadinessUnknown(applicationContext)
+        if (!preferActivity &&
+            !com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive &&
             LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing
         ) {
             try {

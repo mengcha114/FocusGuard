@@ -2,6 +2,7 @@ package com.focusguard.app.enforce
 
 import android.content.Context
 import android.content.Intent
+import android.app.Activity
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -121,11 +122,12 @@ class UnlockChallengeActivity : ComponentActivity() {
             return try {
                 val intent = Intent(context, UnlockChallengeActivity::class.java).apply {
                     putExtra(EXTRA_REQUIRED_CORRECT, requiredCorrect)
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                            Intent.FLAG_ACTIVITY_NO_ANIMATION
-                    )
+                    addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                    // 从锁机 Activity 进入答题必须是同一 task 的普通压栈；只有
+                    // 服务/悬浮窗持有 Application Context 时才需要 NEW_TASK。
+                    if (context !is Activity) {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
                 }
                 context.startActivity(intent)
                 Log.d(TAG, "已发起答题页启动，需答对 $requiredCorrect 题")
@@ -140,10 +142,6 @@ class UnlockChallengeActivity : ComponentActivity() {
     }
 
     private lateinit var lockState: LockState
-
-    /** 切走频次监控：2 秒内切走 ≥2 次视为恶意破解，直接结束答题页。 */
-    private var lastPauseAt = 0L
-    private var pauseCountInWindow = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -170,6 +168,9 @@ class UnlockChallengeActivity : ComponentActivity() {
         // FLAG_SECURE 在部分 ROM 上会阻止输入法窗口正常附着，
         // 是"打开输入法就闪退"的直接成因。
 
+        // 与锁机页一致启用 edge-to-edge：背景延伸到状态栏/刘海区域，内容层
+        // 再自行避让 Insets，避免答题页顶部出现一条空缺。
+        applyEdgeToEdge()
         // 隐藏系统栏但保留输入法可用（不使用 BEHAVIOR_SHOW_TRANSIENT 以免干扰 IME）
         hideSystemBars()
 
@@ -276,6 +277,8 @@ class UnlockChallengeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         foreground = true
+        applyEdgeToEdge()
+        hideSystemBars()
         // 取消 onPause 的延迟挂载（正常恢复前台，如输入法弹起/窗口切换）
         overlayHandler.removeCallbacks(overlayPending)
         // ── 无缝接替（0 露桌） ─────────────────────────
@@ -295,40 +298,26 @@ class UnlockChallengeActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         foreground = false
-        // 延迟确认挂载：300ms 后仍未恢复前台（侧滑返回 finish / 被压后台）
-        // → 挂悬浮窗盖屏。输入法弹起/窗口切换的正常 onPause 会在 300ms 内
+        // 延迟确认挂载：800ms 后仍未恢复前台（侧滑返回 finish / 被压后台）
+        // → 挂悬浮窗盖屏。华为任务栈/输入法切换可能短暂 pause 数百毫秒，
+        // 800ms 宽限避免把正常进入答题误判成离开；真正离开仍会被守护接管。
         // onResume → 取消，不误挂。这是"手势轻松退出"的最后防线之一。
-        // 注意：切走惩罚不在这里——onPause 会被被动场景触发，误判会直接
-        // finish 答题页；惩罚在 onUserLeaveHint（用户明确 Home/上滑才触发）。
         overlayHandler.removeCallbacks(overlayPending)
-        overlayHandler.postDelayed(overlayPending, 300L)
+        overlayHandler.postDelayed(overlayPending, 800L)
     }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // 用户明确切走（Home/上滑手势）才走到这里。
-        // ── 切走惩罚：2 秒内切走 ≥2 次 = 反复刷窗口期尝试破解 → 直接结束答题
-        val now = System.currentTimeMillis()
-        if (now - lastPauseAt < 2_000L) {
-            pauseCountInWindow++
-        } else {
-            pauseCountInWindow = 1
-        }
-        lastPauseAt = now
-        if (pauseCountInWindow >= 2) {
-            Log.w(TAG, "检测到连续切走答题页（${pauseCountInWindow} 次），执行切走惩罚")
-            finish()
-            return
-        }
-        // 同步挂载全屏悬浮窗锁定（上滑/Home 切走）
-        Log.d(TAG, "用户按 Home 或上滑切走答题页，挂载全屏悬浮窗锁定")
-        ensureOverlayNow("onUserLeaveHint")
+        // 某些华为 ROM 在 Activity 任务栈切换、IME 窗口附着时也会误发此回调。
+        // 这里直接 finish 会造成“点击答题后自动退出”。防护交给 onPause 的延迟
+        // 确认与守护服务：只有页面持续不在前台时才恢复锁机防线。
+        Log.d(TAG, "答题页收到离开提示，等待 onPause 延迟确认")
     }
 
     /** 延迟确认挂载用的 Handler（onPause 触发，onResume 取消）。 */
     private val overlayHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
-    /** onPause 的延迟确认挂载任务：300ms 后仍未恢复前台 → 挂悬浮窗盖屏。 */
+    /** onPause 的延迟确认挂载任务：800ms 后仍未恢复前台 → 恢复锁机防线。 */
     private val overlayPending = Runnable {
         ensureOverlayNow("onPause 延迟确认")
     }
@@ -383,6 +372,23 @@ class UnlockChallengeActivity : ComponentActivity() {
             controller.hide(androidx.core.view.WindowInsetsCompat.Type.statusBars())
         } catch (e: Exception) {
             Log.w(TAG, "隐藏状态栏失败：${e.message}")
+        }
+    }
+
+    /** 让答题页背景真正铺到状态栏和刘海区域。 */
+    private fun applyEdgeToEdge() {
+        try {
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "答题页 edge-to-edge 设置失败：${e.message}")
         }
     }
 

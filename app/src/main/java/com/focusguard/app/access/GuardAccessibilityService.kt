@@ -116,7 +116,7 @@ class GuardAccessibilityService : AccessibilityService() {
         // ── 答题页前台：精准放行（防破解加固） ──────────
         // 答题页正常交互（输入框/输入法）必须放行——悬浮窗在此阶段让位，
         // 只放行答题交互本身，通知栏/侧边栏/分屏依然强制拦截。
-        if (UnlockChallengeActivity.foreground) {
+        if (UnlockChallengeActivity.active) {
             when (event.eventType) {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                     val pkg = event.packageName?.toString() ?: return

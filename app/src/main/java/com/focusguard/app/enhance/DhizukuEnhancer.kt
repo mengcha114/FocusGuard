@@ -35,6 +35,9 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass
 object DhizukuEnhancer {
 
     private const val TAG = "DhizukuEnhancer"
+    private const val PREFS_NAME = "dhizuku_enhancer"
+    private const val KEY_EVER_READY = "ever_ready"
+    private const val KEY_READINESS_CHECKED = "readiness_checked"
 
     /** Dhizuku 服务器连接是否建立（HiddenApiBypass + init 完成）。 */
     @Volatile
@@ -48,6 +51,9 @@ object DhizukuEnhancer {
 
     @Volatile
     private var initialized = false
+
+    @Volatile
+    private var warmupRunning = false
 
     /** 最近一次失败原因（排查用，Toast 展示）。 */
     @Volatile
@@ -66,6 +72,54 @@ object DhizukuEnhancer {
      * 完成初始化，后续 tick 均走轻量只读路径。
      */
     fun isReadyCached(): Boolean = isReady()
+
+    /**
+     * 是否应优先走 Dhizuku Activity 路径。
+     *
+     * 进程首次启动时内存缓存尚未初始化，但用户此前已经授权过 Dhizuku。
+     * 仅检查 [isReadyCached] 会把这段初始化窗口误判为“无 Dhizuku”，从而先展示
+     * 悬浮窗锁机页，几秒后再切到 Activity。成功就绪后持久记录能力提示，后续
+     * 进程冷启动也直接展示 Activity；真正准备失败时仍由上层降级悬浮窗。
+     */
+    fun shouldPreferActivity(context: Context): Boolean {
+        if (isReady()) return true
+        return try {
+            context.applicationContext
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_EVER_READY, false)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** 尚无可信探测结果时先等待后台探测，不猜测使用哪套页面。 */
+    fun isReadinessUnknown(context: Context): Boolean {
+        if (isReady()) return false
+        return try {
+            val prefs = context.applicationContext
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            !prefs.getBoolean(KEY_READINESS_CHECKED, false) &&
+                !prefs.getBoolean(KEY_EVER_READY, false)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** 幂等后台预热，避免多个守护入口同时发起 Dhizuku Binder 初始化。 */
+    fun warmUpAsync(context: Context) {
+        if (isReady() || warmupRunning) return
+        synchronized(this) {
+            if (isReady() || warmupRunning) return
+            warmupRunning = true
+        }
+        Thread {
+            try {
+                ensureReady(context.applicationContext)
+            } finally {
+                warmupRunning = false
+            }
+        }.start()
+    }
 
     /**
      * 建立 Dhizuku 连接（幂等）。
@@ -101,24 +155,44 @@ object DhizukuEnhancer {
     }
 
     /** 本应用是否已获得 Dhizuku 授权（需先 [connect]）。 */
-    fun isPermissionGranted(): Boolean = try {
-        connected && Dhizuku.isPermissionGranted()
-    } catch (e: Throwable) {
-        lastError = "查询授权状态异常：${e.message}"
-        Log.w(TAG, "查询 Dhizuku 授权状态失败", e)
-        false
+    fun isPermissionGranted(): Boolean {
+        return try {
+            val granted = connected && Dhizuku.isPermissionGranted()
+            // 查询本身成功时清除旧的瞬时异常，确保 false 被识别为明确未授权。
+            if (lastError.startsWith("查询授权状态异常")) lastError = ""
+            granted
+        } catch (e: Throwable) {
+            lastError = "查询授权状态异常：${e.message}"
+            Log.w(TAG, "查询 Dhizuku 授权状态失败", e)
+            false
+        }
     }
 
     /**
      * 确保完整就绪（连接 + 授权 + 构造包装 DPM）。
      * 幂等；未授权时返回 false 但不阻断后续 [requestPermission]。
      */
+    @Synchronized
     fun ensureReady(context: Context): Boolean {
         if (isReady()) return true
         try {
-            if (!connect(context)) return false
-            if (!isPermissionGranted()) {
+            if (!connect(context)) {
+                markReadinessChecked(
+                    context,
+                    clearEverReady = lastError == "Dhizuku 未安装或未激活为设备所有者"
+                )
+                return false
+            }
+            val permissionGranted = isPermissionGranted()
+            val permissionQueryFailed = lastError.startsWith("查询授权状态异常")
+            if (!permissionGranted) {
+                if (permissionQueryFailed) {
+                    // Binder/服务瞬时异常是“未知”，不能当成用户明确撤权。
+                    markReadinessChecked(context, clearEverReady = false)
+                    return false
+                }
                 lastError = "未获得 Dhizuku 授权"
+                markReadinessChecked(context, clearEverReady = true)
                 return false
             }
 
@@ -137,6 +211,12 @@ object DhizukuEnhancer {
             wrappedDpm = dpm
             ownerComponent = owner
             initialized = true
+            context.applicationContext
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_EVER_READY, true)
+                .putBoolean(KEY_READINESS_CHECKED, true)
+                .apply()
             lastError = ""
             Log.d(TAG, "Dhizuku 增强已就绪，owner=$owner")
             return true
@@ -145,8 +225,23 @@ object DhizukuEnhancer {
             Log.w(TAG, "Dhizuku 就绪检查失败", e)
             initialized = false
             return false
+        } finally {
+            // 瞬时 Binder/包装失败不清历史成功证据，避免下一次又先闪悬浮窗。
+            markReadinessChecked(context, clearEverReady = false)
         }
     }
+
+    private fun markReadinessChecked(context: Context, clearEverReady: Boolean) {
+        runCatching {
+            val editor = context.applicationContext
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_READINESS_CHECKED, true)
+            if (clearEverReady) editor.putBoolean(KEY_EVER_READY, false)
+            editor.apply()
+        }
+    }
+
 
     /**
      * 权限页/状态检查用：尝试连接并在已授权时完成就绪。
