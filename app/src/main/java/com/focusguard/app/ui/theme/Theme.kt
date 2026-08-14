@@ -4,116 +4,124 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-/** 主题模式：0=深色紫 1=深色蓝 2=深色绿 3=浅色。 */
+/** 主题模式：0=深色·墨 1=深色·简 2=深色·苔 3=浅色·纸。 */
 object ThemeModes {
-    const val DARK_PURPLE = 0
-    const val DARK_BLUE = 1
-    const val DARK_GREEN = 2
-    const val LIGHT = 3
+    const val DARK_INK = 0
+    const val DARK_MONO = 1
+    const val DARK_MOSS = 2
+    const val LIGHT_PAPER = 3
 
     fun labelOf(mode: Int): String = when (mode) {
-        DARK_PURPLE -> "深色·紫"
-        DARK_BLUE -> "深色·蓝"
-        DARK_GREEN -> "深色·绿"
-        LIGHT -> "浅色"
-        else -> "深色·紫"
+        DARK_INK -> "深色·墨"
+        DARK_MONO -> "深色·简"
+        DARK_MOSS -> "深色·苔"
+        LIGHT_PAPER -> "浅色·纸"
+        else -> "深色·墨"
     }
 }
 
-private val DarkPurpleScheme = darkColorScheme(
-    primary = Color(0xFFD0BCFF),
-    onPrimary = Color(0xFF381E72),
-    primaryContainer = Color(0xFF4F378B),
-    onPrimaryContainer = Color(0xFFEADDFF),
-    secondary = Color(0xFFCCC2DC),
-    onSecondary = Color(0xFF332D41),
-    secondaryContainer = Color(0xFF4A4458),
-    onSecondaryContainer = Color(0xFFE8DEF8),
-    tertiary = Color(0xFFEFB8C8),
-    onTertiary = Color(0xFF492532),
-    background = Color(0xFF141416),
-    onBackground = Color(0xFFE6E1E5),
-    surface = Color(0xFF1C1B1F),
-    onSurface = Color(0xFFE6E1E5),
-    surfaceVariant = Color(0xFF49454F),
-    onSurfaceVariant = Color(0xFFCAC4D0),
-    error = Color(0xFFF2B8B5),
-    onError = Color(0xFF601410),
+/** 深色·墨（默认）—— 纸墨时间 · 琥珀夜光。 */
+private val DarkInkScheme = darkColorScheme(
+    primary = FocusColors.ink.accent,
+    onPrimary = FocusColors.ink.bg,
+    primaryContainer = FocusColors.ink.accentDeep,
+    onPrimaryContainer = FocusColors.ink.bg,
+    secondary = FocusColors.ink.haze,
+    onSecondary = FocusColors.ink.bg,
+    secondaryContainer = FocusColors.ink.card,
+    onSecondaryContainer = FocusColors.ink.text,
+    tertiary = FocusColors.ink.accentDeep,
+    onTertiary = FocusColors.ink.bg,
+    background = FocusColors.ink.bg,
+    onBackground = FocusColors.ink.text,
+    surface = FocusColors.ink.surface,
+    onSurface = FocusColors.ink.text,
+    surfaceVariant = FocusColors.ink.card,
+    onSurfaceVariant = FocusColors.ink.haze,
+    outline = FocusColors.ink.line,
+    error = FocusColors.ink.error,
+    onError = FocusColors.ink.bg
 )
 
-private val DarkBlueScheme = darkColorScheme(
-    primary = Color(0xFF9FC9FF),
-    onPrimary = Color(0xFF003258),
-    primaryContainer = Color(0xFF0F4B74),
-    onPrimaryContainer = Color(0xFFD3E4FF),
-    secondary = Color(0xFFB9C8DA),
-    onSecondary = Color(0xFF233240),
-    secondaryContainer = Color(0xFF3A4857),
-    onSecondaryContainer = Color(0xFFD5E4F6),
-    tertiary = Color(0xFFD8BDE0),
-    onTertiary = Color(0xFF3B2943),
-    background = Color(0xFF101418),
-    onBackground = Color(0xFFE0E2E9),
-    surface = Color(0xFF101418),
-    onSurface = Color(0xFFE0E2E9),
-    surfaceVariant = Color(0xFF43474E),
-    onSurfaceVariant = Color(0xFFC3C6CF),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
+/** 深色·简 —— 极简计时 · 纯黑白信号。 */
+private val DarkMonoScheme = darkColorScheme(
+    primary = FocusColors.mono.accent,
+    onPrimary = FocusColors.mono.bg,
+    primaryContainer = FocusColors.mono.accentDeep,
+    onPrimaryContainer = FocusColors.mono.bg,
+    secondary = FocusColors.mono.haze,
+    onSecondary = FocusColors.mono.bg,
+    secondaryContainer = FocusColors.mono.card,
+    onSecondaryContainer = FocusColors.mono.text,
+    tertiary = FocusColors.mono.accentDeep,
+    onTertiary = FocusColors.mono.bg,
+    background = FocusColors.mono.bg,
+    onBackground = FocusColors.mono.text,
+    surface = FocusColors.mono.surface,
+    onSurface = FocusColors.mono.text,
+    surfaceVariant = FocusColors.mono.card,
+    onSurfaceVariant = FocusColors.mono.haze,
+    outline = FocusColors.mono.line,
+    error = FocusColors.mono.error,
+    onError = FocusColors.mono.bg
 )
 
-private val DarkGreenScheme = darkColorScheme(
-    primary = Color(0xFFA7D8A0),
-    onPrimary = Color(0xFF0D3A12),
-    primaryContainer = Color(0xFF25612A),
-    onPrimaryContainer = Color(0xFFC3EFBA),
-    secondary = Color(0xFFB9CCB4),
-    onSecondary = Color(0xFF243426),
-    secondaryContainer = Color(0xFF3A4A3B),
-    onSecondaryContainer = Color(0xFFD5E8CF),
-    tertiary = Color(0xFFA3CDA8),
-    onTertiary = Color(0xFF083518),
-    background = Color(0xFF101410),
-    onBackground = Color(0xFFE0E4DE),
-    surface = Color(0xFF101410),
-    onSurface = Color(0xFFE0E4DE),
-    surfaceVariant = Color(0xFF424843),
-    onSurfaceVariant = Color(0xFFC2C8C1),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
+/** 深色·苔 —— 苔原专注 · 鼠尾草绿。 */
+private val DarkMossScheme = darkColorScheme(
+    primary = FocusColors.moss.accent,
+    onPrimary = FocusColors.moss.bg,
+    primaryContainer = FocusColors.moss.accentDeep,
+    onPrimaryContainer = FocusColors.moss.bg,
+    secondary = FocusColors.moss.haze,
+    onSecondary = FocusColors.moss.bg,
+    secondaryContainer = FocusColors.moss.card,
+    onSecondaryContainer = FocusColors.moss.text,
+    tertiary = Color(0xFFC9A87C),
+    onTertiary = FocusColors.moss.bg,
+    background = FocusColors.moss.bg,
+    onBackground = FocusColors.moss.text,
+    surface = FocusColors.moss.surface,
+    onSurface = FocusColors.moss.text,
+    surfaceVariant = FocusColors.moss.card,
+    onSurfaceVariant = FocusColors.moss.haze,
+    outline = FocusColors.moss.line,
+    error = FocusColors.moss.error,
+    onError = FocusColors.moss.bg
 )
 
-private val LightScheme = lightColorScheme(
-    primary = Color(0xFF6750A4),
+/** 浅色·纸 —— 暖纸浅色（仅设置/主界面）。 */
+private val LightPaperScheme = lightColorScheme(
+    primary = FocusColors.paper.accent,
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFEADDFF),
-    onPrimaryContainer = Color(0xFF21005D),
-    secondary = Color(0xFF625B71),
+    primaryContainer = Color(0xFFE8D9BE),
+    onPrimaryContainer = FocusColors.paper.accentDeep,
+    secondary = FocusColors.paper.haze,
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFE8DEF8),
-    onSecondaryContainer = Color(0xFF1D192B),
-    tertiary = Color(0xFF7D5260),
+    secondaryContainer = FocusColors.paper.card,
+    onSecondaryContainer = FocusColors.paper.text,
+    tertiary = FocusColors.paper.accentDeep,
     onTertiary = Color(0xFFFFFFFF),
-    background = Color(0xFFFDF7FF),
-    onBackground = Color(0xFF1D1B20),
-    surface = Color(0xFFFDF7FF),
-    onSurface = Color(0xFF1D1B20),
-    surfaceVariant = Color(0xFFE7E0EC),
-    onSurfaceVariant = Color(0xFF49454F),
-    error = Color(0xFFB3261E),
-    onError = Color(0xFFFFFFFF),
+    background = FocusColors.paper.bg,
+    onBackground = FocusColors.paper.text,
+    surface = FocusColors.paper.surface,
+    onSurface = FocusColors.paper.text,
+    surfaceVariant = FocusColors.paper.card,
+    onSurfaceVariant = FocusColors.paper.haze,
+    outline = FocusColors.paper.line,
+    error = FocusColors.paper.error,
+    onError = Color(0xFFFFFFFF)
 )
 
 @Composable
 fun FocusGuardTheme(
-    themeMode: Int = ThemeModes.DARK_PURPLE,
+    themeMode: Int = ThemeModes.DARK_INK,
     content: @Composable () -> Unit
 ) {
     val scheme = when (themeMode) {
-        ThemeModes.DARK_BLUE -> DarkBlueScheme
-        ThemeModes.DARK_GREEN -> DarkGreenScheme
-        ThemeModes.LIGHT -> LightScheme
-        else -> DarkPurpleScheme
+        ThemeModes.DARK_MONO -> DarkMonoScheme
+        ThemeModes.DARK_MOSS -> DarkMossScheme
+        ThemeModes.LIGHT_PAPER -> LightPaperScheme
+        else -> DarkInkScheme
     }
     MaterialTheme(
         colorScheme = scheme,

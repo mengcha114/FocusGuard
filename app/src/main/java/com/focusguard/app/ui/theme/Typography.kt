@@ -7,6 +7,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 val Typography = Typography(
+    // 签名元素：倒计时大数字用系统衬线（钟表刻度质感），见 DESIGN.md §3.3
+    displayLarge = TextStyle(
+        fontFamily = FontFamily.Serif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 56.sp,
+        lineHeight = 60.sp,
+        letterSpacing = 1.sp
+    ),
+    displayMedium = TextStyle(
+        fontFamily = FontFamily.Serif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 44.sp,
+        lineHeight = 48.sp,
+        letterSpacing = 1.sp
+    ),
     headlineLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Bold,
