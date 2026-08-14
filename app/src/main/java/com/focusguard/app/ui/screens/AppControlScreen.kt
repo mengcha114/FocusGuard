@@ -204,11 +204,11 @@ private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Un
     val (statusLabel, statusColor) = when (app.category) {
         AppCategory.GAME -> "游戏" to Color(0xFFF44336)
         AppCategory.STUDY -> "学习" to MaterialTheme.colorScheme.tertiary
-        AppCategory.SYSTEM -> "系统" to Color(0xFF9E9E9E)
+        AppCategory.SYSTEM -> "系统" to MaterialTheme.colorScheme.onSurfaceVariant
         AppCategory.VIDEO -> "视频" to MaterialTheme.colorScheme.tertiary
         AppCategory.SHORT_VIDEO -> "短视频" to MaterialTheme.colorScheme.tertiary
         AppCategory.SOCIAL -> "社交" to MaterialTheme.colorScheme.tertiary
-        AppCategory.UNKNOWN -> "未知" to Color(0xFF90A4AE)
+        AppCategory.UNKNOWN -> "未知" to MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     val iconBitmap: ImageBitmap? = remember(app.packageName) {

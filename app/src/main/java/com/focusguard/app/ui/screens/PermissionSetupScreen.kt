@@ -194,7 +194,7 @@ fun PermissionSetupScreen(
                     color = if (allGranted) {
                         MaterialTheme.colorScheme.onPrimaryContainer
                     } else {
-                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.4f)
+                        MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
                     }
                 )
             }
@@ -263,7 +263,7 @@ private fun PermissionCard(item: PermissionItem, onRequest: () -> Unit) {
                             Text(
                                 text = "必需",
                                 fontSize = 10.sp,
-                                color = Color(0xFFF2B8B5)
+                                color = MaterialTheme.colorScheme.error
                             )
                         }
                     }

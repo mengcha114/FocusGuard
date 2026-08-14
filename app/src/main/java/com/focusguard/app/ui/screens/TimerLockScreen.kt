@@ -158,7 +158,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             strengthOptions.forEach { (level, label) ->
-                FilterChip(
+                FilterChip(shape = RoundedCornerShape(10.dp),
                     selected = unlockStrength == level,
                     onClick = { unlockStrength = level },
                     label = { Text("强度$level $label", fontSize = 12.sp) },
@@ -185,7 +185,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 listOf(15, 30, 45, 60).forEach { mins ->
-                    FilterChip(
+                    FilterChip(shape = RoundedCornerShape(10.dp),
                         selected = selectedMinutes == mins,
                         onClick = { selectedMinutes = mins },
                         label = { Text("$mins 分钟") },
@@ -198,7 +198,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 listOf(90, 120, 180, 240).forEach { mins ->
-                    FilterChip(
+                    FilterChip(shape = RoundedCornerShape(10.dp),
                         selected = selectedMinutes == mins,
                         onClick = { selectedMinutes = mins },
                         label = { Text("${mins / 60} 小时") },
@@ -236,7 +236,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 listOf(2, 4, 6, 8).forEach { rounds ->
-                    FilterChip(
+                    FilterChip(shape = RoundedCornerShape(10.dp),
                         selected = pomodoroRounds == rounds,
                         onClick = { pomodoroRounds = rounds },
                         label = { Text("$rounds 轮") },
@@ -292,7 +292,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf(1, 2, 3, 5).forEach { n ->
-                            FilterChip(
+                            FilterChip(shape = RoundedCornerShape(10.dp),
                                 selected = pauseQuota == n,
                                 onClick = { pauseQuota = n },
                                 label = { Text("$n 次", fontSize = 12.sp) },
@@ -308,7 +308,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf(3, 5, 10, 15).forEach { mins ->
-                            FilterChip(
+                            FilterChip(shape = RoundedCornerShape(10.dp),
                                 selected = pauseMinutes == mins,
                                 onClick = { pauseMinutes = mins },
                                 label = { Text("$mins 分钟", fontSize = 12.sp) },

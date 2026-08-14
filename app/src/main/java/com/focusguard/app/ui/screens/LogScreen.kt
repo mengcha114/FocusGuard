@@ -74,7 +74,7 @@ fun LogScreen() {
                 TextButton(onClick = { showDiagnostics = !showDiagnostics }) {
                     Text(
                         if (showDiagnostics) "隐藏诊断" else "AI 诊断",
-                        color = Color(0xFF8AB4F8),
+                        color = MaterialTheme.colorScheme.primary,
                         fontSize = 13.sp
                     )
                 }
@@ -114,7 +114,7 @@ fun LogScreen() {
                             "AI 调用诊断（最近 40 次）",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF8AB4F8)
+                            color = MaterialTheme.colorScheme.primary
                         )
                         IconButton(
                             onClick = {
@@ -128,7 +128,7 @@ fun LogScreen() {
                             Icon(
                                 Icons.Default.ContentCopy,
                                 contentDescription = "复制",
-                                tint = Color(0xFF8AB4F8),
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(15.dp)
                             )
                         }
@@ -171,7 +171,7 @@ fun LogScreen() {
                             } 次闪退）",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFF8A80)
+                            color = MaterialTheme.colorScheme.error
                         )
                         IconButton(
                             onClick = { copyToClipboard(context, crashLog) },
@@ -180,7 +180,7 @@ fun LogScreen() {
                             Icon(
                                 Icons.Default.ContentCopy,
                                 contentDescription = "复制",
-                                tint = Color(0xFFFF8A80),
+                                tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(15.dp)
                             )
                         }
@@ -256,7 +256,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
         "EXIT" -> MaterialTheme.colorScheme.tertiary
         "WARN" -> Color(0xFFFFC107)
         "APP_BLOCK" -> Color(0xFFC6786F)
-        else -> Color(0xFF9E9E9E)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val sourceLabel = when (log.source) {
         "WHITELIST" -> "白名单"

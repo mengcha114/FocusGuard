@@ -119,7 +119,7 @@ fun HomeScreen(
                             text = health,
                             fontSize = 11.sp,
                             color = if (alive) MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
-                                    else Color(0xFFFFCDD2)
+                                    else MaterialTheme.colorScheme.error
                         )
                     }
                 }
@@ -319,7 +319,7 @@ fun LogItem(
     val color = when (classification) {
         "STUDY_WORK" -> MaterialTheme.colorScheme.tertiary
         "ENTERTAINMENT" -> Color(0xFFF44336)
-        else -> Color(0xFF9E9E9E)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val label = when (classification) {
         "STUDY_WORK" -> "学习/工作"
@@ -599,7 +599,7 @@ private fun MemoManageDialog(memoStore: MemoStore, onDismiss: () -> Unit) {
                         ) {
                             Text(
                                 "清理已完成",
-                                color = Color(0xFF8AB4F8),
+                                color = MaterialTheme.colorScheme.primary,
                                 fontSize = 12.sp
                             )
                         }
@@ -621,7 +621,7 @@ private fun MemoManageDialog(memoStore: MemoStore, onDismiss: () -> Unit) {
                 Text("优先级", fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(0 to "普通", 1 to "重要", 2 to "紧急").forEach { (p, label) ->
-                        FilterChip(
+                        FilterChip(shape = RoundedCornerShape(10.dp),
                             selected = newPriority == p,
                             onClick = { newPriority = p },
                             label = { Text(label, fontSize = 11.sp) },

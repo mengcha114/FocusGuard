@@ -163,7 +163,7 @@ fun UnlockChallengeScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = palette.card)
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, palette.line.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = palette.card)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Row(
