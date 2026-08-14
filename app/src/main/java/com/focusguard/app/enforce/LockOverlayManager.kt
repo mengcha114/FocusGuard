@@ -309,7 +309,6 @@ object LockOverlayManager {
             } else {
                 root.addView(buildContent(appContext, lockState, onStartChallenge, onRequestPause))
             }
-
             wm.addView(root, buildLayoutParams())
             root.requestFocus()
             hideSystemBars(root)
@@ -396,6 +395,33 @@ object LockOverlayManager {
 
     private fun dp(context: Context, value: Int): Int =
         (value * context.resources.displayMetrics.density).toInt()
+
+    /** 系统「动画时长缩放」为 0 时跳过全部装饰动画（无障碍偏好，DESIGN.md §3.5）。 */
+    private fun animationsOn(context: Context): Boolean = runCatching {
+        android.provider.Settings.Global.getFloat(
+            context.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f
+        ) > 0f
+    }.getOrDefault(true)
+
+    /** 界面切换揭示：新界面淡入 + 12dp 上移（≤200ms）。 */
+    private fun attachWithReveal(root: ViewGroup, view: View) {
+        root.addView(view)
+        if (!animationsOn(root.context)) return
+        view.alpha = 0f
+        view.translationY = dp(root.context, 12).toFloat()
+        view.animate().alpha(1f).translationY(0f).setDuration(180L).start()
+    }
+
+    /** 提交失败反馈：横向轻晃提示（仅装饰，不影响文字说明）。 */
+    private fun shake(view: View) {
+        if (!animationsOn(view.context)) return
+        val d = dp(view.context, 6).toFloat()
+        android.animation.ObjectAnimator.ofFloat(
+            view, "translationX", 0f, -d, d, -d, d, 0f
+        ).apply { duration = 260L }.start()
+    }
 
     /** 深色渐变背景：比纯黑更有质感，也和锁机页视觉统一。 */
     private fun palette(context: Context): com.focusguard.app.ui.theme.FocusColors.Palette =
@@ -1038,7 +1064,7 @@ object LockOverlayManager {
         isChallengeMode = true
         val session = challengeSession ?: return
         root.removeAllViews()
-        root.addView(buildChallengeContent(context.applicationContext, lockState, session))
+        attachWithReveal(root, buildChallengeContent(context.applicationContext, lockState, session))
         root.requestFocus()
         hideSystemBars(root)
         Log.d(TAG, "已进入悬浮窗内答题模式（需答对 ${session.requiredCorrect} 题）")
@@ -1071,7 +1097,8 @@ object LockOverlayManager {
         lastPauseCallback = onRequestPause
         currentLockState = lockState
         root.removeAllViews()
-        root.addView(
+        attachWithReveal(
+            root,
             buildContent(context.applicationContext, lockState, onStartChallenge, onRequestPause)
         )
         root.requestFocus()
@@ -1129,7 +1156,7 @@ object LockOverlayManager {
         isFriendUnlockMode = true
         isChallengeMode = true
         root.removeAllViews()
-        root.addView(buildFriendUnlockContent(context.applicationContext, lockState))
+        attachWithReveal(root, buildFriendUnlockContent(context.applicationContext, lockState))
         root.requestFocus()
         hideSystemBars(root)
         Log.d(TAG, "已进入悬浮窗内朋友密码验证模式")
@@ -1160,7 +1187,8 @@ object LockOverlayManager {
         lastPauseCallback = onRequestPause
         currentLockState = lockState
         root.removeAllViews()
-        root.addView(
+        attachWithReveal(
+            root,
             buildContent(context.applicationContext, lockState, onStartChallenge, onRequestPause)
         )
         root.requestFocus()
@@ -1684,6 +1712,7 @@ object LockOverlayManager {
                         )
                     )
                 )
+                shake(tv)
             }
             refreshFriendAnswerText()
         }
@@ -1864,6 +1893,17 @@ object LockOverlayManager {
             cornerRadius = dp(context, 10).toFloat()
             setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.surface)))
         }
+        // 按压回弹反馈（不动点击逻辑，仅视觉）
+        setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN ->
+                    v.animate().scaleX(0.94f).scaleY(0.94f).setDuration(80L).start()
+                android.view.MotionEvent.ACTION_UP,
+                android.view.MotionEvent.ACTION_CANCEL ->
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(100L).start()
+            }
+            false
+        }
         setOnClickListener {
             try {
                 onClick()
@@ -1964,6 +2004,7 @@ object LockOverlayManager {
                     com.focusguard.app.ui.theme.FocusColors.hex(if (isError) p.error else p.success)
                 )
             )
+            if (isError) shake(tv)
         }
     }
 

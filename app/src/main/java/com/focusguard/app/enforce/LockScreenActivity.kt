@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -1031,6 +1032,34 @@ private fun LockScreenContent(
         label = "glowAlpha"
     )
 
+    // ── 进入编排：标签 → 核心计时 → 操作区（受系统动画缩放约束，见 DESIGN.md §3.5） ──
+    val animationsOn = remember(mottoContext) {
+        runCatching {
+            android.provider.Settings.Global.getFloat(
+                mottoContext.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) > 0f
+        }.getOrDefault(true)
+    }
+    val stageTop = remember { androidx.compose.animation.core.Animatable(0f) }
+    val stageCore = remember { androidx.compose.animation.core.Animatable(0f) }
+    val stageBottom = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) {
+        if (!animationsOn) {
+            stageTop.snapTo(1f)
+            stageCore.snapTo(1f)
+            stageBottom.snapTo(1f)
+        } else {
+            stageTop.animateTo(1f, tween(160))
+            stageCore.animateTo(
+                1f,
+                androidx.compose.animation.core.spring(dampingRatio = 0.72f, stiffness = 380f)
+            )
+            stageBottom.animateTo(1f, tween(200))
+        }
+    }
+
     val shownSeconds = when {
         isPausing -> pauseSeconds
         isPomodoro -> phaseSeconds
@@ -1065,93 +1094,121 @@ private fun LockScreenContent(
                 .padding(start = 24.dp, end = 24.dp, top = 52.dp, bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── 顶栏：时钟 + 日期 ─────────────────────────
-            val timeFormat = remember {
-                java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-            }
-            val dateFormat = remember {
-                java.text.SimpleDateFormat("M月d日 EEEE", java.util.Locale.getDefault())
-            }
-            Text(
-                text = timeFormat.format(java.util.Date(nowMillis)),
-                fontSize = 34.sp,
-                fontWeight = FontWeight.Light,
-                letterSpacing = 3.sp,
-                color = palette.text
-            )
-            Text(
-                text = dateFormat.format(java.util.Date(nowMillis)),
-                fontSize = 12.sp,
-                letterSpacing = 1.sp,
-                color = palette.haze
-            )
+            // ── 顶栏：时钟 + 日期（编排第一段） ─────────────
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier.graphicsLayer { alpha = stageTop.value }
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    val timeFormat = remember {
+                        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                    }
+                    val dateFormat = remember {
+                        java.text.SimpleDateFormat("M月d日 EEEE", java.util.Locale.getDefault())
+                    }
+                    Text(
+                        text = timeFormat.format(java.util.Date(nowMillis)),
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Light,
+                        letterSpacing = 3.sp,
+                        color = palette.text
+                    )
+                    Text(
+                        text = dateFormat.format(java.util.Date(nowMillis)),
+                        fontSize = 12.sp,
+                        letterSpacing = 1.sp,
+                        color = palette.haze
+                    )
 
-            Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(20.dp))
 
-            // ── 状态胶囊 ─────────────────────────────────
-            StatusPill(
-                text = when {
-                    isPausing -> "暂停中 · 可自由使用"
-                    isPomodoro && isWorkPhase -> "番茄钟 · 专注阶段"
-                    isPomodoro -> "番茄钟 · 休息阶段"
-                    lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
-                    else -> "专注锁定中"
-                },
-                accent = accent,
-                palette = palette,
-                locked = !isRelaxed
-            )
-
-            Spacer(Modifier.height(26.dp))
-
-            // ── 核心：环形进度 + 倒计时 ───────────────────
-            CountdownRing(
-                progress = progress,
-                seconds = shownSeconds,
-                label = if (isPausing) "暂停剩余" else "锁定剩余",
-                accent = accent,
-                palette = palette
-            )
-
-            if (isPomodoro) {
-                Spacer(Modifier.height(14.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    MiniStat("剩余轮次", "${lockState.pomodoroRoundsLeft}", accent, palette)
-                    MiniStat("今日完成", "${lockState.pomodoroCompletedToday}", accent, palette)
+                    // ── 状态胶囊 ─────────────────────────────────
+                    StatusPill(
+                        text = when {
+                            isPausing -> "暂停中 · 可自由使用"
+                            isPomodoro && isWorkPhase -> "番茄钟 · 专注阶段"
+                            isPomodoro -> "番茄钟 · 休息阶段"
+                            lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
+                            else -> "专注锁定中"
+                        },
+                        accent = accent,
+                        palette = palette,
+                        locked = !isRelaxed
+                    )
                 }
             }
 
             Spacer(Modifier.height(26.dp))
 
-            // ── 励志语录卡 ────────────────────────────────
-            Box(
+            // ── 核心：环形进度 + 倒计时（编排第二段，scale 落下） ──
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier.graphicsLayer {
+                    alpha = stageCore.value
+                    val s = 0.92f + 0.08f * stageCore.value
+                    scaleX = s
+                    scaleY = s
+                }
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CountdownRing(
+                        progress = progress,
+                        seconds = shownSeconds,
+                        label = if (isPausing) "暂停剩余" else "锁定剩余",
+                        accent = accent,
+                        palette = palette
+                    )
+
+                    if (isPomodoro) {
+                        Spacer(Modifier.height(14.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            MiniStat("剩余轮次", "${lockState.pomodoroRoundsLeft}", accent, palette)
+                            MiniStat("今日完成", "${lockState.pomodoroCompletedToday}", accent, palette)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(26.dp))
+
+            // ── 底部内容（编排第三段：上移淡入） ──────────────
+            val bottomRise = (1f - stageBottom.value) * 24.dp.toPx()
+            androidx.compose.foundation.layout.Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(palette.card)
-                    .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .graphicsLayer {
+                        alpha = stageBottom.value
+                        translationY = bottomRise
+                    }
             ) {
-                Column {
-                    Text(
-                        text = "今日箴言",
-                        fontSize = 10.sp,
-                        letterSpacing = 2.sp,
-                        color = palette.haze,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = motto,
-                        fontSize = 14.sp,
-                        lineHeight = 22.sp,
-                        color = palette.text.copy(alpha = 0.85f)
-                    )
-                }
-            }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // ── 励志语录卡 ────────────────────────────────
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(palette.card)
+                            .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "今日箴言",
+                                fontSize = 10.sp,
+                                letterSpacing = 2.sp,
+                                color = palette.haze,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = motto,
+                                fontSize = 14.sp,
+                                lineHeight = 22.sp,
+                                color = palette.text.copy(alpha = 0.85f)
+                            )
+                        }
+                    }
 
             Spacer(Modifier.height(16.dp))
 
@@ -1210,6 +1267,8 @@ private fun LockScreenContent(
                         )
                     }
                 }
+            }
+            }
             }
 
             Spacer(Modifier.height(10.dp))
@@ -1324,6 +1383,17 @@ private fun CountdownRing(
             val h = seconds / 3600
             val m = (seconds % 3600) / 60
             val s = seconds % 60
+            // 分钟位变化轻弹（1.0→1.04→1.0），钟表翻页质感；秒位不做动画避免每秒闪烁
+            val minuteBounce = remember { androidx.compose.animation.core.Animatable(0f) }
+            var firstMinute by remember { mutableStateOf(true) }
+            LaunchedEffect(m) {
+                if (firstMinute) {
+                    firstMinute = false
+                } else {
+                    minuteBounce.snapTo(1f)
+                    minuteBounce.animateTo(0f, tween(300))
+                }
+            }
             // 签名元素：衬线大数字（钟表刻度质感），见 DESIGN.md §3.3
             Text(
                 text = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s),
@@ -1331,7 +1401,12 @@ private fun CountdownRing(
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp,
-                color = palette.text
+                color = palette.text,
+                modifier = Modifier.graphicsLayer {
+                    val sc = 1f + 0.04f * minuteBounce.value
+                    scaleX = sc
+                    scaleY = sc
+                }
             )
             Spacer(Modifier.height(4.dp))
             Text(
