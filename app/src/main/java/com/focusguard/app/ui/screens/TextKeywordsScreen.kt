@@ -52,7 +52,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
                 Icon(
                     Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "返回",
-                    tint = Color.White
+                    tint = MaterialTheme.colorScheme.onBackground
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
@@ -60,12 +60,12 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
                     text = "屏幕文字特征词",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
                     text = "「屏幕文字预过滤」命中这些词时直接判定",
                     fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.45f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
                 )
             }
         }
@@ -88,7 +88,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
                         text = "学习/工作特征词",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
@@ -114,7 +114,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
                         text = "娱乐特征词",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
@@ -135,7 +135,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
                     "「刷」这类泛词可能误伤（如「刷新」），可按需删改。",
                 fontSize = 11.sp,
                 lineHeight = 17.sp,
-                color = Color.White.copy(alpha = 0.45f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
         }
 

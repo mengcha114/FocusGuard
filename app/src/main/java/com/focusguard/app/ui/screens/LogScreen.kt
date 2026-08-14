@@ -61,12 +61,12 @@ fun LogScreen() {
                     text = "检测日志",
                     fontSize = 30.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
                     text = "共 ${logs.size} 条 · 点击条目展开完整信息",
                     fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.4f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
                 )
             }
             Row {
@@ -101,7 +101,7 @@ fun LogScreen() {
                     .fillMaxWidth()
                     .heightIn(max = 300.dp),
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A2332))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(
@@ -137,7 +137,7 @@ fun LogScreen() {
                         text = com.focusguard.app.ai.AiClient.exportDiagnostics(),
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = Color.White.copy(alpha = 0.75f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
                         lineHeight = 15.sp,
                         modifier = Modifier.verticalScroll(rememberScrollState())
                     )
@@ -154,7 +154,9 @@ fun LogScreen() {
                     .fillMaxWidth()
                     .heightIn(max = 260.dp),
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF3A1F1F))
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
+                )
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(
@@ -187,7 +189,7 @@ fun LogScreen() {
                         text = crashLog,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = Color.White.copy(alpha = 0.8f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
                         lineHeight = 15.sp,
                         modifier = Modifier.verticalScroll(rememberScrollState())
                     )
@@ -206,12 +208,12 @@ fun LogScreen() {
                         imageVector = Icons.Default.Inbox,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
-                        tint = Color.White.copy(alpha = 0.3f)
+                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "暂无检测记录",
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                         fontSize = 16.sp
                     )
                 }
@@ -290,13 +292,13 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
                     Text(
                         text = log.getTimeFormatted(),
                         fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.55f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = log.getDateFormatted(),
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.3f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -317,7 +319,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
                         imageVector = if (expanded) Icons.Default.ExpandLess
                         else Icons.Default.ExpandMore,
                         contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.35f),
+                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f),
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -329,7 +331,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
             Text(
                 text = log.reason.ifBlank { "（无说明）" },
                 fontSize = 13.sp,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 lineHeight = 19.sp,
                 maxLines = if (expanded) Int.MAX_VALUE else 3
             )
@@ -342,7 +344,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
             ) {
                 Column {
                     Spacer(Modifier.height(10.dp))
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
                     Spacer(Modifier.height(10.dp))
 
                     DetailRow("判定来源", sourceLabel)
@@ -388,7 +390,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
                     Text(
                         text = "执法：",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.45f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
                     )
                     Text(
                         text = actionLabel,
@@ -400,7 +402,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
                     Text(
                         text = "来源：$sourceLabel",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.45f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
                     )
                 }
             }
@@ -409,7 +411,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
 }
 
 @Composable
-private fun DetailRow(label: String, value: String, valueColor: Color = Color.White) {
+private fun DetailRow(label: String, value: String, valueColor: Color = MaterialTheme.colorScheme.onBackground) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -419,7 +421,7 @@ private fun DetailRow(label: String, value: String, valueColor: Color = Color.Wh
         Text(
             text = label,
             fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.45f)
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
         )
         Text(
             text = value,

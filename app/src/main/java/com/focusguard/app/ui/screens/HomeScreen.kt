@@ -53,7 +53,7 @@ fun HomeScreen(
                 text = "专注卫士",
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
         }
 
@@ -63,7 +63,11 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (serviceRunning) Color(0xFF1B5E20) else Color(0xFF37474F)
+                    containerColor = if (serviceRunning) {
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.22f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    }
                 )
             ) {
                 Column(
@@ -76,20 +80,20 @@ fun HomeScreen(
                         imageVector = if (serviceRunning) Icons.Default.Shield else Icons.Default.Security,
                         contentDescription = null,
                         modifier = Modifier.size(40.dp),
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = if (serviceRunning) "守护中" else "已暂停",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = if (serviceRunning) "AI 正在监控您的专注状态" else "点击下方按钮开始守护",
                         fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                     )
 
                     // ── 守护健康诊断 ──────────────────────────
@@ -113,7 +117,7 @@ fun HomeScreen(
                         Text(
                             text = health,
                             fontSize = 11.sp,
-                            color = if (alive) Color.White.copy(alpha = 0.55f)
+                            color = if (alive) MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
                                     else Color(0xFFFFCDD2)
                         )
                     }
@@ -220,7 +224,7 @@ fun HomeScreen(
                 text = "最近检测",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
         }
 
@@ -241,7 +245,7 @@ fun HomeScreen(
                     ) {
                         Text(
                             text = "暂无检测记录",
-                            color = Color.White.copy(alpha = 0.5f)
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
                         )
                     }
                 }
@@ -298,7 +302,7 @@ fun StatCard(
             Text(
                 text = title,
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.6f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
             )
         }
     }
@@ -340,13 +344,13 @@ fun LogItem(
                 Text(
                     text = time,
                     fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.5f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = reason,
                     fontSize = 14.sp,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 2
                 )
             }
@@ -386,7 +390,7 @@ private fun MemoCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2438))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -406,14 +410,14 @@ private fun MemoCard() {
                         text = "备忘录",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                 }
                 Text(
                     text = if (items.isEmpty()) "暂无待办"
                     else "待办 ${pending.size} · 已完成 $doneCount",
                     fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.45f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
                 )
             }
 
@@ -427,7 +431,7 @@ private fun MemoCard() {
                         "全部完成了，做得不错"
                     },
                     fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.4f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
                 )
             } else {
                 pending.take(3).forEach { item ->
@@ -443,7 +447,7 @@ private fun MemoCard() {
                     Text(
                         text = "…还有 ${pending.size - 3} 条",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.35f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f),
                         modifier = Modifier.padding(start = 26.dp, top = 2.dp)
                     )
                 }
@@ -505,7 +509,7 @@ private fun MemoRow(item: MemoItem, onToggle: () -> Unit) {
             Text(
                 text = item.text,
                 fontSize = 13.sp,
-                color = Color.White.copy(alpha = if (item.done) 0.35f else 0.85f),
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = if (item.done) 0.35f else 0.85f),
                 textDecoration = if (item.done) {
                     androidx.compose.ui.text.style.TextDecoration.LineThrough
                 } else null,
@@ -522,7 +526,7 @@ private fun MemoRow(item: MemoItem, onToggle: () -> Unit) {
                     text = tags.joinToString(" · "),
                     fontSize = 10.sp,
                     color = if (item.overdue) Color(0xFFEF5350)
-                    else Color.White.copy(alpha = 0.4f)
+                    else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
                 )
             }
         }
@@ -551,7 +555,7 @@ private fun MemoManageDialog(memoStore: MemoStore, onDismiss: () -> Unit) {
                     Text(
                         text = "还没有待办事项",
                         fontSize = 13.sp,
-                        color = Color.White.copy(alpha = 0.4f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
                     )
                 } else {
                     items.forEach { item ->
@@ -601,7 +605,7 @@ private fun MemoManageDialog(memoStore: MemoStore, onDismiss: () -> Unit) {
                     }
                 }
 
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f))
 
                 OutlinedTextField(
                     value = newText,
@@ -613,7 +617,7 @@ private fun MemoManageDialog(memoStore: MemoStore, onDismiss: () -> Unit) {
                     singleLine = true
                 )
 
-                Text("优先级", fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f))
+                Text("优先级", fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(0 to "普通", 1 to "重要", 2 to "紧急").forEach { (p, label) ->
                         FilterChip(
@@ -656,7 +660,7 @@ private fun MemoManageDialog(memoStore: MemoStore, onDismiss: () -> Unit) {
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("完成", color = Color.White.copy(alpha = 0.6f))
+                Text("完成", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
             }
         },
         containerColor = MaterialTheme.colorScheme.surfaceVariant,

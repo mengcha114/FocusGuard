@@ -108,13 +108,13 @@ fun AiChatScreen() {
                     text = if (tab == 0) "AI 对话" else "检测日志",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 if (tab == 0) {
                     Text(
                         text = "与 AI 聊天 · 检测提醒也会出现在这里",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.4f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
                     )
                 }
             }
@@ -193,7 +193,7 @@ fun AiChatScreen() {
                             Text(
                                 text = "还没有消息\n检测到娱乐时 AI 的提醒会自动出现在这里",
                                 fontSize = 13.sp,
-                                color = Color.White.copy(alpha = 0.35f),
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 lineHeight = 20.sp
                             )
@@ -417,7 +417,7 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                             text = msg.text,
                             fontSize = 14.sp,
                             lineHeight = 20.sp,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                     } else if (msg.text == "…") {
                         // 打字跳动动画（思考中）
@@ -431,7 +431,7 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                         Text(
                             text = "•".repeat(dotCount),
                             fontSize = 20.sp,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                         )
                     } else {
                         // AI 消息：Markdown 渲染（compose-markdown 开源库）
@@ -439,7 +439,7 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                             markdown = msg.text,
                             modifier = Modifier,
                             style = LocalTextStyle.current.copy(
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onBackground,
                                 fontSize = 14.sp,
                                 lineHeight = 20.sp
                             )
@@ -452,7 +452,7 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                 Text(
                     text = msg.time,
                     fontSize = 10.sp,
-                    color = Color.White.copy(alpha = 0.3f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
                 )
                 if (!isUser && msg.text != "…") {
                     Spacer(Modifier.width(10.dp))
@@ -463,7 +463,7 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                         Icon(
                             Icons.Default.ContentCopy,
                             contentDescription = "复制",
-                            tint = Color.White.copy(alpha = 0.35f),
+                            tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f),
                             modifier = Modifier.size(12.dp)
                         )
                     }

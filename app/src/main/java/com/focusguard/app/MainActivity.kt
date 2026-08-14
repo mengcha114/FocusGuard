@@ -335,13 +335,13 @@ class MainActivity : ComponentActivity() {
                             Text(
                                 text = "为防止守护被随意停止，请先回答一道题：",
                                 fontSize = 13.sp,
-                                color = Color.White.copy(alpha = 0.6f)
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                             )
                             Text(
                                 text = stopVerifyQuestion.question,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onBackground
                             )
                             OutlinedTextField(
                                 value = stopVerifyAnswer,
@@ -372,7 +372,7 @@ class MainActivity : ComponentActivity() {
                     },
                     dismissButton = {
                         TextButton(onClick = { showStopVerify = false }) {
-                            Text("取消", color = Color.White.copy(alpha = 0.5f))
+                            Text("取消", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
                         }
                     },
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,

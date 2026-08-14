@@ -77,7 +77,7 @@ fun AppPickerDialog(
                 .fillMaxHeight(0.85f)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
 
                 Spacer(Modifier.height(12.dp))
 
@@ -99,13 +99,13 @@ fun AppPickerDialog(
                     Text(
                         "共 ${filtered.size} 个应用",
                         fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.45f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "显示系统应用",
                             fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                         )
                         Spacer(Modifier.width(4.dp))
                         Switch(
@@ -116,7 +116,7 @@ fun AppPickerDialog(
                     }
                 }
 
-                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
 
                 if (loading) {
                     Box(
@@ -128,7 +128,7 @@ fun AppPickerDialog(
                             Spacer(Modifier.height(10.dp))
                             Text(
                                 "正在读取应用列表…",
-                                color = Color.White.copy(alpha = 0.5f),
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                                 fontSize = 13.sp
                             )
                         }
@@ -147,7 +147,7 @@ fun AppPickerDialog(
 
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                    Text("关闭", color = Color.White.copy(alpha = 0.6f))
+                    Text("关闭", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                 }
             }
         }
@@ -178,7 +178,7 @@ private fun AppRow(app: InstalledApp, selected: Boolean, onClick: () -> Unit) {
             Icon(
                 Icons.Default.Android,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.4f),
+                tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
                 modifier = Modifier.size(38.dp)
             )
         }
@@ -190,13 +190,13 @@ private fun AppRow(app: InstalledApp, selected: Boolean, onClick: () -> Unit) {
                 text = app.label,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1
             )
             Text(
                 text = app.packageName,
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.35f),
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f),
                 maxLines = 1
             )
         }

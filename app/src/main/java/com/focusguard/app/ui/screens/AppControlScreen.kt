@@ -80,11 +80,11 @@ fun AppControlScreen() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("应用管控", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("应用管控", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
         Text(
             "点击应用即可设置类型与使用时长，纯游戏自动拦截，视频/社交由 AI 动态识别",
             fontSize = 14.sp,
-            color = Color.White.copy(alpha = 0.7f)
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
         )
 
         // ── 搜索 ──────────────────────────────────────
@@ -102,7 +102,7 @@ fun AppControlScreen() {
         TabRow(
             selectedTabIndex = selectedTab,
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = Color.White
+            contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
                 Text("全部 (${apps.size})", modifier = Modifier.padding(12.dp))
@@ -127,7 +127,7 @@ fun AppControlScreen() {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(10.dp))
-                    Text("正在读取应用列表…", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
+                    Text("正在读取应用列表…", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f), fontSize = 13.sp)
                 }
             }
         } else {
@@ -241,7 +241,7 @@ private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Un
                     Text(
                         app.label.take(1),
                         fontSize = 18.sp,
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
                     )
                 }
             }
@@ -253,13 +253,13 @@ private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Un
                     text = app.label,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1
                 )
                 Text(
                     text = app.packageName,
                     fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.4f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
                     maxLines = 1
                 )
             }
@@ -349,16 +349,16 @@ private fun AppEditSheet(
                 text = app.label,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
             Text(
                 text = app.packageName,
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.45f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
 
             // ── 应用类型 ──────────────────────────────
-            Text("应用类型", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.7f))
+            Text("应用类型", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
             val options = listOf(
                 null to "自动识别",
                 AppCategory.GAME to "游戏",
@@ -384,10 +384,10 @@ private fun AppEditSheet(
                 }
             }
 
-            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
 
             // ── 使用时长 ──────────────────────────────
-            Text("使用时长限制（可选）", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.7f))
+            Text("使用时长限制（可选）", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
 
             OutlinedTextField(
                 value = allowMinutes,
@@ -412,7 +412,7 @@ private fun AppEditSheet(
             Text(
                 text = "留空表示不限制；最多使用时间必须 ≥ 允许使用时间",
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.4f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
             )
 
             errorMsg?.let {
@@ -472,7 +472,7 @@ private fun AppEditSheet(
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isDirty) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                         disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        disabledContentColor = Color.White.copy(alpha = 0.4f)
+                        disabledContentColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
                     )
                 ) { Text("保存") }
             }
@@ -488,13 +488,13 @@ private fun AppEditSheet(
                         Text(
                             text = "为防止限制被随意篡改，请先回答一道题：",
                             fontSize = 13.sp,
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                         )
                         Text(
                             text = verifyQuestion?.question ?: "",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                         OutlinedTextField(
                             value = verifyAnswer,
@@ -528,7 +528,7 @@ private fun AppEditSheet(
                 },
                 dismissButton = {
                     TextButton(onClick = { showVerify = false }) {
-                        Text("取消", color = Color.White.copy(alpha = 0.5f))
+                        Text("取消", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,

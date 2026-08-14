@@ -82,7 +82,7 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("设置", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("设置", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
 
         // ═══════ 分组一：AI 检测 ═══════
         SettingsGroupHeader("AI 检测")
@@ -114,7 +114,7 @@ fun SettingsScreen(
             Text(
                 "厂商预设（点击自动填入地址与模型）",
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.55f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
             )
             Spacer(Modifier.height(4.dp))
             val presets = listOf(
@@ -161,7 +161,7 @@ fun SettingsScreen(
             Text(
                 text = "GLM/千问/DeepSeek 为 OpenAI 兼容格式；Claude 走 /v1/messages；Gemini 走 generateContent；自定义 API 默认按 OpenAI 兼容协议发送",
                 fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.4f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
             )
 
             Spacer(Modifier.height(8.dp))
@@ -176,7 +176,7 @@ fun SettingsScreen(
             Text(
                 text = "附加到 AI 检测提示词末尾，可让提醒更有趣、更有温度",
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.45f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
         }
 
@@ -188,7 +188,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
             )
             Spacer(Modifier.height(8.dp))
-            Text("置信度阈值: ${(confidenceThreshold * 100).toInt()}%", color = Color.White, fontSize = 14.sp)
+            Text("置信度阈值: ${(confidenceThreshold * 100).toInt()}%", color = MaterialTheme.colorScheme.onBackground, fontSize = 14.sp)
             Slider(
                 value = confidenceThreshold, onValueChange = { confidenceThreshold = it },
                 valueRange = 0.3f..0.95f, modifier = Modifier.fillMaxWidth()
@@ -210,11 +210,11 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("智能模式（秒级动态间隔）", fontSize = 14.sp, color = Color.White)
+                    Text("智能模式（秒级动态间隔）", fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
                     Text(
                         text = "根据风险自动收紧/放宽检测节奏，比固定间隔更准也更省 token",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.45f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
                     )
                 }
                 Switch(
@@ -228,14 +228,14 @@ fun SettingsScreen(
                 Text(
                     text = "智能模式：根据上面设置的检测时间进行智能调整",
                     fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.5f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
                 )
             } else {
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = "已关闭：使用固定间隔（上方「检测间隔」分钟数）",
                     fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.45f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
                 )
             }
         }
@@ -256,7 +256,7 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(12.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f))
             Spacer(Modifier.height(12.dp))
 
             // 总开关
@@ -320,7 +320,7 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(4.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f))
             Spacer(Modifier.height(8.dp))
 
             OutlinedTextField(
@@ -335,8 +335,8 @@ fun SettingsScreen(
             Text(
                 text = "达到上限后退化为本地规则判定，功能不中断",
                 fontSize = 11.sp,
-                color = if (tokenSavingEnabled) Color.White.copy(alpha = 0.45f)
-                        else Color.White.copy(alpha = 0.2f)
+                color = if (tokenSavingEnabled) MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
+                        else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.2f)
             )
         }
 
@@ -347,7 +347,7 @@ fun SettingsScreen(
                     "完整词表（默认内置，可增删改）在独立页面编辑，避免占用本页空间。",
                 fontSize = 11.sp,
                 lineHeight = 17.sp,
-                color = Color.White.copy(alpha = 0.5f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
             )
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
@@ -393,7 +393,7 @@ fun SettingsScreen(
                         color = when {
                             lockTaskOn -> Color(0xFF66BB6A)
                             dhizukuReady -> Color(0xFFFFB74D)
-                            else -> Color.White.copy(alpha = 0.6f)
+                            else -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                         }
                     )
                     Text(
@@ -404,7 +404,7 @@ fun SettingsScreen(
                                 "未生效原因：${com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { "未连接" }}"
                         },
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.45f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
                     )
                 }
             }
@@ -414,12 +414,12 @@ fun SettingsScreen(
             Text(
                 text = "AI 判定娱乐并达到连续次数后，按下面的配置自动锁机",
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.5f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
             )
             Spacer(Modifier.height(12.dp))
 
             // 锁机时长
-            Text("锁机时长：$aiLockMinutes 分钟", fontSize = 13.sp, color = Color.White)
+            Text("锁机时长：$aiLockMinutes 分钟", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground)
             Slider(
                 value = aiLockMinutes.toFloat(),
                 onValueChange = { aiLockMinutes = it.toInt() },
@@ -430,7 +430,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
 
             // 解锁强度
-            Text("解锁强度", fontSize = 13.sp, color = Color.White)
+            Text("解锁强度", fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground)
             Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -454,11 +454,11 @@ fun SettingsScreen(
                     else -> "4 级：无法提前解锁，只能等时间结束"
                 },
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.5f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
             )
 
             Spacer(Modifier.height(14.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f))
             Spacer(Modifier.height(10.dp))
 
             // 锁机前提醒
@@ -468,11 +468,11 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("锁机前弹出提醒", fontSize = 14.sp, color = Color.White)
+                    Text("锁机前弹出提醒", fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
                     Text(
                         text = "像微信那样弹横幅提示，给你主动收手的机会",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.45f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
                     )
                 }
                 Switch(checked = aiAlertEnabled, onCheckedChange = { aiAlertEnabled = it })
@@ -487,7 +487,7 @@ fun SettingsScreen(
                         "宽限时间：$aiAlertDelaySeconds 秒"
                     },
                     fontSize = 13.sp,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 Slider(
                     value = aiAlertDelaySeconds.toFloat(),
@@ -498,7 +498,7 @@ fun SettingsScreen(
                 Text(
                     text = "宽限期内切回学习/工作应用即可免除本次锁机",
                     fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.45f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
                 )
             }
         }
@@ -512,7 +512,7 @@ fun SettingsScreen(
                     "切换执法模式为「仅锁该软件」后生效：判定娱乐后该应用封锁 $appBlockMinutes 分钟"
                 },
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.55f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
             )
             Spacer(Modifier.height(10.dp))
             Slider(
@@ -524,7 +524,7 @@ fun SettingsScreen(
             Text(
                 text = "封锁期内打开该应用会被全屏挡住，退出后其他应用不受影响",
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.45f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
         }
 
@@ -544,7 +544,7 @@ fun SettingsScreen(
             Text(
                 text = "锁机页面会随机展示你写的句子",
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.45f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
         }
 
@@ -575,7 +575,7 @@ fun SettingsScreen(
             Text(
                 text = "切换后点击保存生效",
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.45f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
         }
 
@@ -639,7 +639,7 @@ fun SettingsScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F))
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Icon(Icons.Default.Share, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
@@ -653,7 +653,7 @@ fun SettingsScreen(
             Text(
                 text = "包含设备信息、配置（密钥脱敏）、Token 统计与检测日志，排查问题时可分享给开发者",
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.45f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
         }
 
@@ -776,13 +776,13 @@ fun SettingsScreen(
                         Text(
                             text = "你正在降低对自己的限制（如缩短锁机/调大间隔）。为防止限制被随意解除，请先回答一道题：",
                             fontSize = 13.sp,
-                            color = Color.White.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                         )
                         Text(
                             text = verifyQuestion.question,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                         OutlinedTextField(
                             value = verifyAnswer,
@@ -829,7 +829,7 @@ fun SettingsScreen(
                             Toast.makeText(context, "修改未保存", Toast.LENGTH_SHORT).show()
                         }
                     ) {
-                        Text("取消", color = Color.White.copy(alpha = 0.5f))
+                        Text("取消", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -840,7 +840,7 @@ fun SettingsScreen(
         Text(
             text = "设置自动保存，改动即时生效",
             fontSize = 11.sp,
-            color = Color.White.copy(alpha = 0.4f),
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 4.dp),
@@ -883,13 +883,13 @@ private fun TokenSavingToggle(
                 text = title,
                 fontSize = if (highlight) 15.sp else 14.sp,
                 fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Medium,
-                color = Color.White.copy(alpha = contentAlpha)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = contentAlpha)
             )
             Spacer(Modifier.height(2.dp))
             Text(
                 text = subtitle,
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.5f * contentAlpha)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f * contentAlpha)
             )
         }
         Spacer(Modifier.width(8.dp))
@@ -898,7 +898,7 @@ private fun TokenSavingToggle(
             onCheckedChange = onCheckedChange,
             enabled = enabled,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
+                checkedThumbColor = MaterialTheme.colorScheme.onBackground,
                 checkedTrackColor = if (highlight) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primaryContainer
             )
         )
@@ -926,7 +926,7 @@ private fun TokenStatChip(
         ) {
             Text(text = value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = color)
             Spacer(Modifier.height(2.dp))
-            Text(text = label, fontSize = 10.sp, color = Color.White.copy(alpha = 0.55f))
+            Text(text = label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f))
         }
     }
 }
@@ -974,7 +974,7 @@ fun SettingsSection(
                     text = title,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onBackground
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -1024,6 +1024,6 @@ fun EnforcementModeSelector(
             Settings.EnforcementMode.WARN -> "只弹横幅提醒，不锁机"
         },
         fontSize = 11.sp,
-        color = Color.White.copy(alpha = 0.5f)
+        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
     )
 }

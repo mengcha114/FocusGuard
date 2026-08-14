@@ -145,12 +145,12 @@ fun PermissionSetupScreen(
                 text = "专注卫士",
                 fontSize = 34.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
             Text(
                 text = "完成必需权限后即可开始守护",
                 fontSize = 15.sp,
-                color = Color.White.copy(alpha = 0.65f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f)
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -159,12 +159,12 @@ fun PermissionSetupScreen(
                 progress = { if (required.isEmpty()) 1f else grantedCount.toFloat() / required.size },
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.primary,
-                trackColor = Color.White.copy(alpha = 0.08f)
+                trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f)
             )
             Text(
                 text = "已完成 $grantedCount / ${required.size} 项必需权限",
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.45f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -184,13 +184,17 @@ fun PermissionSetupScreen(
                 enabled = allGranted,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    disabledContainerColor = Color(0xFF2A2A2E)
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             ) {
                 Text(
                     text = if (allGranted) "完成设置" else "请先完成必需权限",
                     fontSize = 17.sp,
-                    color = if (allGranted) Color.White else Color.White.copy(alpha = 0.4f)
+                    color = if (allGranted) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.4f)
+                    }
                 )
             }
 
@@ -198,7 +202,7 @@ fun PermissionSetupScreen(
                 onClick = onFinish,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("稍后设置，先进入应用", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
+                Text("稍后设置，先进入应用", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f), fontSize = 13.sp)
             }
         }
     }
@@ -240,7 +244,7 @@ private fun PermissionCard(item: PermissionItem, onRequest: () -> Unit) {
                     Icon(
                         imageVector = if (item.isGranted) Icons.Default.Check else item.icon,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.size(21.dp)
                     )
                 }
@@ -251,7 +255,7 @@ private fun PermissionCard(item: PermissionItem, onRequest: () -> Unit) {
                             text = item.title,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                         if (item.isRequired) {
                             Spacer(modifier = Modifier.width(6.dp))
@@ -266,7 +270,7 @@ private fun PermissionCard(item: PermissionItem, onRequest: () -> Unit) {
                     Text(
                         text = item.description,
                         fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.55f)
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
                     )
                 }
             }

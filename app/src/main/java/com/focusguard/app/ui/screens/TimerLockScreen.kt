@@ -62,10 +62,10 @@ fun TimerLockScreen(onBack: () -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = null, tint = Color.White)
+                Icon(Icons.Default.ArrowBack, contentDescription = null, tint = MaterialTheme.colorScheme.onBackground)
             }
             Spacer(Modifier.width(8.dp))
-            Text("强制锁机", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text("强制锁机", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
         }
 
         // ── 权限提示 ──────────────────────────────────
@@ -73,7 +73,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF3A2E34))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Row(
                     modifier = Modifier.padding(14.dp),
@@ -91,13 +91,13 @@ fun TimerLockScreen(onBack: () -> Unit) {
                             "需要开启无障碍服务才能锁机",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "锁机为全屏软件覆盖，无障碍用于拦截切换到其他应用",
                             fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                         )
                     }
                 }
@@ -105,7 +105,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
         }
 
         // ── 锁机模式 ──────────────────────────────────
-        Text("锁机模式", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        Text("锁机模式", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
         LockMode.entries.forEach { mode ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -132,12 +132,12 @@ fun TimerLockScreen(onBack: () -> Unit) {
                             mode.label,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
                             mode.description,
                             fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.55f)
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
                         )
                     }
                 }
@@ -145,7 +145,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
         }
 
         // ── 解锁强度 ──────────────────────────────────
-        Text("解锁强度", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        Text("解锁强度", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
         val strengthOptions = listOf(
             1 to "答题解锁",
             2 to "连对5题",
@@ -173,12 +173,12 @@ fun TimerLockScreen(onBack: () -> Unit) {
                 else -> "完全无法提前解锁，只能等时间结束"
             },
             fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.55f)
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
         )
 
         // ── 时长 / 轮数 ───────────────────────────────
         if (selectedMode == LockMode.PLAIN) {
-            Text("锁机时长", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            Text("锁机时长", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -226,10 +226,10 @@ fun TimerLockScreen(onBack: () -> Unit) {
             Text(
                 text = "输入后自动选中该时长",
                 fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.4f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
             )
         } else {
-            Text("番茄钟轮数", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            Text("番茄钟轮数", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -246,7 +246,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
             Text(
                 text = "共 ${pomodoroRounds * 25} 分钟专注 + ${pomodoroRounds * 5} 分钟休息",
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.5f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
             )
         }
 
@@ -263,18 +263,18 @@ fun TimerLockScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("允许中途暂停", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                        Text("允许中途暂停", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
                         Text(
                             "每次暂停需答对 1 道题获取",
                             fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.5f)
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
                         )
                     }
                     Switch(
                         checked = pauseEnabled,
                         onCheckedChange = { pauseEnabled = it },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
+                            checkedThumbColor = MaterialTheme.colorScheme.onBackground,
                             checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
                         )
                     )
@@ -282,10 +282,10 @@ fun TimerLockScreen(onBack: () -> Unit) {
 
                 if (pauseEnabled) {
                     Spacer(Modifier.height(12.dp))
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
                     Spacer(Modifier.height(12.dp))
 
-                    Text("暂停次数", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.7f))
+                    Text("暂停次数", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -301,7 +301,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                     }
 
                     Spacer(Modifier.height(10.dp))
-                    Text("每次暂停时长", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.7f))
+                    Text("每次暂停时长", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -326,7 +326,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("锁机规则", fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 14.sp)
+                Text("锁机规则", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground, fontSize = 14.sp)
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = "1. 锁定期间全屏覆盖，返回键与 Home 键均无效\n" +
@@ -334,7 +334,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                         "3. 强杀进程也无法绕过——锁机状态已持久化\n" +
                         "4. 解锁方式取决于所选强度（1-4 级）",
                     fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                     lineHeight = 19.sp
                 )
             }
@@ -377,7 +377,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
             enabled = ready,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
-                disabledContainerColor = Color(0xFF2A2A2E)
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
             )
         ) {
             Icon(Icons.Default.Lock, contentDescription = null)
