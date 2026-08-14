@@ -18,6 +18,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -36,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -890,6 +893,12 @@ private fun FriendUnlockOnlyScreen(
     onVerified: () -> Unit,
     onExpired: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val palette = remember(context) {
+        com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
+            com.focusguard.app.data.Settings(context).themeMode
+        )
+    }
     // 与 LockScreenContent 一致的到期收尾：锁自然到期时自动关闭本页，
     // 否则 singleTask 复用与返回路径的守卫会不一致。
     LaunchedEffect(Unit) {
@@ -902,11 +911,7 @@ private fun FriendUnlockOnlyScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xFF17131D), Color(0xFF0E0C12))
-                )
-            )
+            .background(palette.bg)
             .padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -918,10 +923,11 @@ private fun FriendUnlockOnlyScreen(
                 ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            UnlockCard(accent = Color(0xFF8B7CF6), accentSoft = Color(0xFFB4A5FF)) {
+            UnlockCard(palette = palette) {
                 FriendUnlockSection(
                     cipher = lockState.friendCipher,
                     shift = lockState.friendShift,
+                    palette = palette,
                     focusRequestId = 1,
                     onVerified = onVerified
                 )
@@ -949,10 +955,15 @@ private fun LockScreenContent(
     // 注意：LocalContext.current 是 @Composable 属性，必须在 Composable
     // 作用域取值，不能放进 remember 的 lambda（非 @Composable 上下文）。
     val mottoContext = androidx.compose.ui.platform.LocalContext.current
+    val settings = remember(mottoContext) {
+        com.focusguard.app.data.Settings(mottoContext)
+    }
+    // 设计令牌：锁机页跟随所选主题（浅色回退深色·墨），见 DESIGN.md §3.2
+    val palette = remember(mottoContext) {
+        com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(settings.themeMode)
+    }
     val motto = remember(mottoContext) {
-        val custom = runCatching {
-            com.focusguard.app.data.Settings(mottoContext).customMottos
-        }.getOrDefault("")
+        val custom = runCatching { settings.customMottos }.getOrDefault("")
         val customList = custom.lines()
             .map { it.trim() }
             .filter { it.isNotBlank() }
@@ -1007,15 +1018,14 @@ private fun LockScreenContent(
 
     // ── 配色：按状态切换主色调 ────────────────────────
     val isRelaxed = isPausing || (isPomodoro && !isWorkPhase)
-    val accent = if (isRelaxed) Color(0xFF34D399) else Color(0xFF8B7CF6)
-    val accentSoft = if (isRelaxed) Color(0xFF6EE7B7) else Color(0xFFB4A5FF)
+    val accent = if (isRelaxed) palette.success else palette.accent
 
-    // 呼吸光效：主色光晕缓慢明暗，让静态界面有生命感
+    // 呼吸光效：夜光表盘的光晕缓慢明暗（5s 周期，幅度克制）
     val glowAlpha by rememberInfiniteTransition(label = "glow").animateFloat(
-        initialValue = 0.10f,
-        targetValue = 0.26f,
+        initialValue = 0.04f,
+        targetValue = 0.07f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2600, easing = LinearEasing),
+            animation = tween(5000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "glowAlpha"
@@ -1032,27 +1042,16 @@ private fun LockScreenContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF0A0A0F),
-                        Color(0xFF121018),
-                        Color(0xFF0D0B12)
-                    )
-                )
-            )
+            .background(palette.bg)
     ) {
-        // 顶部主色光晕（呼吸）
+        // 中央夜光光晕（呼吸）——模拟夜光表盘反光，全应用唯一允许的渐变
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(420.dp)
-                .align(Alignment.TopCenter)
+                .size(560.dp)
+                .align(Alignment.Center)
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = glowAlpha), Color.Transparent),
-                        center = androidx.compose.ui.geometry.Offset(540f, 220f),
-                        radius = 780f
+                        colors = listOf(accent.copy(alpha = glowAlpha), Color.Transparent)
                     )
                 )
         )
@@ -1078,13 +1077,13 @@ private fun LockScreenContent(
                 fontSize = 34.sp,
                 fontWeight = FontWeight.Light,
                 letterSpacing = 3.sp,
-                color = Color.White.copy(alpha = 0.92f)
+                color = palette.text
             )
             Text(
                 text = dateFormat.format(java.util.Date(nowMillis)),
                 fontSize = 12.sp,
                 letterSpacing = 1.sp,
-                color = Color.White.copy(alpha = 0.4f)
+                color = palette.haze
             )
 
             Spacer(Modifier.height(20.dp))
@@ -1099,6 +1098,7 @@ private fun LockScreenContent(
                     else -> "专注锁定中"
                 },
                 accent = accent,
+                palette = palette,
                 locked = !isRelaxed
             )
 
@@ -1110,7 +1110,7 @@ private fun LockScreenContent(
                 seconds = shownSeconds,
                 label = if (isPausing) "暂停剩余" else "锁定剩余",
                 accent = accent,
-                accentSoft = accentSoft
+                palette = palette
             )
 
             if (isPomodoro) {
@@ -1119,8 +1119,8 @@ private fun LockScreenContent(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MiniStat("剩余轮次", "${lockState.pomodoroRoundsLeft}", accent)
-                    MiniStat("今日完成", "${lockState.pomodoroCompletedToday}", accent)
+                    MiniStat("剩余轮次", "${lockState.pomodoroRoundsLeft}", accent, palette)
+                    MiniStat("今日完成", "${lockState.pomodoroCompletedToday}", accent, palette)
                 }
             }
 
@@ -1130,8 +1130,9 @@ private fun LockScreenContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color.White.copy(alpha = 0.045f))
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(palette.card)
+                    .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
                     .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
                 Column {
@@ -1139,7 +1140,7 @@ private fun LockScreenContent(
                         text = "今日箴言",
                         fontSize = 10.sp,
                         letterSpacing = 2.sp,
-                        color = accentSoft.copy(alpha = 0.75f),
+                        color = palette.haze,
                         fontWeight = FontWeight.Medium
                     )
                     Spacer(Modifier.height(6.dp))
@@ -1147,7 +1148,7 @@ private fun LockScreenContent(
                         text = motto,
                         fontSize = 14.sp,
                         lineHeight = 22.sp,
-                        color = Color.White.copy(alpha = 0.8f)
+                        color = palette.text.copy(alpha = 0.85f)
                     )
                 }
             }
@@ -1155,30 +1156,33 @@ private fun LockScreenContent(
             Spacer(Modifier.height(16.dp))
 
             // ── 待办清单（锁机时也能看到自己该做什么） ──────
-            LockMemoCard(accent = accent, accentSoft = accentSoft)
+            LockMemoCard(accent = accent, palette = palette)
 
             Spacer(Modifier.height(20.dp))
 
             // ── 解锁区（暂停中隐藏，避免重复操作） ────────
             if (!isPausing) {
-                UnlockCard(accent = accent, accentSoft = accentSoft) {
+                UnlockCard(palette = palette) {
                     when (lockState.unlockStrength) {
-                        4 -> LockedForeverHint()
+                        4 -> LockedForeverHint(palette)
                         3 -> FriendUnlockSection(
                             cipher = lockState.friendCipher,
                             shift = lockState.friendShift,
+                            palette = palette,
                             onVerified = onUnlocked
                         )
                         2 -> UnlockButtonWithHint(
                             hint = "需连续答对 5 道高难度题才能解锁",
                             buttonText = "开始挑战 · 5 题",
                             accent = accent,
+                            palette = palette,
                             onClick = { onStartChallenge(5) }
                         )
                         else -> UnlockButtonWithHint(
                             hint = "答对 1 道计算题即可解锁",
                             buttonText = "答题解锁",
                             accent = accent,
+                            palette = palette,
                             onClick = { onStartChallenge(1) }
                         )
                     }
@@ -1194,7 +1198,7 @@ private fun LockScreenContent(
                         ) {
                             Text(
                                 text = "答题申请暂停（剩 $pauseLeft 次 · 每次 ${lockState.pauseMinutes} 分钟）",
-                                color = Color.White.copy(alpha = 0.5f),
+                                color = palette.haze,
                                 fontSize = 12.sp
                             )
                         }
@@ -1202,7 +1206,7 @@ private fun LockScreenContent(
                         Text(
                             text = "暂停次数已用完（共 ${lockState.pauseQuota} 次）",
                             fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.3f)
+                            color = palette.faint
                         )
                     }
                 }
@@ -1213,13 +1217,19 @@ private fun LockScreenContent(
     }
 }
 
-/** 状态胶囊：小圆点 + 文字，锁定态用主色，放松态用绿色。 */
+/** 状态胶囊：小圆点 + 文字，锁定态用主色，放松态用成功色。 */
 @Composable
-private fun StatusPill(text: String, accent: Color, locked: Boolean) {
+private fun StatusPill(
+    text: String,
+    accent: Color,
+    palette: com.focusguard.app.ui.theme.FocusColors.Palette,
+    locked: Boolean
+) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(accent.copy(alpha = 0.13f))
+            .background(accent.copy(alpha = 0.12f))
+            .border(1.dp, palette.line.copy(alpha = 0.6f), RoundedCornerShape(50))
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1252,11 +1262,11 @@ private fun CountdownRing(
     seconds: Int,
     label: String,
     accent: Color,
-    accentSoft: Color
+    palette: com.focusguard.app.ui.theme.FocusColors.Palette
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
-        animationSpec = tween(600, easing = FastOutSlowInEasing),
+        animationSpec = tween(250, easing = FastOutSlowInEasing),
         label = "ringProgress"
     )
 
@@ -1275,7 +1285,7 @@ private fun CountdownRing(
 
             // 底轨
             drawArc(
-                color = Color.White.copy(alpha = 0.07f),
+                color = palette.line.copy(alpha = 0.55f),
                 startAngle = -90f,
                 sweepAngle = 360f,
                 useCenter = false,
@@ -1287,9 +1297,9 @@ private fun CountdownRing(
                 )
             )
 
-            // 进度弧（剩余时间比例）
+            // 进度弧（剩余时间比例，单一强调色）
             drawArc(
-                brush = Brush.sweepGradient(listOf(accentSoft, accent, accentSoft)),
+                color = accent,
                 startAngle = -90f,
                 sweepAngle = 360f * animatedProgress,
                 useCenter = false,
@@ -1307,26 +1317,28 @@ private fun CountdownRing(
                 text = label,
                 fontSize = 10.sp,
                 letterSpacing = 2.sp,
-                color = Color.White.copy(alpha = 0.38f)
+                color = palette.haze
             )
             Spacer(Modifier.height(6.dp))
 
             val h = seconds / 3600
             val m = (seconds % 3600) / 60
             val s = seconds % 60
+            // 签名元素：衬线大数字（钟表刻度质感），见 DESIGN.md §3.3
             Text(
                 text = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s),
                 fontSize = if (h > 0) 40.sp else 50.sp,
+                fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp,
-                color = Color.White
+                color = palette.text
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 text = if (h > 0) "时 分 秒" else "分 秒",
                 fontSize = 9.sp,
                 letterSpacing = 3.sp,
-                color = Color.White.copy(alpha = 0.28f)
+                color = palette.faint
             )
         }
     }
@@ -1341,7 +1353,7 @@ private fun CountdownRing(
  * 让锁机从"惩罚"变成"引导"。
  */
 @Composable
-private fun LockMemoCard(accent: Color, accentSoft: Color) {
+private fun LockMemoCard(accent: Color, palette: com.focusguard.app.ui.theme.FocusColors.Palette) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val memoStore = remember { com.focusguard.app.data.MemoStore(context) }
     var pending by remember { mutableStateOf(memoStore.getPending()) }
@@ -1352,8 +1364,9 @@ private fun LockMemoCard(accent: Color, accentSoft: Color) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color.White.copy(alpha = 0.045f))
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.card)
+            .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
             .padding(horizontal = 18.dp, vertical = 15.dp)
     ) {
         Column {
@@ -1366,13 +1379,13 @@ private fun LockMemoCard(accent: Color, accentSoft: Color) {
                     text = "待办清单",
                     fontSize = 10.sp,
                     letterSpacing = 2.sp,
-                    color = accentSoft.copy(alpha = 0.75f),
+                    color = palette.haze,
                     fontWeight = FontWeight.Medium
                 )
                 Text(
                     text = "${pending.size} 项未完成",
                     fontSize = 10.sp,
-                    color = Color.White.copy(alpha = 0.35f)
+                    color = palette.faint
                 )
             }
 
@@ -1390,7 +1403,7 @@ private fun LockMemoCard(accent: Color, accentSoft: Color) {
                         modifier = Modifier
                             .size(18.dp)
                             .clip(RoundedCornerShape(5.dp))
-                            .background(Color.White.copy(alpha = 0.08f))
+                            .background(palette.line.copy(alpha = 0.35f))
                             .clickable {
                                 memoStore.markDone(item.id)
                                 pending = memoStore.getPending()
@@ -1400,7 +1413,7 @@ private fun LockMemoCard(accent: Color, accentSoft: Color) {
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = "标记完成",
-                            tint = accentSoft.copy(alpha = 0.55f),
+                            tint = accent.copy(alpha = 0.7f),
                             modifier = Modifier.size(12.dp)
                         )
                     }
@@ -1409,7 +1422,7 @@ private fun LockMemoCard(accent: Color, accentSoft: Color) {
                         text = item.text,
                         fontSize = 13.sp,
                         lineHeight = 19.sp,
-                        color = Color.White.copy(alpha = 0.82f),
+                        color = palette.text.copy(alpha = 0.85f),
                         maxLines = 2,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
@@ -1428,9 +1441,9 @@ private fun LockMemoCard(accent: Color, accentSoft: Color) {
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Medium,
                             color = if (item.overdue || item.priority == 2) {
-                                Color(0xFFEF9A9A)
+                                palette.error
                             } else {
-                                Color(0xFFFFCC80)
+                                palette.accent
                             }
                         )
                     }
@@ -1442,7 +1455,7 @@ private fun LockMemoCard(accent: Color, accentSoft: Color) {
                 Text(
                     text = "还有 ${pending.size - 4} 项…",
                     fontSize = 10.sp,
-                    color = Color.White.copy(alpha = 0.3f)
+                    color = palette.faint
                 )
             }
         }
@@ -1450,31 +1463,37 @@ private fun LockMemoCard(accent: Color, accentSoft: Color) {
 }
 
 @Composable
-private fun MiniStat(label: String, value: String, accent: Color) {
+private fun MiniStat(
+    label: String,
+    value: String,
+    accent: Color,
+    palette: com.focusguard.app.ui.theme.FocusColors.Palette
+) {
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.card)
+            .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
             .padding(horizontal = 18.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = accent)
-        Text(label, fontSize = 10.sp, color = Color.White.copy(alpha = 0.4f))
+        Text(label, fontSize = 10.sp, color = palette.haze)
     }
 }
 
-/** 解锁区容器卡片：统一边框与内边距，让解锁交互聚焦。 */
+/** 解锁区容器卡片：细边框分栏，让解锁交互聚焦。 */
 @Composable
 private fun UnlockCard(
-    accent: Color,
-    accentSoft: Color,
+    palette: com.focusguard.app.ui.theme.FocusColors.Palette,
     content: @Composable () -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha = 0.04f))
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.card)
+            .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
             .padding(18.dp)
     ) {
         Column(
@@ -1486,7 +1505,7 @@ private fun UnlockCard(
                 fontSize = 10.sp,
                 letterSpacing = 2.sp,
                 fontWeight = FontWeight.Medium,
-                color = accentSoft.copy(alpha = 0.75f)
+                color = palette.haze
             )
             Spacer(Modifier.height(12.dp))
             content()
@@ -1496,12 +1515,12 @@ private fun UnlockCard(
 
 /** 强度 4：不可提前解锁的提示。 */
 @Composable
-private fun LockedForeverHint() {
+private fun LockedForeverHint(palette: com.focusguard.app.ui.theme.FocusColors.Palette) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(
             imageVector = Icons.Default.Shield,
             contentDescription = null,
-            tint = Color(0xFFEF9A9A),
+            tint = palette.error,
             modifier = Modifier.size(26.dp)
         )
         Spacer(Modifier.height(8.dp))
@@ -1509,13 +1528,13 @@ private fun LockedForeverHint() {
             text = "本次锁机不可提前解锁",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color(0xFFEF9A9A)
+            color = palette.error
         )
         Spacer(Modifier.height(4.dp))
         Text(
             text = "请等待倒计时结束",
             fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.4f),
+            color = palette.haze,
             textAlign = TextAlign.Center
         )
     }
@@ -1526,6 +1545,7 @@ private fun UnlockButtonWithHint(
     hint: String,
     buttonText: String,
     accent: Color,
+    palette: com.focusguard.app.ui.theme.FocusColors.Palette,
     onClick: () -> Unit
 ) {
     Column(
@@ -1535,7 +1555,7 @@ private fun UnlockButtonWithHint(
         Text(
             text = hint,
             fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.5f),
+            color = palette.haze,
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(14.dp))
@@ -1544,14 +1564,16 @@ private fun UnlockButtonWithHint(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
-            shape = RoundedCornerShape(15.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.9f))
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = accent,
+                contentColor = palette.bg
+            )
         ) {
             Text(
                 text = buttonText,
                 fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
@@ -1562,6 +1584,7 @@ private fun UnlockButtonWithHint(
 private fun FriendUnlockSection(
     cipher: String,
     shift: Int,
+    palette: com.focusguard.app.ui.theme.FocusColors.Palette,
     focusRequestId: Int = 0,
     onVerified: () -> Unit
 ) {
@@ -1587,12 +1610,13 @@ private fun FriendUnlockSection(
             text = "朋友辅助解锁",
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color(0xFFD0BCFF)
+            color = palette.accent
         )
 
         Surface(
-            color = Color(0xFF241F27),
-            shape = RoundedCornerShape(14.dp),
+            color = palette.surface,
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, palette.line.copy(alpha = 0.7f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -1601,17 +1625,18 @@ private fun FriendUnlockSection(
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("密文", fontSize = 11.sp, color = Color.White.copy(alpha = 0.4f))
+                Text("密文", fontSize = 11.sp, color = palette.haze)
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = cipher.ifBlank { "——" },
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = palette.text,
+                    fontFamily = FontFamily.Monospace,
                     letterSpacing = 6.sp
                 )
                 Spacer(Modifier.height(8.dp))
-                Text("偏移量：$shift", fontSize = 14.sp, color = Color(0xFF8AB4F8))
+                Text("偏移量：$shift", fontSize = 14.sp, color = palette.accentDeep)
             }
         }
 
@@ -1623,16 +1648,16 @@ private fun FriendUnlockSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focusRequester),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(10.dp),
             singleLine = true
         )
 
-        errorMsg?.let { Text(it, color = Color(0xFFC6786F), fontSize = 12.sp) }
+        errorMsg?.let { Text(it, color = palette.error, fontSize = 12.sp) }
 
         TextButton(onClick = { showHint = !showHint }) {
             Text(
                 text = if (showHint) "收起解密说明" else "怎么解密？",
-                color = Color.White.copy(alpha = 0.5f),
+                color = palette.haze,
                 fontSize = 12.sp
             )
         }
@@ -1644,7 +1669,7 @@ private fun FriendUnlockSection(
                     "解密方式选「凯撒密码解密」，偏移量填 $shift。\n" +
                     "也可手动推算：每个字母向前移动 $shift 位（偏移 3 时 D→A），数字不变。",
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.6f),
+                color = palette.haze,
                 lineHeight = 18.sp
             )
         }
@@ -1660,10 +1685,13 @@ private fun FriendUnlockSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F378B))
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = palette.accent,
+                contentColor = palette.bg
+            )
         ) {
-            Text("输入密码解锁", fontSize = 15.sp)
+            Text("输入密码解锁", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
