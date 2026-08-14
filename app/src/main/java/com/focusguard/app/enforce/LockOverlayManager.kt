@@ -1522,6 +1522,7 @@ object LockOverlayManager {
         context: Context,
         lockState: LockState
     ) {
+        val p = palette(context)
         val box = challengeKeyboardBox ?: return
         box.removeAllViews()
 
@@ -1700,6 +1701,7 @@ object LockOverlayManager {
         lockState: LockState,
         session: ChallengeSession
     ) {
+        val p = palette(context)
         val box = challengeKeyboardBox ?: return
         box.removeAllViews()
 
