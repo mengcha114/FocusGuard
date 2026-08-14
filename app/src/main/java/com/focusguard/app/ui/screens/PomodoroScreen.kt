@@ -26,7 +26,8 @@ fun PomodoroScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val palette = remember(context) {
         com.focusguard.app.ui.theme.FocusColors.paletteFor(
-            com.focusguard.app.data.Settings(context).themeMode
+            com.focusguard.app.data.Settings(context).themeMode,
+            context
         )
     }
     var isRunning by remember { mutableStateOf(false) }

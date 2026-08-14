@@ -45,7 +45,8 @@ fun UnlockChallengeScreen(
     // 答题页为沉浸深色界面，跟随主题但浅色回退深色·墨（见 DESIGN.md §3.2）
     val palette = remember(context) {
         com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
-            com.focusguard.app.data.Settings(context).themeMode
+            com.focusguard.app.data.Settings(context).themeMode,
+            context
         )
     }
 

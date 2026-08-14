@@ -427,7 +427,8 @@ object LockOverlayManager {
     /** 深色渐变背景：比纯黑更有质感，也和锁机页视觉统一。 */
     private fun palette(context: Context): com.focusguard.app.ui.theme.FocusColors.Palette =
         com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
-            com.focusguard.app.data.Settings(context).themeMode
+            com.focusguard.app.data.Settings(context).themeMode,
+            context
         )
 
     /** 传统 View 侧：令牌颜色 + 透明度的 `#AARRGGBB` 字符串。 */
@@ -501,7 +502,7 @@ object LockOverlayManager {
             gravity = Gravity.CENTER_HORIZONTAL
             background = GradientDrawable().apply {
                 cornerRadius = dp(context, 12).toFloat()
-                setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                setColor(android.graphics.Color.parseColor(tint(p.card, 0xA6)))
                 setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
             }
             setPadding(dp(context, 22), dp(context, 20), dp(context, 22), dp(context, 20))
@@ -570,7 +571,7 @@ object LockOverlayManager {
                 orientation = LinearLayout.VERTICAL
                 background = GradientDrawable().apply {
                     cornerRadius = dp(context, 12).toFloat()
-                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                    setColor(android.graphics.Color.parseColor(tint(p.card, 0xA6)))
                     setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
                 }
                 setPadding(dp(context, 18), dp(context, 14), dp(context, 18), dp(context, 14))
@@ -695,7 +696,7 @@ object LockOverlayManager {
                 orientation = LinearLayout.HORIZONTAL
                 background = GradientDrawable().apply {
                     cornerRadius = dp(context, 12).toFloat()
-                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                    setColor(android.graphics.Color.parseColor(tint(p.card, 0xA6)))
                     setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
                 }
                 setPadding(dp(context, 16), dp(context, 14), dp(context, 16), dp(context, 14))
@@ -771,7 +772,7 @@ object LockOverlayManager {
                         isAllCaps = false
                         background = GradientDrawable().apply {
                             cornerRadius = dp(context, 10).toFloat()
-                            setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                            setColor(android.graphics.Color.parseColor(tint(p.card, 0xA6)))
                             setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                         }
                         setOnClickListener {
@@ -1279,7 +1280,7 @@ object LockOverlayManager {
                 setLineSpacing(dp(context, 5).toFloat(), 1f)
                 background = GradientDrawable().apply {
                     cornerRadius = dp(context, 12).toFloat()
-                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                    setColor(android.graphics.Color.parseColor(tint(p.card, 0xA6)))
                     setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
                 }
                 setPadding(dp(context, 16), dp(context, 16), dp(context, 16), dp(context, 16))
@@ -1358,7 +1359,7 @@ object LockOverlayManager {
                 isAllCaps = false
                 background = GradientDrawable().apply {
                     cornerRadius = dp(context, 10).toFloat()
-                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                    setColor(android.graphics.Color.parseColor(tint(p.card, 0xA6)))
                     setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                 }
                 setPadding(dp(context, 20), dp(context, 9), dp(context, 20), dp(context, 9))
@@ -1514,7 +1515,7 @@ object LockOverlayManager {
                 isAllCaps = false
                 background = GradientDrawable().apply {
                     cornerRadius = dp(context, 10).toFloat()
-                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                    setColor(android.graphics.Color.parseColor(tint(p.card, 0xA6)))
                     setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                 }
                 setPadding(dp(context, 20), dp(context, 9), dp(context, 20), dp(context, 9))

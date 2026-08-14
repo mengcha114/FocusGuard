@@ -1,6 +1,9 @@
 package com.focusguard.app.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
@@ -12,11 +15,11 @@ object ThemeModes {
     const val LIGHT_PAPER = 3
 
     fun labelOf(mode: Int): String = when (mode) {
-        DARK_INK -> "深色·墨"
+        DARK_INK -> "跟随系统"
         DARK_MONO -> "深色·简"
         DARK_MOSS -> "深色·苔"
         LIGHT_PAPER -> "浅色·纸"
-        else -> "深色·墨"
+        else -> "跟随系统"
     }
 }
 
@@ -117,10 +120,21 @@ fun FocusGuardTheme(
     themeMode: Int = ThemeModes.DARK_INK,
     content: @Composable () -> Unit
 ) {
-    val scheme = when (themeMode) {
-        ThemeModes.DARK_MONO -> DarkMonoScheme
-        ThemeModes.DARK_MOSS -> DarkMossScheme
-        ThemeModes.LIGHT_PAPER -> LightPaperScheme
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // 默认模式跟随系统深浅；简/苔强制深色，纸强制浅色
+    val effectiveDark = when (themeMode) {
+        ThemeModes.DARK_MONO, ThemeModes.DARK_MOSS -> true
+        ThemeModes.LIGHT_PAPER -> false
+        else -> isSystemInDarkTheme()
+    }
+    val dynamic = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
+        (themeMode == ThemeModes.DARK_INK || themeMode == ThemeModes.LIGHT_PAPER)
+    val scheme = when {
+        dynamic && !effectiveDark -> dynamicLightColorScheme(context)
+        dynamic -> dynamicDarkColorScheme(context)
+        !effectiveDark -> LightPaperScheme
+        themeMode == ThemeModes.DARK_MONO -> DarkMonoScheme
+        themeMode == ThemeModes.DARK_MOSS -> DarkMossScheme
         else -> DarkInkScheme
     }
     MaterialTheme(

@@ -251,7 +251,8 @@ private fun AppBlockedUntilScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val palette = remember(context) {
         com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
-            com.focusguard.app.data.Settings(context).themeMode
+            com.focusguard.app.data.Settings(context).themeMode,
+            context
         )
     }
     var remainingSeconds by remember { mutableIntStateOf(0) }
@@ -399,7 +400,8 @@ private fun AppBlockScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val palette = remember(context) {
         com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
-            com.focusguard.app.data.Settings(context).themeMode
+            com.focusguard.app.data.Settings(context).themeMode,
+            context
         )
     }
     // 轻微的呼吸动画，避免界面显得像卡死的黑屏

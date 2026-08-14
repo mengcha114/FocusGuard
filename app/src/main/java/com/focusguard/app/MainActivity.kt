@@ -202,6 +202,13 @@ class MainActivity : ComponentActivity() {
                         onRequestPermission = { permission -> requestPermission(permission) }
                     )
                 } else {
+                    androidx.compose.foundation.layout.Box(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // 全局环境光斑：与半透明卡片叠加成玻璃材质（Android 12+ 生效）
+                        com.focusguard.app.ui.theme.AmbientGlow(
+                            modifier = Modifier.fillMaxSize()
+                        )
                     Scaffold(
                         bottomBar = {
                             // 动态选中：根据当前导航目的地高亮对应标签
@@ -321,6 +328,7 @@ class MainActivity : ComponentActivity() {
                                 UnlockChallengeScreen(onUnlocked = { navController.popBackStack() })
                             }
                         }
+                    }
                     }
                 }
             }

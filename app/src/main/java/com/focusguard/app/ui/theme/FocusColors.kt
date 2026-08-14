@@ -1,5 +1,9 @@
 package com.focusguard.app.ui.theme
 
+import android.content.Context
+import android.os.Build
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 
@@ -91,18 +95,69 @@ object FocusColors {
         isLight = true
     )
 
-    /** 按主题模式取值；未知值回退默认墨。 */
-    fun paletteFor(mode: Int): Palette = when (mode) {
-        ThemeModes.DARK_MONO -> mono
-        ThemeModes.DARK_MOSS -> moss
-        ThemeModes.LIGHT_PAPER -> paper
-        else -> ink
+    /**
+     * 按主题模式取值；未知值回退默认墨。
+     *
+     * 深色·墨（0）即「跟随系统」：系统深色 → 深色调色板，系统浅色 → 浅色调色板；
+     * 深色·简（1）/ 深色·苔（2）强制深色；浅色·纸（3）强制浅色。
+     * Android 12+ 上默认模式与浅色模式启用「莫奈取色」（Material You 壁纸动态取色）。
+     */
+    fun paletteFor(mode: Int, context: Context? = null): Palette {
+        val sysDark = context?.let {
+            (it.resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+        } ?: true
+        val dark = when (mode) {
+            ThemeModes.DARK_MONO, ThemeModes.DARK_MOSS -> true
+            ThemeModes.LIGHT_PAPER -> false
+            else -> sysDark
+        }
+        context?.let { c ->
+            if (mode == ThemeModes.DARK_INK || mode == ThemeModes.LIGHT_PAPER) {
+                dynamicPalette(c, dark = dark)?.let { return it }
+            }
+        }
+        return when (mode) {
+            ThemeModes.DARK_MONO -> mono
+            ThemeModes.DARK_MOSS -> moss
+            ThemeModes.LIGHT_PAPER -> paper
+            else -> if (dark) ink else paper
+        }
     }
 
     /** 锁机页/悬浮窗用：浅色主题回退深色·墨（夜光表盘需暗场）。 */
-    fun paletteForLockScreen(mode: Int): Palette {
-        val p = paletteFor(mode)
+    fun paletteForLockScreen(mode: Int, context: Context? = null): Palette {
+        val p = paletteFor(mode, context)
         return if (p.isLight) ink else p
+    }
+
+    /** Android 12+ 莫奈取色：从壁纸生成调色板；低版本或失败返回 null（回退手工令牌）。 */
+    fun dynamicPalette(context: Context, dark: Boolean): Palette? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+        return try {
+            val scheme = if (dark) {
+                dynamicDarkColorScheme(context)
+            } else {
+                dynamicLightColorScheme(context)
+            }
+            Palette(
+                bg = scheme.background,
+                surface = scheme.surface,
+                card = scheme.surfaceVariant,
+                line = scheme.outline,
+                accent = scheme.primary,
+                accentDeep = scheme.primaryContainer,
+                text = scheme.onBackground,
+                haze = scheme.onSurfaceVariant,
+                faint = scheme.outline,
+                error = scheme.error,
+                success = scheme.tertiary,
+                isLight = !dark
+            )
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /** 传统 View 侧使用：把令牌转成 `#RRGGBB` 十六进制字符串。 */

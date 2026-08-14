@@ -897,7 +897,8 @@ private fun FriendUnlockOnlyScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val palette = remember(context) {
         com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
-            com.focusguard.app.data.Settings(context).themeMode
+            com.focusguard.app.data.Settings(context).themeMode,
+            context
         )
     }
     // 与 LockScreenContent 一致的到期收尾：锁自然到期时自动关闭本页，
@@ -961,7 +962,7 @@ private fun LockScreenContent(
     }
     // 设计令牌：锁机页跟随所选主题（浅色回退深色·墨），见 DESIGN.md §3.2
     val palette = remember(mottoContext) {
-        com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(settings.themeMode)
+        com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(settings.themeMode, mottoContext)
     }
     val motto = remember(mottoContext) {
         val custom = runCatching { settings.customMottos }.getOrDefault("")
@@ -1189,7 +1190,7 @@ private fun LockScreenContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(palette.card)
+                            .background(palette.card.copy(alpha = 0.6f))
                             .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
                             .padding(horizontal = 20.dp, vertical = 16.dp)
                     ) {
@@ -1441,7 +1442,7 @@ private fun LockMemoCard(accent: Color, palette: com.focusguard.app.ui.theme.Foc
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(palette.card)
+            .background(palette.card.copy(alpha = 0.6f))
             .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
             .padding(horizontal = 18.dp, vertical = 15.dp)
     ) {
@@ -1548,7 +1549,7 @@ private fun MiniStat(
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(palette.card)
+            .background(palette.card.copy(alpha = 0.6f))
             .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
             .padding(horizontal = 18.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1568,7 +1569,7 @@ private fun UnlockCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(palette.card)
+            .background(palette.card.copy(alpha = 0.6f))
             .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
             .padding(18.dp)
     ) {
@@ -1690,7 +1691,7 @@ private fun FriendUnlockSection(
         )
 
         Surface(
-            color = palette.surface,
+            color = palette.surface.copy(alpha = 0.6f),
             shape = RoundedCornerShape(12.dp),
             border = BorderStroke(1.dp, palette.line.copy(alpha = 0.7f)),
             modifier = Modifier.fillMaxWidth()

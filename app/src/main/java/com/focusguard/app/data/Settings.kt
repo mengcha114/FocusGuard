@@ -177,7 +177,7 @@ gacha
         set(value) = prefs.edit().putString(KEY_AI_CUSTOM_PROMPT, value).apply()
 
     /**
-     * UI 主题：0=深色·墨 1=深色·简 2=深色·苔 3=浅色·纸。
+     * UI 主题：0=跟随系统 1=深色·简 2=深色·苔 3=浅色·纸。
      */
     var themeMode: Int
         get() = prefs.getInt(KEY_THEME_MODE, 0)

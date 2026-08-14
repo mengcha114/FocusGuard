@@ -132,7 +132,8 @@ private fun AlertCard(
     val context = androidx.compose.ui.platform.LocalContext.current
     val palette = remember(context) {
         com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
-            com.focusguard.app.data.Settings(context).themeMode
+            com.focusguard.app.data.Settings(context).themeMode,
+            context
         )
     }
     // 轻遮罩（约 35% 黑）：能看到原画面但明显变暗，不强制全屏打断
