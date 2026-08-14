@@ -149,7 +149,7 @@ private fun AlertCard(
                 .padding(horizontal = 32.dp),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = palette.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 24.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column(
                 modifier = Modifier

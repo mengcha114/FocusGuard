@@ -1,6 +1,7 @@
 package com.focusguard.app.ui.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -219,7 +220,7 @@ private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Un
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Row(
             modifier = Modifier
@@ -337,7 +338,11 @@ private fun AppEditSheet(
     var verifyError by remember { mutableStateOf<String?>(null) }
     var pendingRule by remember { mutableStateOf<AppUsageRule?>(null) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -374,7 +379,7 @@ private fun AppEditSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     rowItems.forEach { (cat, label) ->
-                        FilterChip(
+                        FilterChip(shape = RoundedCornerShape(10.dp),
                             selected = selectedCategory == cat,
                             onClick = { selectedCategory = cat },
                             label = { Text(label, fontSize = 12.sp) },
@@ -532,7 +537,7 @@ private fun AppEditSheet(
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(12.dp)
             )
         }
     }

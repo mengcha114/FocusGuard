@@ -2,6 +2,7 @@ package com.focusguard.app.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -437,7 +438,7 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 (1..4).forEach { level ->
-                    FilterChip(
+                    FilterChip(shape = RoundedCornerShape(10.dp),
                         selected = aiLockStrength == level,
                         onClick = { aiLockStrength = level },
                         label = { Text("$level 级", fontSize = 12.sp) },
@@ -558,7 +559,7 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 (0..3).forEach { mode ->
-                    FilterChip(
+                    FilterChip(shape = RoundedCornerShape(10.dp),
                         selected = themeMode == mode,
                         onClick = { themeMode = mode },
                         label = {
@@ -833,7 +834,7 @@ fun SettingsScreen(
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(12.dp)
             )
         }
 
@@ -952,8 +953,8 @@ fun SettingsSection(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
@@ -1001,7 +1002,7 @@ fun EnforcementModeSelector(
             }
             val isSelected = mode == selected
 
-            FilterChip(
+            FilterChip(shape = RoundedCornerShape(10.dp),
                 selected = isSelected,
                 onClick = { onSelect(mode) },
                 label = { Text(label, fontSize = 12.sp) },

@@ -376,7 +376,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(12.dp)
                 )
             }
         }

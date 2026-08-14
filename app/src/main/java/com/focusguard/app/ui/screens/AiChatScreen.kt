@@ -228,7 +228,7 @@ fun AiChatScreen() {
                     onValueChange = { input = it },
                     placeholder = { Text("问 AI 点什么…") },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(12.dp),
                     maxLines = 3,
                     enabled = !sending
                 )
@@ -371,7 +371,7 @@ fun AiChatScreen() {
                         }
                     },
                     modifier = Modifier.size(60.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     enabled = !sending
                 ) {
