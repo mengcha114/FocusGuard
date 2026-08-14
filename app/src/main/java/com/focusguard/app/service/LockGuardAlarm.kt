@@ -40,17 +40,17 @@ object LockGuardAlarm {
     /** 异常恢复间隔（进程被杀/防线丢失）：快速拉活。供服务启动时注册首个闹钟。 */
     const val RECOVERY_INTERVAL_MS = 5_000L
 
-    /** 注册下一个闹钟。 */
+    /** 注册下一个闹钟。用单调时钟（ELAPSED_REALTIME_WAKEUP）防时间篡改；重启后由 BootReceiver 重新注册。 */
     fun schedule(context: Context, intervalMs: Long) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         val pi = pendingIntent(context)
-        val triggerAt = System.currentTimeMillis() + intervalMs
+        val triggerAt = android.os.SystemClock.elapsedRealtime() + intervalMs
         try {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
         } catch (e: Exception) {
             // 个别 ROM 限制 setExactAndAllowWhileIdle → 退回普通 set
             try {
-                am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
             } catch (e2: Exception) {
                 Log.w(TAG, "注册闹钟失败：${e2.message}")
             }

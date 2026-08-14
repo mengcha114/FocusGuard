@@ -171,6 +171,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- 锁机期间媒体键拦截（蓝牙/线控长按语音助手入口） -->
+        <receiver
+            android:name=".service.MediaButtonBlocker"
+            android:exported="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

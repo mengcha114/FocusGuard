@@ -16,6 +16,14 @@ class LockState(context: Context) {
         private const val PREFS = "focus_guard_lock_state"
         private const val KEY_LOCK_UNTIL = "lock_until"
 
+        // ── 时间篡改防御：单调时钟基准（elapsedRealtime 不受用户改系统时间影响） ──
+        private const val KEY_LOCK_ELAPSED_BASE = "lock_elapsed_base"
+        private const val KEY_LOCK_DURATION_MS = "lock_duration_ms"
+        private const val KEY_LOCK_WALL_BASE = "lock_wall_base"
+
+        /** 墙钟与单调钟偏差超过此值（毫秒）判定为时间篡改。 */
+        const val TIME_TAMPER_THRESHOLD_MS = 3 * 60_000L
+
         /** 单次锁机内「换一题」按钮可用次数上限（持久化：退出重进不重置）。 */
         private const val KEY_CHALLENGE_REFRESHES = "challenge_refreshes"
         private const val MAX_CHALLENGE_REFRESHES = 5
@@ -43,23 +51,63 @@ class LockState(context: Context) {
 
     // ── 定时锁机 ──────────────────────────────────────
 
-    /** 锁机截止时间戳，0 表示未锁机。 */
+    /** 锁机截止时间戳（墙钟，兼容旧数据/展示），0 表示未锁机。 */
     var lockUntil: Long
         get() = prefs.getLong(KEY_LOCK_UNTIL, 0L)
         set(value) = prefs.edit().putLong(KEY_LOCK_UNTIL, value).apply()
+
+    /** 锁机起始时的单调时钟（elapsedRealtime），>0 表示启用防篡改基准。 */
+    private var lockElapsedBase: Long
+        get() = prefs.getLong(KEY_LOCK_ELAPSED_BASE, 0L)
+        set(value) = prefs.edit().putLong(KEY_LOCK_ELAPSED_BASE, value).apply()
+
+    /** 锁机总时长（毫秒）。 */
+    private var lockDurationMs: Long
+        get() = prefs.getLong(KEY_LOCK_DURATION_MS, 0L)
+        set(value) = prefs.edit().putLong(KEY_LOCK_DURATION_MS, value).apply()
+
+    /** 锁机起始时的墙钟（用于篡改检测的预期值计算）。 */
+    private var lockWallBase: Long
+        get() = prefs.getLong(KEY_LOCK_WALL_BASE, 0L)
+        set(value) = prefs.edit().putLong(KEY_LOCK_WALL_BASE, value).apply()
 
     /** 锁机来源：TIMER / AI / POMODORO。 */
     var lockSource: String
         get() = prefs.getString(KEY_LOCK_SOURCE, "") ?: ""
         set(value) = prefs.edit().putString(KEY_LOCK_SOURCE, value).apply()
 
+    /** 单调时钟上的剩余毫秒数（防篡改核心）。 */
+    private val remainingMs: Long
+        get() = if (lockElapsedBase > 0) {
+            (lockDurationMs - (android.os.SystemClock.elapsedRealtime() - lockElapsedBase))
+                .coerceAtLeast(0L)
+        } else {
+            (lockUntil - System.currentTimeMillis()).coerceAtLeast(0L)
+        }
+
     val isLocked: Boolean
-        get() = lockUntil > System.currentTimeMillis()
+        get() = remainingMs > 0
 
     val remainingSeconds: Int
-        get() = ((lockUntil - System.currentTimeMillis()) / 1000)
-            .coerceAtLeast(0L)
-            .toInt()
+        get() = (remainingMs / 1000).toInt()
+
+    /**
+     * 检测时间篡改：返回墙钟与单调钟推进的偏差（毫秒，绝对值）。
+     * 用户把系统时间前后拨动超过 [TIME_TAMPER_THRESHOLD_MS] 时非零。
+     */
+    fun detectTimeTamper(): Long {
+        if (lockElapsedBase <= 0) return 0L
+        val expectedWall = lockWallBase + (android.os.SystemClock.elapsedRealtime() - lockElapsedBase)
+        return Math.abs(System.currentTimeMillis() - expectedWall)
+    }
+
+    /** 时间篡改惩罚：按偏差幅度追加锁定时长（上限 30 分钟）。 */
+    fun applyTamperPenalty(tamperMs: Long) {
+        if (tamperMs <= 0L || lockElapsedBase <= 0) return
+        val extra = (tamperMs * 2).coerceIn(5 * 60_000L, 30 * 60_000L)
+        lockDurationMs += extra
+        lockUntil = System.currentTimeMillis() + remainingMs
+    }
 
     // ── 锁机期间「换一题」次数（防破解） ──────────────
     // 存 prefs 持久化：用户退出答题页再重进，次数不重置
@@ -78,7 +126,11 @@ class LockState(context: Context) {
     }
 
     fun startLock(minutes: Int, source: String) {
-        lockUntil = System.currentTimeMillis() + minutes * 60_000L
+        val durationMs = minutes * 60_000L
+        lockElapsedBase = android.os.SystemClock.elapsedRealtime()
+        lockWallBase = System.currentTimeMillis()
+        lockDurationMs = durationMs
+        lockUntil = lockWallBase + durationMs
         lockSource = source
         // 新一轮锁机：重置「换一题」次数
         challengeRefreshCount = 0
@@ -122,6 +174,9 @@ class LockState(context: Context) {
 
     fun releaseLock() {
         lockUntil = 0L
+        lockElapsedBase = 0L
+        lockDurationMs = 0L
+        lockWallBase = 0L
         lockSource = ""
         friendCipher = ""
         friendShift = 0

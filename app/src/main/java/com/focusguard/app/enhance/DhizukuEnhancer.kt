@@ -404,6 +404,26 @@ object DhizukuEnhancer {
         }
     }
 
+    /**
+     * 锁机期间阻止卸载本应用（防绕过最彻底手段：卸载 = 锁机消失）。
+     * 仅锁机中启用，锁机结束解除（用户平时可正常卸载）。
+     */
+    fun setUninstallBlocked(context: Context, blocked: Boolean): Boolean {
+        try {
+            if (!ensureReady(context)) return false
+            val dpm = wrappedDpm ?: return false
+            val comp = ownerComponent ?: return false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                dpm.setUninstallBlocked(comp, context.packageName, blocked)
+                Log.d(TAG, "设置 setUninstallBlocked($blocked) 成功")
+            }
+            return true
+        } catch (e: Throwable) {
+            Log.w(TAG, "setUninstallBlocked 失败：${e.message}")
+            return false
+        }
+    }
+
     /** 本应用是否已被允许进入 Lock Task 模式。 */
     fun isLockTaskPermitted(packageName: String): Boolean {
         val dpm = wrappedDpm ?: return false

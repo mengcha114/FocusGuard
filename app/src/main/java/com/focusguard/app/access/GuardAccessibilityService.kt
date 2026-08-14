@@ -59,6 +59,17 @@ class GuardAccessibilityService : AccessibilityService() {
             "com.hihonor.systemmanager"                  // 荣耀系统管家（侧边栏宿主）
         )
 
+        /** 语音助手包名（锁机中常驻球/助手 UI 一律顶回，即使挂在 systemui 进程下）。 */
+        private val voiceAssistantPackages = listOf(
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.apps.googlequicksearchbox",
+            "com.xiaomi.voiceassist",
+            "com.miui.voiceassist",
+            "com.vivo.assistant",
+            "com.huawei.vassistant",
+            "com.hihonor.assistant"
+        )
+
         /** 命中即"侧边栏/悬浮类"系统界面：不止收起，还要顶回锁机页。 */
         private fun isSideBarPackage(pkg: String): Boolean =
             pkg.contains("smartwindow", ignoreCase = true) ||
@@ -71,6 +82,12 @@ class GuardAccessibilityService : AccessibilityService() {
 
     /** 上次重新拉起锁屏页的时间，避免高频事件导致刷屏。 */
     private var lastReassertAt = 0L
+
+    /** 收起通知栏节流：SystemUI 对高频全局动作限流，250ms 一次最稳。 */
+    private var lastDismissAt = 0L
+
+    /** 状态栏物理拦截条（TYPE_ACCESSIBILITY_OVERLAY）：吃掉下拉起始手势。 */
+    private var statusBarBlock: android.view.View? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -106,6 +123,9 @@ class GuardAccessibilityService : AccessibilityService() {
 
         // 番茄钟休息阶段 / 暂停中 放行
         if (!state.shouldBlockNow) return
+
+        // 状态栏拦截条随锁机状态挂载/移除（拦截下拉起始手势的物理屏障）
+        ensureStatusBarBlock()
 
         // 无论何种事件、无论是否在答题界面，只要下拉了系统通知栏/控制中心，一律强制收起
         val pkgName = event.packageName?.toString() ?: ""
@@ -212,18 +232,37 @@ class GuardAccessibilityService : AccessibilityService() {
 
         // 检测"不抢焦点的系统悬浮窗"（华为智慧多窗侧边栏等）：
         // 这类窗口不触发 state_changed 也不抢焦点，只能在这里抓到。
-        // 规则：SYS 类型 + 有包名 + 非自身 + 非通知栏/状态栏（systemui）→ 顶回
+        // 规则：SYS 类型 + 有包名 + 非自身 + 非 launcher +（非 systemui 或 语音助手包）→ 顶回
+        // 语音助手常驻球可能挂在 systemui 进程下，反排除防漏。
         val hasForeignSysWindow = try {
             windows?.any { w ->
                 w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
                     w.root?.packageName?.toString()?.let { pkg ->
                         pkg != packageName &&
-                            pkg != "com.android.systemui" &&
-                            !pkg.contains("launcher", ignoreCase = true)
+                            !pkg.contains("launcher", ignoreCase = true) &&
+                            (pkg != "com.android.systemui" || pkg in voiceAssistantPackages)
                     } == true
             } ?: false
         } catch (e: Exception) {
             false
+        }
+
+        // 通知栏/QS 面板展开瞬间：systemui 的 SYS 窗口会获得焦点
+        // （常驻状态栏不抢焦点，可区分），检测到即收起——补 typeNotificationStateChanged
+        // 之外 QS 二次下拉的漏网窗口。
+        val hasShadeFocused = try {
+            windows?.any { w ->
+                w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
+                    w.isFocused &&
+                    w.root?.packageName?.toString() == "com.android.systemui"
+            } ?: false
+        } catch (e: Exception) {
+            false
+        }
+
+        if (hasShadeFocused) {
+            Log.d(TAG, "锁机中检测到通知栏/QS 面板获得焦点，立即收起")
+            dismissNotificationShade()
         }
 
         if (hasSplit || hasForeignSysWindow) {
@@ -250,13 +289,69 @@ class GuardAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** 收起通知栏（下拉状态栏也会被顶回）。 */
+    /** 收起通知栏（下拉状态栏也会被顶回）。250ms 节流防 SystemUI 限流。 */
     fun dismissNotificationShade() {
+        val now = System.currentTimeMillis()
+        if (now - lastDismissAt < 250L) return
+        lastDismissAt = now
         try {
             performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
         } catch (e: Exception) {
             Log.w(TAG, "收起通知栏失败：${e.message}")
         }
+    }
+
+    /**
+     * 状态栏物理拦截条：锁机期间在状态栏高度区域挂一条
+     * TYPE_ACCESSIBILITY_OVERLAY 全宽细条，直接吞掉下拉手势的起点——
+     * 通知栏根本展开不了，不依赖事件后的"收起"。
+     * 无障碍被回收时系统会自动移除本窗口；服务重连后由
+     * [onAccessibilityEvent]/守护巡检重新挂载。
+     */
+    fun ensureStatusBarBlock() {
+        try {
+            val state = lockState ?: return
+            val needed = state.isLocked && state.shouldBlockNow
+            if (needed && statusBarBlock == null) {
+                val barHeight = runCatching {
+                    val rid = resources.getIdentifier("status_bar_height", "dimen", "android")
+                    if (rid > 0) resources.getDimensionPixelSize(rid) else 0
+                }.getOrDefault(0) + (8 * resources.displayMetrics.density).toInt()
+                val block = object : android.view.View(this) {
+                    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+                        dismissNotificationShade()
+                        return true
+                    }
+                }
+                val lp = android.view.WindowManager.LayoutParams(
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                    barHeight,
+                    android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                    android.graphics.PixelFormat.TRANSLUCENT
+                ).apply { gravity = android.view.Gravity.TOP }
+                getSystemService(android.view.WindowManager::class.java).addView(block, lp)
+                statusBarBlock = block
+                Log.d(TAG, "状态栏拦截条已挂载")
+            } else if (!needed && statusBarBlock != null) {
+                removeStatusBarBlock()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "状态栏拦截条挂载失败（忽略，回退事件收起）：${e.message}")
+        }
+    }
+
+    private fun removeStatusBarBlock() {
+        try {
+            statusBarBlock?.let {
+                getSystemService(android.view.WindowManager::class.java).removeView(it)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "移除状态栏拦截条失败：${e.message}")
+        }
+        statusBarBlock = null
     }
 
     override fun onInterrupt() {
@@ -265,6 +360,7 @@ class GuardAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        removeStatusBarBlock()
         instance = null
         Log.d(TAG, "无障碍服务已销毁")
 
