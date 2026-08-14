@@ -103,6 +103,26 @@ class LockScreenActivity : ComponentActivity() {
         var foreground: Boolean = false
             private set
 
+        /** 无 Dhizuku 强度 3：Activity 正在承载朋友密码输入，守护入口必须让位。 */
+        @Volatile
+        var friendUnlockActive: Boolean = false
+            private set
+
+        /** 最近一次置位 [friendUnlockActive] 的时间戳，供守护侧超时看门狗复位。 */
+        @Volatile
+        var friendUnlockActiveSince: Long = 0L
+            private set
+
+        fun setFriendUnlockActive() {
+            friendUnlockActive = true
+            friendUnlockActiveSince = System.currentTimeMillis()
+        }
+
+        fun clearFriendUnlockActive() {
+            friendUnlockActive = false
+            friendUnlockActiveSince = 0L
+        }
+
         /**
          * 显示锁机。
          *
@@ -240,6 +260,7 @@ class LockScreenActivity : ComponentActivity() {
             val appCtx = context.applicationContext
             try {
                 if (lockState.unlockStrength == 3) {
+                    setFriendUnlockActive()
                     LockScreenActivity.markLaunchPending()
                     val intent = Intent(appCtx, LockScreenActivity::class.java).apply {
                         putExtra(EXTRA_FRIEND_UNLOCK, true)
@@ -270,6 +291,9 @@ class LockScreenActivity : ComponentActivity() {
                     UnlockChallengeActivity.show(appCtx, required)
                 }
             } catch (e: Exception) {
+                // 强度 3 的 Activity 未能拉起时收回让位标志，守护立即接管，
+                // 防止 flag 悬挂导致守护永久放行。
+                clearFriendUnlockActive()
                 Log.e(TAG, "启动解锁流程失败：${e.message}")
             }
         }
@@ -320,8 +344,8 @@ class LockScreenActivity : ComponentActivity() {
     /** 答题成功后是解锁（false）还是换取一次暂停（true）。 */
     private var pendingPause = false
 
-    /** 强度 3 专用入口请求序号；每次递增都可靠触发 Compose 滚动与聚焦。 */
-    private var friendUnlockRequestId by mutableIntStateOf(0)
+    /** 强度 3 专用会话；只显示朋友密码 UI，不再落到普通锁机主页。 */
+    private var friendUnlockSession by mutableStateOf(false)
 
     /** 失焦置顶节流：防止覆盖层/窗口动画触发失焦→置顶→再失焦 的高频循环（ANR/闪退源）。 */
     private var lastFocusReassertAt = 0L
@@ -329,8 +353,8 @@ class LockScreenActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockState = LockState(this)
-        friendUnlockRequestId =
-            if (intent.getBooleanExtra(EXTRA_FRIEND_UNLOCK, false)) 1 else 0
+        friendUnlockSession = intent.getBooleanExtra(EXTRA_FRIEND_UNLOCK, false)
+        if (friendUnlockSession) setFriendUnlockActive() else clearFriendUnlockActive()
         instance = this
         instanceCreatedAt = System.currentTimeMillis()
         launchPendingAt = 0L
@@ -373,28 +397,37 @@ class LockScreenActivity : ComponentActivity() {
         }
 
         setContent {
-            LockScreenContent(
-                lockState = lockState,
-                friendUnlockRequestId = friendUnlockRequestId,
-                onStartChallenge = { count -> startChallenge(count) },
-                onUnlocked = {
+            val unlockNow = {
                     // 先退出系统级 Lock Task，再释放锁机
                     com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
                     lockState.releaseLock()
                     LockGuardService.stop(applicationContext)
                     notifyGuardInterrupted()
                     finish()
-                }
-            )
+            }
+            if (friendUnlockSession) {
+                FriendUnlockOnlyScreen(
+                    lockState = lockState,
+                    onVerified = unlockNow,
+                    onExpired = { finish() }
+                )
+            } else {
+                LockScreenContent(
+                    lockState = lockState,
+                    onStartChallenge = { count -> startChallenge(count) },
+                    onUnlocked = unlockNow
+                )
+            }
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_FRIEND_UNLOCK, false)) {
-            friendUnlockRequestId += 1
-        }
+        // singleTask 复用时整体覆盖会话标志：普通 show() 复用旧实例会把
+        // 朋友会话复位回普通锁机主页，避免会话残留跳过 LockTask。
+        friendUnlockSession = intent.getBooleanExtra(EXTRA_FRIEND_UNLOCK, false)
+        if (friendUnlockSession) setFriendUnlockActive() else clearFriendUnlockActive()
         if (intent.getBooleanExtra(EXTRA_REQUEST_PAUSE, false)) {
             startChallenge(-1)
         }
@@ -482,7 +515,13 @@ class LockScreenActivity : ComponentActivity() {
 
     @Deprecated("Back blocked during lock")
     override fun onBackPressed() {
-        // 拦截返回键：锁机期间任何退出手段都无效
+        if (friendUnlockSession) {
+            if (lockState.shouldBlockNow) restoreOverlayAfterFriendUnlock()
+            friendUnlockSession = false
+            clearFriendUnlockActive()
+            finish()
+        }
+        // 普通锁机期间拦截返回键
     }
 
     override fun onResume() {
@@ -516,7 +555,12 @@ class LockScreenActivity : ComponentActivity() {
         // 过去在 onResume 里同步执行 → 主线程被 Binder 阻塞 → Compose 首帧
         // 画不出来 = 「第一次开启锁机白屏无响应」，第二次因已缓存所以正常。
         // 现在：DPM 配置放后台线程，startLockTask() 回主线程执行（必须主线程）。
-        if (lockState.shouldBlockNow) {
+        if (friendUnlockSession) {
+            // 无 Dhizuku 的朋友密码会话只需 Activity 输入，不尝试 LockTask，
+            // 否则 prepare 失败后会重新挂悬浮窗盖住输入界面。
+            setFriendUnlockActive()
+            lockTaskRequested = false
+        } else if (lockState.shouldBlockNow) {
             enterLockTaskAsync()
         } else {
             com.focusguard.app.enhance.LockTaskEnhancer.exit(this)
@@ -731,6 +775,9 @@ class LockScreenActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         foreground = false
+        // 离开前台立即取消守护让位：Home/息屏等情况下由守护巡检恢复悬浮窗防线，
+        // 避免会话标志悬挂造成空窗；回到前台时 onResume 会重新置位。
+        clearFriendUnlockActive()
         // 注意：这里**不再**直接拉起覆盖层。
         // 早期实现为"0 延迟堵破解窗口"在 onPause 里 addView 覆盖层，
         // 用户反复上滑-回来时造成高频窗口增删 → 主线程卡死（倒计时停、按钮无响应）。
@@ -763,7 +810,9 @@ class LockScreenActivity : ComponentActivity() {
         // 1. 收起通知栏
         // 2. 把自己置顶（盖住华为智慧多窗侧边栏等系统窗口）
         // 注意：本 Activity 仍在 resumed 状态（仅失焦），此时 startActivity 合法。
-        if (!hasFocus && lockState.shouldBlockNow && !UnlockChallengeActivity.active) {
+        if (!hasFocus && lockState.shouldBlockNow &&
+            !UnlockChallengeActivity.active && !friendUnlockSession
+        ) {
             // 屏幕已息屏（按电源键）：不折腾（置顶会把屏幕重新点亮）
             val pm = getSystemService(android.os.PowerManager::class.java)
             if (pm != null && !pm.isInteractive) return
@@ -791,6 +840,11 @@ class LockScreenActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (friendUnlockSession && lockState.shouldBlockNow) {
+            restoreOverlayAfterFriendUnlock()
+        }
+        friendUnlockSession = false
+        clearFriendUnlockActive()
         if (instance === this) instance = null
         instanceCreatedAt = 0L
         foreground = false
@@ -802,14 +856,74 @@ class LockScreenActivity : ComponentActivity() {
         // 用已销毁的 Activity 作为 Context 拉起自己会造成崩溃循环。
         // 恢复工作交由 LockGuardService 的巡检完成。
     }
+
+    private fun restoreOverlayAfterFriendUnlock() {
+        if (!LockOverlayManager.canShow(applicationContext) || LockOverlayManager.isShowing) return
+        runCatching {
+            LockOverlayManager.showNow(
+                context = applicationContext,
+                lockState = lockState,
+                onStartChallenge = {
+                    startChallengeFromOverlay(applicationContext, lockState)
+                },
+                onRequestPause = { showForPause(applicationContext) }
+            )
+        }.onFailure { Log.w(TAG, "朋友解锁退出后恢复悬浮窗失败：${it.message}") }
+    }
 }
 
 // ── UI ────────────────────────────────────────────────────────────────
 
+/** 强度 3 专用全屏会话：进入 Activity 后直接呈现密码输入，不显示普通锁机主页。 */
+@Composable
+private fun FriendUnlockOnlyScreen(
+    lockState: LockState,
+    onVerified: () -> Unit,
+    onExpired: () -> Unit
+) {
+    // 与 LockScreenContent 一致的到期收尾：锁自然到期时自动关闭本页，
+    // 否则 singleTask 复用与返回路径的守卫会不一致。
+    LaunchedEffect(Unit) {
+        while (lockState.isLocked) {
+            kotlinx.coroutines.delay(1000L)
+        }
+        onExpired()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF17131D), Color(0xFF0E0C12))
+                )
+            )
+            .padding(horizontal = 24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical)
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            UnlockCard(accent = Color(0xFF8B7CF6), accentSoft = Color(0xFFB4A5FF)) {
+                FriendUnlockSection(
+                    cipher = lockState.friendCipher,
+                    shift = lockState.friendShift,
+                    focusRequestId = 1,
+                    onVerified = onVerified
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun LockScreenContent(
     lockState: LockState,
-    friendUnlockRequestId: Int = 0,
     onStartChallenge: (Int) -> Unit,
     onUnlocked: () -> Unit
 ) {
@@ -906,15 +1020,6 @@ private fun LockScreenContent(
     val progress = if (totalSeconds <= 0) 0f
         else (shownSeconds.toFloat() / totalSeconds).coerceIn(0f, 1f)
 
-    val pageScrollState = rememberScrollState()
-    LaunchedEffect(friendUnlockRequestId) {
-        if (friendUnlockRequestId > 0) {
-            // 等首帧完成布局后滚到底部的朋友密码区。
-            kotlinx.coroutines.delay(120L)
-            pageScrollState.animateScrollTo(pageScrollState.maxValue)
-        }
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -946,7 +1051,7 @@ private fun LockScreenContent(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(pageScrollState)
+                .verticalScroll(rememberScrollState())
                 // 顶部留出状态栏高度（窗口已 edge-to-edge 铺满，
                 // 背景延伸到状态栏区域，内容不被刘海/挖孔压住）
                 .padding(start = 24.dp, end = 24.dp, top = 52.dp, bottom = 28.dp),
@@ -1053,7 +1158,6 @@ private fun LockScreenContent(
                         3 -> FriendUnlockSection(
                             cipher = lockState.friendCipher,
                             shift = lockState.friendShift,
-                            focusRequestId = friendUnlockRequestId,
                             onVerified = onUnlocked
                         )
                         2 -> UnlockButtonWithHint(

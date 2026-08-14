@@ -320,6 +320,21 @@ class LockGuardService : Service() {
                 return
             }
 
+            // 强度 3 的朋友密码正在锁机 Activity 内输入；此 Activity 本身即防线，
+            // 不补挂悬浮窗、不重新路由锁机页，否则会盖住输入界面。
+            // 看门狗：若 startActivity 被 ROM 静默吞掉（实例始终未创建且超过
+            // 启动窗口），收回让位标志，防止守护永久放行造成空窗。
+            if (LockScreenActivity.friendUnlockActive) {
+                val stale = LockScreenActivity.instance == null &&
+                    now - LockScreenActivity.friendUnlockActiveSince > 4_000L
+                if (stale) {
+                    Log.w(TAG, "朋友解锁会话超时未创建实例，收回让位标志")
+                    LockScreenActivity.clearFriendUnlockActive()
+                } else {
+                    return
+                }
+            }
+
             // 答题页让位规则（无缝接替架构）：
             // 点击答题后悬浮窗**保持显示**（目标页面在悬浮窗下方创建并绘制，
             // 其 onResume 就绪后自行撤下悬浮窗——桌面 0 毫秒暴露）。
@@ -540,8 +555,11 @@ class LockGuardService : Service() {
                 GuardWatchdogWorker.schedule(applicationContext)
                 Log.d(TAG, "任务被移除，守护已重启")
 
-                // 锁机中 → 立即拉回锁机页
-                if (lockState.isLocked && lockState.shouldBlockNow) {
+                // 锁机中 → 立即拉回锁机页（朋友密码会话期间让位：会话页被划掉
+                // 会走 onDestroy 恢复悬浮窗，无需在此抢跑）
+                if (lockState.isLocked && lockState.shouldBlockNow &&
+                    !com.focusguard.app.enforce.LockScreenActivity.friendUnlockActive
+                ) {
                     LockScreenActivity.show(applicationContext)
                 }
             }

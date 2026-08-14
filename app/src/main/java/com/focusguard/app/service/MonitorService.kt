@@ -443,6 +443,7 @@ class MonitorService : Service() {
             // 答题页启动中或已创建时均让位；只认 foreground 会在
             // startActivity→onResume 的窗口里把锁机页顶回，造成答题自动退出。
             if (com.focusguard.app.enforce.UnlockChallengeActivity.active) return
+            if (com.focusguard.app.enforce.LockScreenActivity.friendUnlockActive) return
             // 锁机页在前台也算受控
             if (com.focusguard.app.enforce.LockScreenActivity.instance != null) return
 

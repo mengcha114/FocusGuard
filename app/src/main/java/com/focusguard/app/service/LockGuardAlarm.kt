@@ -96,6 +96,8 @@ object LockGuardAlarm {
                 val activityOk = com.focusguard.app.enforce.LockScreenActivity.foreground
                 val challengeActive =
                     com.focusguard.app.enforce.UnlockChallengeActivity.active
+                val friendUnlockActive =
+                    com.focusguard.app.enforce.LockScreenActivity.friendUnlockActive
                 val preferActivity =
                     com.focusguard.app.enhance.DhizukuEnhancer.isReadinessUnknown(appCtx) ||
                         com.focusguard.app.enhance.DhizukuEnhancer.shouldPreferActivity(appCtx)
@@ -103,7 +105,7 @@ object LockGuardAlarm {
                 // 未生效则必须悬浮窗兜底。
                 val lockTaskOn = com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
                 if ((lockTaskOn || preferActivity) && !activityOk &&
-                    !challengeActive
+                    !challengeActive && !friendUnlockActive
                 ) {
                     if (preferActivity) {
                         com.focusguard.app.enhance.DhizukuEnhancer.warmUpAsync(appCtx)
@@ -113,7 +115,7 @@ object LockGuardAlarm {
                         .show(appCtx, forceActivity = true)
                 } else if (!lockTaskOn && !preferActivity && !overlayOk && !activityOk &&
                     com.focusguard.app.enforce.LockOverlayManager.canShow(appCtx) &&
-                    !challengeActive
+                    !challengeActive && !friendUnlockActive
                 ) {
                     Log.w(TAG, "自愈闹钟：检测到防线丢失，立即补挂悬浮窗")
                     com.focusguard.app.enforce.LockOverlayManager.show(

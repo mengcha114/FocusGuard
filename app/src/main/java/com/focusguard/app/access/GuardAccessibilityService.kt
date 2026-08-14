@@ -123,6 +123,10 @@ class GuardAccessibilityService : AccessibilityService() {
             return
         }
 
+        // 朋友密码会话（强度 3）期间锁机页承载输入，同样不做顶回，
+        // 否则输入法窗口会被误判成分屏并打断输入。
+        if (LockScreenActivity.friendUnlockActive) return
+
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> handleWindowsChanged()
