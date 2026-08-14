@@ -127,6 +127,10 @@ class GuardAccessibilityService : AccessibilityService() {
         // 否则输入法窗口会被误判成分屏并打断输入。
         if (LockScreenActivity.friendUnlockActive) return
 
+        // 悬浮窗朋友验证模式同样让位：外来系统窗口触发 HOME + reassert
+        // 会盖住验证界面、打断输入。
+        if (com.focusguard.app.enforce.LockOverlayManager.isFriendUnlockMode) return
+
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> handleWindowsChanged()

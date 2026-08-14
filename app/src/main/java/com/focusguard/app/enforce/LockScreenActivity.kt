@@ -260,6 +260,15 @@ class LockScreenActivity : ComponentActivity() {
             val appCtx = context.applicationContext
             try {
                 if (lockState.unlockStrength == 3) {
+                    // 悬浮窗优先：朋友密码验证直接画进悬浮窗（内置键盘 + 吞键/
+                    // 下拉拦截），不启动 Activity——手势退出物理上不可能。
+                    if (LockOverlayManager.canShow(appCtx)) {
+                        LockOverlayManager.enterFriendUnlockMode(appCtx, lockState) {
+                            handleOverlayChallengePassed(appCtx, false)
+                        }
+                        return
+                    }
+                    // 无悬浮窗权限 → Activity 会话兜底
                     setFriendUnlockActive()
                     LockScreenActivity.markLaunchPending()
                     val intent = Intent(appCtx, LockScreenActivity::class.java).apply {

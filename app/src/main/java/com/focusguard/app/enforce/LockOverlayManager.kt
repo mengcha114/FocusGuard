@@ -97,6 +97,14 @@ object LockOverlayManager {
     var isChallengeMode: Boolean = false
         private set
 
+    /**
+     * 当前是否处于朋友密码验证模式（强度 3）。
+     * 与 [isChallengeMode] 同时置位：守护巡检/窗口重建让位自动覆盖。
+     */
+    @Volatile
+    var isFriendUnlockMode: Boolean = false
+        private set
+
     /** 答题会话状态（object 级字段：窗口被 ROM 回收重建后进度不丢）。 */
     private var challengeSession: ChallengeSession? = null
 
@@ -121,6 +129,14 @@ object LockOverlayManager {
 
     /** 键盘是否显示字母页（默认数字页）。 */
     private var challengeLetterPage = false
+
+    // ── 朋友密码验证模式（强度 3；与答题模式互斥，共用视图引用） ──
+    private var friendUnlockInput = ""
+    private var friendUnlockFeedback = ""
+    private var friendUnlockFeedbackIsError = false
+    /** 朋友密码明文多为字母，默认字母页。 */
+    private var friendUnlockLetterPage = true
+    private var friendUnlockPassedCallback: (() -> Unit)? = null
 
     /** 悬浮窗内答题的会话状态。 */
     private data class ChallengeSession(
@@ -281,9 +297,11 @@ object LockOverlayManager {
                 isFocusableInTouchMode = true
                 isFocusable = true
             }
-            // 窗口重建时若处于答题模式 → 恢复答题界面（进度保留）
+            // 窗口重建时若处于答题/朋友验证模式 → 恢复对应界面（进度保留）
             val session = challengeSession
-            if (isChallengeMode && session != null) {
+            if (isChallengeMode && isFriendUnlockMode) {
+                root.addView(buildFriendUnlockContent(appContext, lockState))
+            } else if (isChallengeMode && session != null) {
                 root.addView(buildChallengeContent(appContext, lockState, session))
             } else {
                 root.addView(buildContent(appContext, lockState, onStartChallenge, onRequestPause))
@@ -989,6 +1007,8 @@ object LockOverlayManager {
 
         challengePassedCallback = onPassed
         challengeLetterPage = false
+        // 互斥：进入答题模式即复位朋友验证标志。
+        isFriendUnlockMode = false
         // 已有未完成的答题会话（用户点「返回锁机界面」再进）→ 恢复同一题，
         // 防止用"退出重进"绕过「换一题」5 次限制反复刷题。
         if (challengeSession == null) {
@@ -1033,6 +1053,7 @@ object LockOverlayManager {
             return
         }
         isChallengeMode = false
+        isFriendUnlockMode = false
         // 注意：challengeSession 故意**不清空**——「返回锁机界面」只是暂停答题，
         // 再进时恢复同一题（enterChallengeMode 会复用），防止退出重进换题绕过限制。
         // 会话只在答题通过（onSubmitAnswer → challengeSession = null）或
@@ -1052,6 +1073,95 @@ object LockOverlayManager {
         hideSystemBars(root)
         startClock()
         Log.d(TAG, "已退出答题模式，恢复锁机界面")
+    }
+
+    /**
+     * 进入朋友密码验证模式（强度 3，悬浮窗形态）。
+     *
+     * 与答题模式同构：验证 UI 直接画在悬浮窗里，不启动 Activity。
+     * 悬浮窗不属于任何 Task → 手势退出物理上不可能；根视图自带的
+     * 吞键/下拉拦截/焦点抢占全部生效。
+     */
+    fun enterFriendUnlockMode(
+        context: Context,
+        lockState: LockState,
+        onPassed: () -> Unit
+    ) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            uiHandler.post { enterFriendUnlockMode(context, lockState, onPassed) }
+            return
+        }
+        if (!isShowing) {
+            showNow(
+                context = context,
+                lockState = lockState,
+                onStartChallenge = {},
+                onRequestPause = null
+            )
+        }
+        val root = overlayRoot
+        if (root == null) {
+            Log.w(TAG, "悬浮窗不可用，无法进入朋友密码验证")
+            return
+        }
+
+        friendUnlockPassedCallback = onPassed
+        friendUnlockInput = ""
+        friendUnlockFeedback = ""
+        friendUnlockFeedbackIsError = false
+        friendUnlockLetterPage = true
+        // 互斥：进入朋友验证即放弃未完成的答题会话（两种入口不同时存在于
+        // 同一锁机实例），避免回收重建时错渲染成暂停答题界面。
+        challengeSession = null
+        // 锁机时钟停掉（验证界面没有倒计时视图）
+        clockRunnable?.let { uiHandler.removeCallbacks(it) }
+        clockRunnable = null
+        timeText = null
+        statusText = null
+        wallClockText = null
+        wallDateText = null
+
+        isFriendUnlockMode = true
+        isChallengeMode = true
+        root.removeAllViews()
+        root.addView(buildFriendUnlockContent(context.applicationContext, lockState))
+        root.requestFocus()
+        hideSystemBars(root)
+        Log.d(TAG, "已进入悬浮窗内朋友密码验证模式")
+    }
+
+    /** 退出朋友密码验证模式，恢复锁机主界面（必须主线程；非主线程自动 post）。 */
+    fun exitFriendUnlockMode(
+        context: Context,
+        lockState: LockState,
+        onStartChallenge: () -> Unit,
+        onRequestPause: (() -> Unit)?
+    ) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            uiHandler.post {
+                exitFriendUnlockMode(context, lockState, onStartChallenge, onRequestPause)
+            }
+            return
+        }
+        isFriendUnlockMode = false
+        isChallengeMode = false
+        friendUnlockPassedCallback = null
+        friendUnlockInput = ""
+        friendUnlockFeedback = ""
+        clearChallengeViewRefs()
+
+        val root = overlayRoot ?: return
+        lastChallengeCallback = onStartChallenge
+        lastPauseCallback = onRequestPause
+        currentLockState = lockState
+        root.removeAllViews()
+        root.addView(
+            buildContent(context.applicationContext, lockState, onStartChallenge, onRequestPause)
+        )
+        root.requestFocus()
+        hideSystemBars(root)
+        startClock()
+        Log.d(TAG, "已退出朋友密码验证模式，恢复锁机界面")
     }
 
     private fun clearChallengeViewRefs() {
@@ -1232,6 +1342,308 @@ object LockOverlayManager {
         return scroll
     }
 
+    /** 构建朋友密码验证界面（纯传统 View，与答题界面同构）。 */
+    private fun buildFriendUnlockContent(
+        context: Context,
+        lockState: LockState
+    ): View {
+        val scroll = android.widget.ScrollView(context).apply {
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(context, 20), dp(context, 52), dp(context, 20), dp(context, 20))
+        }
+
+        // ── 标题 ──────────────────────────────────────
+        container.addView(
+            TextView(context).apply {
+                text = "朋友辅助解锁"
+                textSize = 19f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+            },
+            matchWrap()
+        )
+
+        container.addView(
+            TextView(context).apply {
+                text = "输入朋友提供的密码即可解锁"
+                textSize = 11f
+                setTextColor(Color.parseColor("#70FFFFFF"))
+                setPadding(0, dp(context, 4), 0, 0)
+            },
+            matchWrap()
+        )
+
+        // ── 密文卡 ──────────────────────────────────
+        container.addView(
+            TextView(context).apply {
+                text = "密文：${lockState.friendCipher}\n偏移量：${lockState.friendShift}"
+                textSize = 17f
+                setTextColor(Color.parseColor("#D0BCFF"))
+                typeface = Typeface.DEFAULT_BOLD
+                setLineSpacing(dp(context, 6).toFloat(), 1f)
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 16).toFloat()
+                    setColor(0x144F378B.toInt())
+                    setStroke(dp(context, 1), 0x334F378B.toInt())
+                }
+                setPadding(dp(context, 16), dp(context, 16), dp(context, 16), dp(context, 16))
+            },
+            matchWrap().apply { topMargin = dp(context, 14) }
+        )
+
+        // ── 输入显示区 ──────────────────────────────
+        container.addView(
+            TextView(context).apply {
+                text = if (friendUnlockInput.isEmpty()) "请输入密码" else friendUnlockInput
+                textSize = 22f
+                gravity = Gravity.CENTER
+                setTextColor(
+                    if (friendUnlockInput.isEmpty()) Color.parseColor("#50FFFFFF") else Color.WHITE
+                )
+                typeface = Typeface.DEFAULT_BOLD
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(0xFF1A1622.toInt())
+                    setStroke(dp(context, 1), 0xFF4F378B.toInt())
+                }
+                setPadding(dp(context, 12), dp(context, 12), dp(context, 12), dp(context, 12))
+                challengeAnswerText = this
+            },
+            matchWrap().apply { topMargin = dp(context, 12) }
+        )
+
+        // ── 反馈区 ──────────────────────────────────
+        container.addView(
+            TextView(context).apply {
+                text = friendUnlockFeedback
+                textSize = 12f
+                setTextColor(
+                    if (friendUnlockFeedbackIsError) Color.parseColor("#EF9A9A")
+                    else Color.parseColor("#A5D6A7")
+                )
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(if (friendUnlockFeedbackIsError) 0x18EF5350 else 0x1866BB6A)
+                }
+                setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10))
+                visibility = if (friendUnlockFeedback.isBlank()) View.GONE else View.VISIBLE
+                challengeFeedbackText = this
+            },
+            matchWrap().apply { topMargin = dp(context, 10) }
+        )
+
+        // ── 自绘键盘 ────────────────────────────────
+        val keyboardBox = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        challengeKeyboardBox = keyboardBox
+        container.addView(keyboardBox, matchWrap().apply { topMargin = dp(context, 12) })
+        renderFriendKeyboard(context, lockState)
+
+        // ── 返回锁机 ────────────────────────────────
+        container.addView(
+            Button(context).apply {
+                text = "返回锁机界面"
+                textSize = 13f
+                setTextColor(Color.parseColor("#C0B4FF"))
+                isAllCaps = false
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(0x334F378B.toInt())
+                }
+                setPadding(dp(context, 20), dp(context, 9), dp(context, 20), dp(context, 9))
+                setOnClickListener {
+                    val ctx = lastContext ?: context
+                    exitFriendUnlockMode(
+                        ctx, lockState,
+                        onStartChallenge = lastChallengeCallback ?: {},
+                        onRequestPause = lastPauseCallback
+                    )
+                }
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.CENTER
+                topMargin = dp(context, 14)
+            }
+        )
+
+        scroll.addView(
+            container,
+            android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        return scroll
+    }
+
+    /** 渲染朋友密码验证的自绘键盘（字母页 / 数字页可切换，默认字母页）。 */
+    private fun renderFriendKeyboard(
+        context: Context,
+        lockState: LockState
+    ) {
+        val box = challengeKeyboardBox ?: return
+        box.removeAllViews()
+
+        val rows: List<List<String>> = if (friendUnlockLetterPage) {
+            listOf(
+                listOf("A", "B", "C", "D", "E", "F", "G"),
+                listOf("H", "I", "J", "K", "L", "M", "N"),
+                listOf("O", "P", "Q", "R", "S", "T", "U"),
+                listOf("V", "W", "X", "Y", "Z", "⌫")
+            )
+        } else {
+            listOf(
+                listOf("1", "2", "3"),
+                listOf("4", "5", "6"),
+                listOf("7", "8", "9"),
+                listOf("-", "0", ".")
+            )
+        }
+
+        rows.forEach { row ->
+            box.addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    row.forEach { key ->
+                        addView(
+                            buildKeyButton(context, key) {
+                                when (key) {
+                                    "⌫" -> onFriendKeyBackspace()
+                                    else -> onFriendKeyInput(key)
+                                }
+                            },
+                            LinearLayout.LayoutParams(
+                                0, dp(context, 46), 1f
+                            ).apply {
+                                marginStart = dp(context, 3)
+                                marginEnd = dp(context, 3)
+                                topMargin = dp(context, 3)
+                                bottomMargin = dp(context, 3)
+                            }
+                        )
+                    }
+                },
+                matchWrap()
+            )
+        }
+
+        // 功能键行：ABC/123 切换、清空、退格（数字页）
+        box.addView(
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(
+                    buildKeyButton(
+                        context,
+                        if (friendUnlockLetterPage) "123" else "ABC"
+                    ) {
+                        friendUnlockLetterPage = !friendUnlockLetterPage
+                        renderFriendKeyboard(context, lockState)
+                    },
+                    LinearLayout.LayoutParams(0, dp(context, 46), 1f).apply {
+                        marginStart = dp(context, 3); marginEnd = dp(context, 3)
+                    }
+                )
+                if (!friendUnlockLetterPage) {
+                    addView(
+                        buildKeyButton(context, "⌫") { onFriendKeyBackspace() },
+                        LinearLayout.LayoutParams(0, dp(context, 46), 1f).apply {
+                            marginStart = dp(context, 3); marginEnd = dp(context, 3)
+                        }
+                    )
+                }
+                addView(
+                    buildKeyButton(context, "清空") {
+                        friendUnlockInput = ""
+                        refreshFriendAnswerText()
+                    },
+                    LinearLayout.LayoutParams(0, dp(context, 46), 1f).apply {
+                        marginStart = dp(context, 3); marginEnd = dp(context, 3)
+                    }
+                )
+            },
+            matchWrap()
+        )
+
+        // 提交
+        box.addView(
+            Button(context).apply {
+                text = "验证密码"
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                isAllCaps = false
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(0xFF7C4DFF.toInt())
+                }
+                setOnClickListener { onSubmitFriendUnlock(context, lockState) }
+            },
+            LinearLayout.LayoutParams(0, dp(context, 50), 2f).apply {
+                marginStart = dp(context, 3)
+                marginEnd = dp(context, 3)
+                topMargin = dp(context, 8)
+            }
+        )
+    }
+
+    private fun onFriendKeyInput(key: String) {
+        if (friendUnlockInput.length >= 24) return
+        friendUnlockInput += key
+        refreshFriendAnswerText()
+    }
+
+    private fun onFriendKeyBackspace() {
+        if (friendUnlockInput.isNotEmpty()) {
+            friendUnlockInput = friendUnlockInput.dropLast(1)
+            refreshFriendAnswerText()
+        }
+    }
+
+    private fun refreshFriendAnswerText() {
+        challengeAnswerText?.let { tv ->
+            tv.text = if (friendUnlockInput.isEmpty()) "请输入密码" else friendUnlockInput
+            tv.setTextColor(
+                if (friendUnlockInput.isEmpty()) Color.parseColor("#50FFFFFF") else Color.WHITE
+            )
+        }
+    }
+
+    /** 提交朋友密码：验证通过 → 回调解锁；失败 → 提示并清空输入。 */
+    private fun onSubmitFriendUnlock(
+        context: Context,
+        lockState: LockState
+    ) {
+        if (friendUnlockInput.isBlank()) return
+        if (lockState.verifyFriendPassword(friendUnlockInput)) {
+            Log.d(TAG, "悬浮窗朋友密码验证通过")
+            val cb = friendUnlockPassedCallback
+            isFriendUnlockMode = false
+            isChallengeMode = false
+            friendUnlockPassedCallback = null
+            friendUnlockInput = ""
+            friendUnlockFeedback = ""
+            clearChallengeViewRefs()
+            cb?.invoke()
+        } else {
+            friendUnlockFeedback = "密码不正确，请重新输入"
+            friendUnlockFeedbackIsError = true
+            friendUnlockInput = ""
+            challengeFeedbackText?.let { tv ->
+                tv.text = friendUnlockFeedback
+                tv.visibility = View.VISIBLE
+                tv.setTextColor(Color.parseColor("#EF9A9A"))
+            }
+            refreshFriendAnswerText()
+        }
+    }
+
     /**
      * 渲染自绘键盘（数字页 / 字母页可切换）。
      *
@@ -1269,7 +1681,7 @@ object LockOverlayManager {
                     orientation = LinearLayout.HORIZONTAL
                     row.forEach { key ->
                         addView(
-                            buildKeyButton(context, key, session) {
+                            buildKeyButton(context, key) {
                                 when (key) {
                                     "⌫" -> onKeyBackspace(session)
                                     else -> onKeyInput(session, key)
@@ -1297,8 +1709,7 @@ object LockOverlayManager {
                 addView(
                     buildKeyButton(
                         context,
-                        if (challengeLetterPage) "123" else "ABC",
-                        session
+                        if (challengeLetterPage) "123" else "ABC"
                     ) {
                         challengeLetterPage = !challengeLetterPage
                         renderKeyboard(context, lockState, session)
@@ -1309,14 +1720,14 @@ object LockOverlayManager {
                 )
                 if (!challengeLetterPage) {
                     addView(
-                        buildKeyButton(context, "⌫", session) { onKeyBackspace(session) },
+                        buildKeyButton(context, "⌫") { onKeyBackspace(session) },
                         LinearLayout.LayoutParams(0, dp(context, 46), 1f).apply {
                             marginStart = dp(context, 3); marginEnd = dp(context, 3)
                         }
                     )
                 }
                 addView(
-                    buildKeyButton(context, "清空", session) {
+                    buildKeyButton(context, "清空") {
                         if (!session.switching) {
                             session.input = ""
                             refreshAnswerText(session)
@@ -1391,7 +1802,6 @@ object LockOverlayManager {
     private fun buildKeyButton(
         context: Context,
         label: String,
-        session: ChallengeSession,
         onClick: () -> Unit
     ): Button = Button(context).apply {
         text = label
@@ -1574,6 +1984,10 @@ object LockOverlayManager {
         wallClockText = null
         wallDateText = null
         isShowing = false
+        // 注意：isFriendUnlockMode / friendUnlock* 故意**不清空**——窗口被 ROM
+        // 回收后 verifyAttached → show → attachWindow 靠它们恢复朋友验证界面
+        // 与输入进度（与 challengeSession 的生存语义一致）；正常退出路径
+        // （exitFriendUnlockMode / 验证通过）已在复位标志后才进入这里。
         clearChallengeViewRefs()
     }
 }
