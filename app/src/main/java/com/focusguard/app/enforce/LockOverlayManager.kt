@@ -134,6 +134,7 @@ object LockOverlayManager {
     // ── 朋友密码验证模式（强度 3；与答题模式互斥，共用视图引用） ──
     private var friendUnlockInput = ""
     private var friendUnlockFeedback = ""
+    private var friendUnlockCipherShown = false
     private var friendUnlockFeedbackIsError = false
     /** 朋友密码明文多为字母，默认字母页。 */
     private var friendUnlockLetterPage = true
@@ -318,6 +319,20 @@ object LockOverlayManager {
                         )
                     }
                     hideSystemBars(this)
+                }
+
+                /**
+                 * 失焦监听：被更高 z-order 的系统窗口（ANR 对话框/低电量/SIM 提示）
+                 * 抢走焦点时，夺回焦点并重新隐藏系统栏。系统窗口盖顶期间
+                 * isAttachedToWindow 仍为 true，verifyAttached 检测不到，只能靠这里。
+                 */
+                override fun onWindowFocusChanged(hasFocus: Boolean) {
+                    super.onWindowFocusChanged(hasFocus)
+                    if (!hasFocus) {
+                        hideSystemBars(this)
+                        notifyShadeDismiss()
+                        requestFocus()
+                    }
                 }
             }.apply {
                 background = buildBackground(appContext)
@@ -1680,13 +1695,28 @@ object LockOverlayManager {
             matchWrap()
         )
 
-        // ── 密文卡 ──────────────────────────────────
+        // ── 密文卡（默认折叠，点击显示——旁人看到屏幕也拿不到密文） ──
         container.addView(
             TextView(context).apply {
-                text = "密文：${lockState.friendCipher}\n偏移量：${lockState.friendShift}"
-                textSize = 17f
-                setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+                var shown = false
+                fun refresh() {
+                    text = if (shown) {
+                        "密文：${lockState.friendCipher}\n偏移量：${lockState.friendShift}"
+                    } else {
+                        "密文已隐藏\n点击显示密文与偏移量"
+                    }
+                }
+                refresh()
+                textSize = if (friendUnlockCipherShown) 17f else 13f
+                setTextColor(
+                    android.graphics.Color.parseColor(
+                        com.focusguard.app.ui.theme.FocusColors.hex(
+                            if (friendUnlockCipherShown) p.accent else p.haze
+                        )
+                    )
+                )
                 typeface = Typeface.create("monospace", Typeface.BOLD)
+                gravity = Gravity.CENTER
                 setLineSpacing(dp(context, 6).toFloat(), 1f)
                 background = GradientDrawable().apply {
                     cornerRadius = dp(context, 12).toFloat()
@@ -1694,6 +1724,12 @@ object LockOverlayManager {
                     setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                 }
                 setPadding(dp(context, 16), dp(context, 16), dp(context, 16), dp(context, 16))
+                setOnClickListener {
+                    friendUnlockCipherShown = !friendUnlockCipherShown
+                    shown = friendUnlockCipherShown
+                    textSize = if (friendUnlockCipherShown) 17f else 13f
+                    refresh()
+                }
             },
             matchWrap().apply { topMargin = dp(context, 14) }
         )

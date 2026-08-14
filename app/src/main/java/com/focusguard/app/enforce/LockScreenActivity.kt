@@ -386,6 +386,9 @@ class LockScreenActivity : ComponentActivity() {
                 )
             }
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            // 防截屏/录屏：锁机页不进入系统截屏与最近任务缩略图（Activity 兜底路径）
+            // 答题页刻意不加（部分 ROM 会阻断输入法附着导致闪退）
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         } catch (e: Exception) {
             Log.w(TAG, "设置窗口标志失败：${e.message}")
         }
@@ -1870,6 +1873,8 @@ private fun FriendUnlockSection(
     var input by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var showHint by remember { mutableStateOf(false) }
+    // 密文折叠：默认遮挡（旁人看到屏幕也拿不到密文），点击才显示
+    var showCipher by remember { mutableStateOf(false) }
     val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
 
     LaunchedEffect(focusRequestId) {
@@ -1906,15 +1911,26 @@ private fun FriendUnlockSection(
                 Text("密文", fontSize = 11.sp, color = palette.haze)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = cipher.ifBlank { "——" },
+                    text = if (showCipher) {
+                        cipher.ifBlank { "——" }
+                    } else {
+                        "••••••••"
+                    },
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
                     color = palette.text,
                     fontFamily = FontFamily.Monospace,
-                    letterSpacing = 6.sp
+                    letterSpacing = 6.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showCipher = !showCipher }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
-                Spacer(Modifier.height(8.dp))
-                Text("偏移量：$shift", fontSize = 14.sp, color = palette.accentDeep)
+                Text(
+                    text = if (showCipher) "偏移量：$shift" else "点击显示密文与偏移量",
+                    fontSize = 12.sp,
+                    color = palette.haze
+                )
             }
         }
 
