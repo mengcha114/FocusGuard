@@ -247,6 +247,12 @@ private fun AppBlockedUntilScreen(
     blockUntil: Long,
     onGoHome: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val palette = remember(context) {
+        com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
+            com.focusguard.app.data.Settings(context).themeMode
+        )
+    }
     var remainingSeconds by remember { mutableIntStateOf(0) }
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -276,11 +282,7 @@ private fun AppBlockedUntilScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(Color(0xFF17151C), Color(0xFF1F1B24), Color(0xFF262029))
-                )
-            ),
+            .background(palette.bg),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -291,8 +293,8 @@ private fun AppBlockedUntilScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             Surface(
-                shape = RoundedCornerShape(28.dp),
-                color = Color(0xFF3A2E34)
+                shape = RoundedCornerShape(16.dp),
+                color = palette.surface
             ) {
                 Box(
                     modifier = Modifier.size(100.dp),
@@ -301,7 +303,7 @@ private fun AppBlockedUntilScreen(
                     Icon(
                         imageVector = Icons.Default.Block,
                         contentDescription = null,
-                        tint = Color(0xFFC6786F),
+                        tint = palette.error,
                         modifier = Modifier.size(52.dp)
                     )
                 }
@@ -311,21 +313,21 @@ private fun AppBlockedUntilScreen(
                 text = "该应用已被封锁",
                 fontSize = 26.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFEDE8E4),
+                color = palette.text,
                 textAlign = TextAlign.Center
             )
 
             Text(
                 text = appLabel,
                 fontSize = 18.sp,
-                color = Color(0xFFB9AFA8),
+                color = palette.haze,
                 textAlign = TextAlign.Center
             )
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF241F27))
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = palette.card)
             ) {
                 Column(
                     modifier = Modifier
@@ -337,18 +339,19 @@ private fun AppBlockedUntilScreen(
                     Text(
                         text = "封锁截止",
                         fontSize = 12.sp,
-                        color = Color(0xFF8A8078)
+                        color = palette.faint
                     )
                     Text(
                         text = untilFormat.format(java.util.Date(blockUntil)),
                         fontSize = 34.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFC6786F)
+                        color = palette.error
                     )
                     Text(
                         text = "剩余 $timeText",
                         fontSize = 14.sp,
-                        color = Color(0xFFB9AFA8)
+                        color = palette.haze
                     )
                 }
             }
@@ -356,7 +359,7 @@ private fun AppBlockedUntilScreen(
             Text(
                 text = "在此期间打开该应用会被挡住，退出后使用其他应用不受影响。",
                 fontSize = 14.sp,
-                color = Color(0xFF8A8078),
+                color = palette.haze,
                 textAlign = TextAlign.Center,
                 lineHeight = 21.sp
             )
@@ -366,9 +369,10 @@ private fun AppBlockedUntilScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF3E4A5C)
+                    containerColor = palette.accent,
+                    contentColor = palette.bg
                 )
             ) {
                 Icon(
@@ -391,6 +395,12 @@ private fun AppBlockScreen(
     resetHint: String,
     onGoHome: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val palette = remember(context) {
+        com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
+            com.focusguard.app.data.Settings(context).themeMode
+        )
+    }
     // 轻微的呼吸动画，避免界面显得像卡死的黑屏
     var pulse by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -403,15 +413,7 @@ private fun AppBlockScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF17151C),
-                        Color(0xFF1F1B24),
-                        Color(0xFF262029)
-                    )
-                )
-            ),
+            .background(palette.bg),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -422,15 +424,15 @@ private fun AppBlockScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             Surface(
-                shape = RoundedCornerShape(28.dp),
-                color = Color(0xFF3A2E34),
+                shape = RoundedCornerShape(16.dp),
+                color = palette.surface,
                 modifier = Modifier.size(if (pulse) 104.dp else 100.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Default.Block,
                         contentDescription = null,
-                        tint = Color(0xFFC6786F),
+                        tint = palette.error,
                         modifier = Modifier.size(52.dp)
                     )
                 }
@@ -440,21 +442,21 @@ private fun AppBlockScreen(
                 text = "已达使用上限",
                 fontSize = 26.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFEDE8E4),
+                color = palette.text,
                 textAlign = TextAlign.Center
             )
 
             Text(
                 text = appLabel,
                 fontSize = 18.sp,
-                color = Color(0xFFB9AFA8),
+                color = palette.haze,
                 textAlign = TextAlign.Center
             )
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF241F27))
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = palette.card)
             ) {
                 Column(
                     modifier = Modifier
@@ -462,8 +464,8 @@ private fun AppBlockScreen(
                         .padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    LimitRow("今日已用", formatMinutes(usedMinutes), Color(0xFFC6786F))
-                    LimitRow("设定上限", formatMinutes(limitMinutes), Color(0xFF8E9AAF))
+                    LimitRow("今日已用", formatMinutes(usedMinutes), palette.error, palette.haze)
+                    LimitRow("设定上限", formatMinutes(limitMinutes), palette.haze, palette.haze)
 
                     val progress = if (limitMinutes > 0) {
                         (usedMinutes.toFloat() / limitMinutes).coerceIn(0f, 1f)
@@ -474,8 +476,8 @@ private fun AppBlockScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(6.dp),
-                        color = Color(0xFFC6786F),
-                        trackColor = Color(0xFF3A3340)
+                        color = palette.error,
+                        trackColor = palette.line
                     )
 
                     Row(
@@ -485,13 +487,13 @@ private fun AppBlockScreen(
                         Icon(
                             imageVector = Icons.Default.Schedule,
                             contentDescription = null,
-                            tint = Color(0xFF8A8078),
+                            tint = palette.haze,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             text = resetHint,
                             fontSize = 13.sp,
-                            color = Color(0xFF8A8078)
+                            color = palette.haze
                         )
                     }
                 }
@@ -500,7 +502,7 @@ private fun AppBlockScreen(
             Text(
                 text = "该应用今日已被封锁，内容不可查看。\n如需调整，请在专注卫士中修改限额。",
                 fontSize = 14.sp,
-                color = Color(0xFF8A8078),
+                color = palette.haze,
                 textAlign = TextAlign.Center,
                 lineHeight = 21.sp
             )
@@ -510,9 +512,10 @@ private fun AppBlockScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF3E4A5C)
+                    containerColor = palette.accent,
+                    contentColor = palette.bg
                 )
             ) {
                 Icon(
@@ -528,13 +531,18 @@ private fun AppBlockScreen(
 }
 
 @Composable
-private fun LimitRow(label: String, value: String, valueColor: Color) {
+private fun LimitRow(
+    label: String,
+    value: String,
+    valueColor: Color,
+    labelColor: Color
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = label, fontSize = 14.sp, color = Color(0xFF8A8078))
+        Text(text = label, fontSize = 14.sp, color = labelColor)
         Text(
             text = value,
             fontSize = 16.sp,

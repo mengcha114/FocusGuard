@@ -41,6 +41,12 @@ fun UnlockChallengeScreen(
     val context = LocalContext.current
     val generator = remember { ChallengeGenerator() }
     val scope = rememberCoroutineScope()
+    // 答题页为沉浸深色界面，跟随主题但浅色回退深色·墨（见 DESIGN.md §3.2）
+    val palette = remember(context) {
+        com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
+            com.focusguard.app.data.Settings(context).themeMode
+        )
+    }
 
     val targetCorrectCount = remember { requiredCorrect.coerceAtLeast(1) }
     // 题数越多，单题难度越高：1 题=中等，>=3 题=困难
@@ -101,7 +107,7 @@ fun UnlockChallengeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF121212))
+            .background(palette.bg)
     ) {
         Column(
             modifier = Modifier
@@ -121,19 +127,19 @@ fun UnlockChallengeScreen(
                     Icon(
                         Icons.Default.Psychology,
                         contentDescription = null,
-                        tint = Color(0xFF7C4DFF)
+                        tint = palette.accent
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "解锁挑战",
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = palette.text
                     )
                 }
                 Text(
                     "进度 $currentCorrectCount / $targetCorrectCount",
-                    color = Color(0xFF4CAF50),
+                    color = palette.success,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
@@ -142,21 +148,21 @@ fun UnlockChallengeScreen(
             LinearProgressIndicator(
                 progress = { currentCorrectCount.toFloat() / targetCorrectCount },
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF4CAF50),
-                trackColor = Color.White.copy(alpha = 0.08f)
+                color = palette.success,
+                trackColor = palette.line.copy(alpha = 0.5f)
             )
 
             Text(
                 text = "答对 $targetCorrectCount 题即可解锁。答错会给出答案与解析并自动换题，进度不清零。",
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.6f)
+                color = palette.haze
             )
 
             // ── 题目卡片 ──────────────────────────────
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF263238))
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = palette.card)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Row(
@@ -167,7 +173,7 @@ fun UnlockChallengeScreen(
                         Text(
                             "题目",
                             fontSize = 13.sp,
-                            color = Color(0xFF7C4DFF),
+                            color = palette.accent,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
@@ -176,14 +182,14 @@ fun UnlockChallengeScreen(
                                 else -> "难度：中等"
                             },
                             fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.35f)
+                            color = palette.faint
                         )
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(
                         text = currentQuestion.question,
                         fontSize = 18.sp,
-                        color = Color.White,
+                        color = palette.text,
                         fontWeight = FontWeight.Medium,
                         lineHeight = 26.sp
                     )
@@ -193,9 +199,9 @@ fun UnlockChallengeScreen(
             // ── 答案显示区（自绘键盘） ──────────────────
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF1E1A26),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4F378B))
+                shape = RoundedCornerShape(10.dp),
+                color = palette.surface,
+                border = androidx.compose.foundation.BorderStroke(1.dp, palette.line)
             ) {
                 Box(
                     modifier = Modifier.padding(14.dp),
@@ -205,7 +211,7 @@ fun UnlockChallengeScreen(
                         text = userAnswer.ifEmpty { "请点击下方键盘输入答案" },
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (userAnswer.isEmpty()) Color.White.copy(alpha = 0.4f) else Color.White
+                        color = if (userAnswer.isEmpty()) palette.faint else palette.text
                     )
                 }
             }
@@ -237,9 +243,12 @@ fun UnlockChallengeScreen(
                                     .weight(1f)
                                     .height(48.dp),
                                 shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2740))
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = palette.surface,
+                                    contentColor = palette.text
+                                )
                             ) {
-                                Text(key, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text(key, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -258,9 +267,12 @@ fun UnlockChallengeScreen(
                             .weight(1f)
                             .height(48.dp),
                         shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2740))
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = palette.surface,
+                            contentColor = palette.text
+                        )
                     ) {
-                        Text("清空", fontSize = 14.sp, color = Color.White)
+                        Text("清空", fontSize = 14.sp)
                     }
                     Button(
                         onClick = {
@@ -272,9 +284,12 @@ fun UnlockChallengeScreen(
                             .weight(1f)
                             .height(48.dp),
                         shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E2740))
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = palette.surface,
+                            contentColor = palette.text
+                        )
                     ) {
-                        Text("⌫", fontSize = 18.sp, color = Color.White)
+                        Text("⌫", fontSize = 18.sp)
                     }
                 }
             }
@@ -282,12 +297,8 @@ fun UnlockChallengeScreen(
             // ── 反馈 ──────────────────────────────────
             feedbackMessage?.let { msg ->
                 Surface(
-                    color = if (isError) {
-                        Color(0xFFD32F2F).copy(alpha = 0.2f)
-                    } else {
-                        Color(0xFF388E3C).copy(alpha = 0.2f)
-                    },
-                    shape = RoundedCornerShape(12.dp),
+                    color = (if (isError) palette.error else palette.success).copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -297,13 +308,13 @@ fun UnlockChallengeScreen(
                         Icon(
                             if (isError) Icons.Default.Close else Icons.Default.CheckCircle,
                             contentDescription = null,
-                            tint = if (isError) Color(0xFFF44336) else Color(0xFF4CAF50),
+                            tint = if (isError) palette.error else palette.success,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
                             msg,
-                            color = Color.White,
+                            color = palette.text,
                             fontSize = 13.sp,
                             lineHeight = 19.sp
                         )
@@ -318,10 +329,12 @@ fun UnlockChallengeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF7C4DFF),
-                    disabledContainerColor = Color(0xFF2A2A2E)
+                    containerColor = palette.accent,
+                    contentColor = palette.bg,
+                    disabledContainerColor = palette.surface,
+                    disabledContentColor = palette.faint
                 )
             ) {
                 Text(if (switching) "准备下一题…" else "提交答案", fontSize = 17.sp)
@@ -338,7 +351,7 @@ fun UnlockChallengeScreen(
                 },
                 enabled = !switching && refreshCount < 5,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
+                shape = RoundedCornerShape(10.dp)
             ) {
                 Icon(
                     Icons.Default.Refresh,
@@ -348,7 +361,7 @@ fun UnlockChallengeScreen(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = if (refreshCount >= 5) "已达换题上限(5/5)" else "换一题 (${refreshCount}/5)",
-                    color = if (refreshCount >= 5) Color.White.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.7f),
+                    color = if (refreshCount >= 5) palette.faint else palette.haze,
                     fontSize = 14.sp
                 )
             }

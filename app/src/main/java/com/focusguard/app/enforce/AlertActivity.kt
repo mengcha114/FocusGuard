@@ -129,6 +129,12 @@ private fun AlertCard(
     onDismiss: () -> Unit,
     onOpenApp: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val palette = remember(context) {
+        com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
+            com.focusguard.app.data.Settings(context).themeMode
+        )
+    }
     // 轻遮罩（约 35% 黑）：能看到原画面但明显变暗，不强制全屏打断
     Box(
         modifier = Modifier
@@ -141,8 +147,8 @@ private fun AlertCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 32.dp),
-            shape = RoundedCornerShape(26.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF201B2A)),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = palette.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 24.dp)
         ) {
             Column(
@@ -152,22 +158,17 @@ private fun AlertCard(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(13.dp)
             ) {
-                // 图标：紫渐变圆角块 + 外圈光晕
+                // 图标：强调色圆角块
                 Box(
                     modifier = Modifier
                         .size(70.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color(0xFF8B7CF6), Color(0xFF5E4FD0))
-                            ),
-                            RoundedCornerShape(22.dp)
-                        ),
+                        .background(palette.accent, RoundedCornerShape(18.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = palette.bg,
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -176,7 +177,7 @@ private fun AlertCard(
                     text = title,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = palette.text,
                     textAlign = TextAlign.Center
                 )
 
@@ -185,7 +186,7 @@ private fun AlertCard(
                         text = message,
                         fontSize = 14.sp,
                         lineHeight = 21.sp,
-                        color = Color.White.copy(alpha = 0.78f),
+                        color = palette.text.copy(alpha = 0.85f),
                         textAlign = TextAlign.Center
                     )
                 }
@@ -194,12 +195,12 @@ private fun AlertCard(
                     // 倒计时徽章
                     Surface(
                         shape = RoundedCornerShape(50),
-                        color = Color(0xFFFFB74D).copy(alpha = 0.15f)
+                        color = palette.accent.copy(alpha = 0.14f)
                     ) {
                         Text(
-                            text = "⏳ $countdownSeconds 秒后将自动锁机，现在切回学习即可避免",
+                            text = "$countdownSeconds 秒后将自动锁机，现在切回学习即可避免",
                             fontSize = 12.sp,
-                            color = Color(0xFFFFB74D),
+                            color = palette.accent,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                         )
@@ -213,9 +214,10 @@ private fun AlertCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF8B7CF6)
+                        containerColor = palette.accent,
+                        contentColor = palette.bg
                     )
                 ) {
                     Text("知道了", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
@@ -224,7 +226,7 @@ private fun AlertCard(
                 TextButton(onClick = onOpenApp, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         "打开专注卫士",
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = palette.haze,
                         fontSize = 13.sp
                     )
                 }
