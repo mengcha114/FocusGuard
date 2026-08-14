@@ -111,7 +111,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (selectedMode == mode) Color(0xFF332D41) else Color(0xFF1F1F23)
+                    containerColor = if (selectedMode == mode) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
                 ),
                 onClick = { selectedMode = mode }
             ) {
@@ -124,7 +124,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                     RadioButton(
                         selected = selectedMode == mode,
                         onClick = { selectedMode = mode },
-                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFD0BCFF))
+                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
                     )
                     Spacer(Modifier.width(4.dp))
                     Column {
@@ -254,7 +254,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F1F23))
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -275,7 +275,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
                         onCheckedChange = { pauseEnabled = it },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
-                            checkedTrackColor = Color(0xFF4F378B)
+                            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
                         )
                     )
                 }
@@ -323,7 +323,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F1F23))
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("锁机规则", fontWeight = FontWeight.SemiBold, color = Color.White, fontSize = 14.sp)
@@ -376,7 +376,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
             shape = RoundedCornerShape(16.dp),
             enabled = ready,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF7C4DFF),
+                containerColor = MaterialTheme.colorScheme.primary,
                 disabledContainerColor = Color(0xFF2A2A2E)
             )
         ) {

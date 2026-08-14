@@ -93,7 +93,7 @@ fun AiChatScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF141416))
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(12.dp))
@@ -130,7 +130,7 @@ fun AiChatScreen() {
             TabRow(
                 selectedTabIndex = tab,
                 containerColor = Color.Transparent,
-                contentColor = Color(0xFFD0BCFF)
+                contentColor = MaterialTheme.colorScheme.primary
             ) {
                 Tab(
                     selected = tab == 0,
@@ -372,7 +372,7 @@ fun AiChatScreen() {
                     },
                     modifier = Modifier.size(60.dp),
                     shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF)),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     enabled = !sending
                 ) {
                     Icon(
@@ -409,7 +409,7 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                     bottomStart = if (isUser) 16.dp else 4.dp,
                     bottomEnd = if (isUser) 4.dp else 16.dp
                 ),
-                color = if (isUser) Color(0xFF4F378B) else Color(0xFF262031)
+                color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
             ) {
                 Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     if (isUser) {

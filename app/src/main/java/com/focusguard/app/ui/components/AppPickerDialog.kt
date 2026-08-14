@@ -71,7 +71,7 @@ fun AppPickerDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(20.dp),
-            color = Color(0xFF1C1B1F),
+            color = MaterialTheme.colorScheme.surface,
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
@@ -124,7 +124,7 @@ fun AppPickerDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = Color(0xFFD0BCFF))
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.height(10.dp))
                             Text(
                                 "正在读取应用列表…",
@@ -205,7 +205,7 @@ private fun AppRow(app: InstalledApp, selected: Boolean, onClick: () -> Unit) {
             Icon(
                 Icons.Default.Check,
                 contentDescription = null,
-                tint = Color(0xFF4CAF50),
+                tint = MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.size(20.dp)
             )
         }

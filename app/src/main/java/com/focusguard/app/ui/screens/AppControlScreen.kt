@@ -101,7 +101,7 @@ fun AppControlScreen() {
         // ── 分类 Tab ──────────────────────────────────
         TabRow(
             selectedTabIndex = selectedTab,
-            containerColor = Color(0xFF263238),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
             contentColor = Color.White
         ) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
@@ -125,7 +125,7 @@ fun AppControlScreen() {
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Color(0xFFD0BCFF))
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(10.dp))
                     Text("正在读取应用列表…", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
                 }
@@ -202,11 +202,11 @@ fun AppControlScreen() {
 private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Unit) {
     val (statusLabel, statusColor) = when (app.category) {
         AppCategory.GAME -> "游戏" to Color(0xFFF44336)
-        AppCategory.STUDY -> "学习" to Color(0xFF4CAF50)
+        AppCategory.STUDY -> "学习" to MaterialTheme.colorScheme.tertiary
         AppCategory.SYSTEM -> "系统" to Color(0xFF9E9E9E)
-        AppCategory.VIDEO -> "视频" to Color(0xFFFF9800)
-        AppCategory.SHORT_VIDEO -> "短视频" to Color(0xFFFF9800)
-        AppCategory.SOCIAL -> "社交" to Color(0xFFFF9800)
+        AppCategory.VIDEO -> "视频" to MaterialTheme.colorScheme.tertiary
+        AppCategory.SHORT_VIDEO -> "短视频" to MaterialTheme.colorScheme.tertiary
+        AppCategory.SOCIAL -> "社交" to MaterialTheme.colorScheme.tertiary
         AppCategory.UNKNOWN -> "未知" to Color(0xFF90A4AE)
     }
 
@@ -219,7 +219,7 @@ private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Un
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF263238))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Row(
             modifier = Modifier
@@ -266,12 +266,12 @@ private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Un
 
             if (hasRule) {
                 Surface(
-                    color = Color(0xFF7C4DFF).copy(alpha = 0.2f),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
                         text = "限时",
-                        color = Color(0xFFD0BCFF),
+                        color = MaterialTheme.colorScheme.primary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -337,7 +337,7 @@ private fun AppEditSheet(
     var verifyError by remember { mutableStateOf<String?>(null) }
     var pendingRule by remember { mutableStateOf<AppUsageRule?>(null) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF1C1B1F)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surface) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -470,8 +470,8 @@ private fun AppEditSheet(
                     shape = RoundedCornerShape(12.dp),
                     enabled = isDirty,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isDirty) Color(0xFF7C4DFF) else Color(0xFF3A3A40),
-                        disabledContainerColor = Color(0xFF3A3A40),
+                        containerColor = if (isDirty) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                         disabledContentColor = Color.White.copy(alpha = 0.4f)
                     )
                 ) { Text("保存") }
@@ -531,7 +531,7 @@ private fun AppEditSheet(
                         Text("取消", color = Color.White.copy(alpha = 0.5f))
                     }
                 },
-                containerColor = Color(0xFF241F27),
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(20.dp)
             )
         }

@@ -375,8 +375,8 @@ class MainActivity : ComponentActivity() {
                             Text("取消", color = Color.White.copy(alpha = 0.5f))
                         }
                     },
-                    containerColor = Color(0xFF241F27),
-                    shape = RoundedCornerShape(20.dp)
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(16.dp)
                 )
             }
         }

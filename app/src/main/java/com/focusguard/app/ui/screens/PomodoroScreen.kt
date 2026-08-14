@@ -22,6 +22,12 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun PomodoroScreen() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val palette = remember(context) {
+        com.focusguard.app.ui.theme.FocusColors.paletteFor(
+            com.focusguard.app.data.Settings(context).themeMode
+        )
+    }
     var isRunning by remember { mutableStateOf(false) }
     var isWorkPhase by remember { mutableStateOf(true) } // true: 25min, false: 5min
     var timeLeftSeconds by remember { mutableStateOf(25 * 60) }
@@ -69,7 +75,7 @@ fun PomodoroScreen() {
             Text(
                 text = if (isWorkPhase) "专注阶段 (25 分钟)" else "休息阶段 (5 分钟)",
                 fontSize = 16.sp,
-                color = if (isWorkPhase) Color(0xFF7C4DFF) else Color(0xFF4CAF50),
+                color = if (isWorkPhase) palette.accent else palette.success,
                 fontWeight = FontWeight.Medium
             )
         }
@@ -79,7 +85,7 @@ fun PomodoroScreen() {
             contentAlignment = Alignment.Center,
             modifier = Modifier.size(280.dp)
         ) {
-            val strokeColor = if (isWorkPhase) Color(0xFF7C4DFF) else Color(0xFF4CAF50)
+            val strokeColor = if (isWorkPhase) palette.accent else palette.success
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawCircle(
                     color = strokeColor.copy(alpha = 0.15f),
@@ -98,33 +104,34 @@ fun PomodoroScreen() {
                 Text(
                     text = timeFormatted,
                     fontSize = 48.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = palette.text
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = if (isRunning) "专注中..." else "准备就绪",
                     fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.6f)
+                    color = palette.haze
                 )
             }
         }
 
         // Session Count
         Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF263238))
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = palette.card)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = palette.success)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "今日已完成 $completedSessions 个番茄钟",
                     fontSize = 14.sp,
-                    color = Color.White
+                    color = palette.text
                 )
             }
         }
@@ -141,7 +148,8 @@ fun PomodoroScreen() {
                     .height(56.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRunning) Color(0xFFFF9800) else Color(0xFF7C4DFF)
+                    containerColor = if (isRunning) palette.accentDeep else palette.accent,
+                    contentColor = palette.bg
                 )
             ) {
                 Icon(

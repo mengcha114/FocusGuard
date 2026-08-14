@@ -130,7 +130,7 @@ fun PermissionSetupScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF141416))
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Column(
             modifier = Modifier
@@ -158,7 +158,7 @@ fun PermissionSetupScreen(
             LinearProgressIndicator(
                 progress = { if (required.isEmpty()) 1f else grantedCount.toFloat() / required.size },
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFFD0BCFF),
+                color = MaterialTheme.colorScheme.primary,
                 trackColor = Color.White.copy(alpha = 0.08f)
             )
             Text(
@@ -183,7 +183,7 @@ fun PermissionSetupScreen(
                 shape = RoundedCornerShape(14.dp),
                 enabled = allGranted,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF4F378B),
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
                     disabledContainerColor = Color(0xFF2A2A2E)
                 )
             ) {
@@ -210,7 +210,11 @@ private fun PermissionCard(item: PermissionItem, onRequest: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (item.isGranted) Color(0xFF1E3222) else Color(0xFF1F1F23)
+            containerColor = if (item.isGranted) {
+                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
         )
     ) {
         Row(
@@ -228,7 +232,7 @@ private fun PermissionCard(item: PermissionItem, onRequest: () -> Unit) {
                     modifier = Modifier
                         .size(42.dp)
                         .background(
-                            color = if (item.isGranted) Color(0xFF3D6B45) else Color(0xFF332D41),
+                            color = if (item.isGranted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant,
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -268,7 +272,7 @@ private fun PermissionCard(item: PermissionItem, onRequest: () -> Unit) {
             }
             if (!item.isGranted) {
                 TextButton(onClick = onRequest) {
-                    Text("授权", color = Color(0xFFD0BCFF))
+                    Text("授权", color = MaterialTheme.colorScheme.primary)
                 }
             }
         }

@@ -250,9 +250,9 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                TokenStatChip("今日调用", "$callsToday 次", Color(0xFF7C4DFF), Modifier.weight(1f))
-                TokenStatChip("节约", "$savedToday 次", Color(0xFF4CAF50), Modifier.weight(1f))
-                TokenStatChip("节约率", "$savedPct%", Color(0xFFFF9800), Modifier.weight(1f))
+                TokenStatChip("今日调用", "$callsToday 次", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                TokenStatChip("节约", "$savedToday 次", MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
+                TokenStatChip("节约率", "$savedPct%", MaterialTheme.colorScheme.tertiary, Modifier.weight(1f))
             }
 
             Spacer(Modifier.height(12.dp))
@@ -358,7 +358,7 @@ fun SettingsScreen(
                 Text(
                     text = "编辑特征词（${studyKeywords.lines().count { it.isNotBlank() }} + " +
                         "${entertainmentKeywords.lines().count { it.isNotBlank() }} 个词）",
-                    color = Color(0xFFD0BCFF),
+                    color = MaterialTheme.colorScheme.primary,
                     fontSize = 13.sp
                 )
             }
@@ -647,7 +647,7 @@ fun SettingsScreen(
             }
             exportMsg?.let {
                 Spacer(Modifier.height(6.dp))
-                Text(it, fontSize = 12.sp, color = Color(0xFF4CAF50))
+                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary)
             }
             Spacer(Modifier.height(4.dp))
             Text(
@@ -832,7 +832,7 @@ fun SettingsScreen(
                         Text("取消", color = Color.White.copy(alpha = 0.5f))
                     }
                 },
-                containerColor = Color(0xFF241F27),
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(20.dp)
             )
         }
@@ -873,7 +873,7 @@ private fun TokenSavingToggle(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = (if (highlight) Color(0xFF4CAF50) else Color(0xFFD0BCFF))
+            tint = (if (highlight) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary)
                 .copy(alpha = contentAlpha),
             modifier = Modifier.size(20.dp)
         )
@@ -899,7 +899,7 @@ private fun TokenSavingToggle(
             enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
-                checkedTrackColor = if (highlight) Color(0xFF388E3C) else Color(0xFF4F378B)
+                checkedTrackColor = if (highlight) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primaryContainer
             )
         )
     }
@@ -939,7 +939,7 @@ private fun SettingsGroupHeader(title: String) {
         text = title,
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
-        color = Color(0xFFD0BCFF),
+        color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
     )
 }
@@ -954,7 +954,7 @@ fun SettingsSection(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF263238)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
         Column(
@@ -966,7 +966,7 @@ fun SettingsSection(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = Color(0xFF7C4DFF),
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))

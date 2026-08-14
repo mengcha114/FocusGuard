@@ -139,7 +139,7 @@ fun HomeScreen(
                     title = "专注指数",
                     value = "$focusScore%",
                     icon = Icons.Default.Star,
-                    color = Color(0xFF388E3C),
+                    color = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.weight(1f)
                 )
                 StatCard(
@@ -181,7 +181,7 @@ fun HomeScreen(
                             .height(56.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF388E3C)
+                            containerColor = MaterialTheme.colorScheme.tertiary
                         )
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)
@@ -197,8 +197,8 @@ fun HomeScreen(
                         .height(56.dp),
                     shape = RoundedCornerShape(16.dp),
                     border = ButtonDefaults.outlinedButtonBorder.copy(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(Color(0xFF7C4DFF), Color(0xFF448AFF))
+                        brush = androidx.compose.ui.graphics.SolidColor(
+                            MaterialTheme.colorScheme.primary
                         )
                     )
                 ) {
@@ -230,7 +230,7 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF263238)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
                     Box(
@@ -312,7 +312,7 @@ fun LogItem(
     confidence: Float
 ) {
     val color = when (classification) {
-        "STUDY_WORK" -> Color(0xFF4CAF50)
+        "STUDY_WORK" -> MaterialTheme.colorScheme.tertiary
         "ENTERTAINMENT" -> Color(0xFFF44336)
         else -> Color(0xFF9E9E9E)
     }
@@ -326,7 +326,7 @@ fun LogItem(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF263238)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
         Row(
@@ -398,7 +398,7 @@ private fun MemoCard() {
                     Icon(
                         imageVector = Icons.Default.Checklist,
                         contentDescription = null,
-                        tint = Color(0xFFD0BCFF),
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(8.dp))
@@ -455,7 +455,7 @@ private fun MemoCard() {
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("管理备忘录", color = Color(0xFFD0BCFF), fontSize = 13.sp)
+                Text("管理备忘录", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
             }
         }
     }
@@ -477,7 +477,7 @@ private fun MemoRow(item: MemoItem, onToggle: () -> Unit) {
     val priorityColor = when (item.priority) {
         2 -> Color(0xFFEF5350)
         1 -> Color(0xFFFFB74D)
-        else -> Color(0xFF7C4DFF)
+        else -> MaterialTheme.colorScheme.primary
     }
     Row(
         modifier = Modifier
@@ -651,7 +651,7 @@ private fun MemoManageDialog(memoStore: MemoStore, onDismiss: () -> Unit) {
                         items = memoStore.getAll()
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F378B))
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) { Text("添加") }
         },
         dismissButton = {
@@ -659,7 +659,7 @@ private fun MemoManageDialog(memoStore: MemoStore, onDismiss: () -> Unit) {
                 Text("完成", color = Color.White.copy(alpha = 0.6f))
             }
         },
-        containerColor = Color(0xFF241F27),
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(20.dp)
     )
 }

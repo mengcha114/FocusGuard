@@ -40,7 +40,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF141416))
+            .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
     ) {
         // ── 顶栏 ──────────────────────────────────
@@ -81,7 +81,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1A26))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
@@ -107,7 +107,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1A26))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
@@ -172,7 +172,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
                     .weight(1f)
                     .height(50.dp),
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F378B))
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) {
                 Text("保存", fontSize = 15.sp)
             }

@@ -232,9 +232,9 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
     var expanded by remember { mutableStateOf(false) }
 
     val color = when (log.classification) {
-        "STUDY_WORK" -> Color(0xFF4CAF50)
-        "ENTERTAINMENT" -> Color(0xFFF44336)
-        else -> Color(0xFF9E9E9E)
+        "STUDY_WORK" -> MaterialTheme.colorScheme.tertiary
+        "ENTERTAINMENT" -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val label = when (log.classification) {
         "STUDY_WORK" -> "学习/工作"
@@ -250,7 +250,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
     }
     val actionColor = when (log.action) {
         "LOCK" -> Color(0xFFF44336)
-        "EXIT" -> Color(0xFFFF9800)
+        "EXIT" -> MaterialTheme.colorScheme.tertiary
         "WARN" -> Color(0xFFFFC107)
         "APP_BLOCK" -> Color(0xFFC6786F)
         else -> Color(0xFF9E9E9E)
@@ -273,7 +273,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
             .fillMaxWidth()
             .clickable { expanded = !expanded },
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF263238))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(
             modifier = Modifier
