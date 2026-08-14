@@ -282,10 +282,11 @@ object LockOverlayManager {
 
                 /**
                  * 全屏按压/滑动事件预拦截：
-                 * 任何在顶部 35% 区域内的触摸（DOWN/MOVE），全部阻断并收起通知栏。
+                 * 顶部 90dp 区域内的触摸（DOWN/MOVE）全部阻断并收起通知栏。
+                 * 固定绝对高度（替代 height*35%）：横屏时 height=短边，百分比覆盖不足。
                  */
                 override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
-                    if (event.rawY < height * 0.35f) {
+                    if (event.rawY < dp(appContext, 90)) {
                         hideSystemBars(this)
                         notifyShadeDismiss()
                         if (event.action == android.view.MotionEvent.ACTION_DOWN ||
@@ -295,6 +296,28 @@ object LockOverlayManager {
                         }
                     }
                     return super.dispatchTouchEvent(event)
+                }
+
+                /** 旋转/横竖切换：重建当前界面为对应布局（进度由字段保留）。 */
+                override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+                    super.onConfigurationChanged(newConfig)
+                    val cur = currentLockState ?: return
+                    removeAllViews()
+                    val session = challengeSession
+                    if (isChallengeMode && isFriendUnlockMode) {
+                        addView(buildFriendUnlockContent(appContext, cur))
+                    } else if (isChallengeMode && session != null) {
+                        addView(buildChallengeContent(appContext, cur, session))
+                    } else {
+                        addView(
+                            buildContent(
+                                appContext, cur,
+                                lastChallengeCallback ?: {},
+                                lastPauseCallback
+                            )
+                        )
+                    }
+                    hideSystemBars(this)
                 }
             }.apply {
                 background = buildBackground(appContext)
@@ -454,7 +477,22 @@ object LockOverlayManager {
         onStartChallenge: () -> Unit,
         onRequestPause: (() -> Unit)?
     ): View {
-        val p = palette(context)
+        val landscape = context.resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        return if (landscape) {
+            buildLandscapeContent(context, lockState, onStartChallenge, onRequestPause)
+        } else {
+            buildPortraitContent(context, lockState, onStartChallenge, onRequestPause)
+        }
+    }
+
+    /** 竖屏锁机主页。 */
+    private fun buildPortraitContent(
+        context: Context,
+        lockState: LockState,
+        onStartChallenge: () -> Unit,
+        onRequestPause: (() -> Unit)?
+    ): View {
         overlayPalette = p
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -564,6 +602,158 @@ object LockOverlayManager {
             ).apply { topMargin = dp(context, 22) }
         )
 
+        // 弹性占位：把按钮压到屏幕下部，消除底部大片空白
+        container.addView(
+            View(context),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+            )
+        )
+
+        // ── 操作区：待办/箴言/解锁按钮 ───────────────────
+        container.addView(
+            buildActionStack(context, lockState, onStartChallenge, onRequestPause),
+            matchWrap()
+        )
+
+        return container
+    }
+
+    /**
+     * 横屏沉浸式锁机主页：左栏核心计时（时钟/日期/状态卡），
+     * 右栏操作区（待办/箴言/解锁，可滚动）。DESIGN.md §3.6。
+     */
+    private fun buildLandscapeContent(
+        context: Context,
+        lockState: LockState,
+        onStartChallenge: () -> Unit,
+        onRequestPause: (() -> Unit)?
+    ): View {
+        val p = palette(context)
+        overlayPalette = p
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            setPadding(dp(context, 36), dp(context, 20), dp(context, 36), dp(context, 20))
+        }
+
+        // ── 左栏：真实时钟 + 日期 + 锁定状态卡 ──────────────
+        val left = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+                .apply { marginEnd = dp(context, 16) }
+        }
+        val wallClock = TextView(context).apply {
+            text = "--:--"
+            textSize = 40f
+            setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text)))
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            gravity = Gravity.CENTER
+            letterSpacing = 0.02f
+        }
+        wallClockText = wallClock
+        left.addView(wallClock, matchWrap())
+
+        val wallDate = TextView(context).apply {
+            text = ""
+            textSize = 11f
+            setTextColor(Color.parseColor(tint(p.haze, 0x8F)))
+            gravity = Gravity.CENTER
+            letterSpacing = 0.06f
+            setPadding(0, dp(context, 2), 0, 0)
+        }
+        wallDateText = wallDate
+        left.addView(wallDate, matchWrap())
+
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(context, 12).toFloat()
+                setColor(android.graphics.Color.parseColor(tint(p.card, 0xA6)))
+                setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
+            }
+            setPadding(dp(context, 18), dp(context, 16), dp(context, 18), dp(context, 16))
+        }
+        card.addView(
+            TextView(context).apply {
+                text = "专注卫士"
+                textSize = 12f
+                setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text)))
+                typeface = Typeface.DEFAULT_BOLD
+                letterSpacing = 0.1f
+                gravity = Gravity.CENTER
+            },
+            matchWrap()
+        )
+        val status = TextView(context).apply {
+            text = "设备已锁定"
+            textSize = 10f
+            setTextColor(Color.parseColor(tint(p.haze, 0xE6)))
+            gravity = Gravity.CENTER
+            letterSpacing = 0.08f
+            setPadding(0, dp(context, 8), 0, 0)
+        }
+        statusText = status
+        card.addView(status, matchWrap())
+        val time = TextView(context).apply {
+            text = "--:--"
+            textSize = 34f
+            setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+            typeface = Typeface.create("serif", Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(context, 4), 0, 0)
+        }
+        timeText = time
+        card.addView(time, matchWrap())
+        card.addView(
+            TextView(context).apply {
+                text = "剩余锁定时间"
+                textSize = 9f
+                setTextColor(Color.parseColor(tint(p.faint, 0xFF)))
+                gravity = Gravity.CENTER
+                letterSpacing = 0.14f
+            },
+            matchWrap()
+        )
+        left.addView(
+            card,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(context, 18) }
+        )
+        root.addView(left)
+
+        // ── 右栏：操作区（可滚动防溢出） ──────────────────
+        val scroll = android.widget.ScrollView(context).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1.22f)
+                .apply { marginStart = dp(context, 16) }
+        }
+        scroll.addView(buildActionStack(context, lockState, onStartChallenge, onRequestPause))
+        root.addView(scroll)
+
+        return root
+    }
+
+    /** 操作区组件（待办卡 + 箴言卡 + 解锁区），竖屏底部与横屏右栏共用。 */
+    private fun buildActionStack(
+        context: Context,
+        lockState: LockState,
+        onStartChallenge: () -> Unit,
+        onRequestPause: (() -> Unit)?
+    ): LinearLayout {
+        val p = palette(context)
+        val stack = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
         // ── 待办清单卡片（带边框，左对齐，逾期/紧急高亮） ──────
         val pending = runCatching { MemoStore(context).getPending() }.getOrDefault(emptyList())
         if (pending.isNotEmpty()) {
@@ -681,7 +871,7 @@ object LockOverlayManager {
                     matchWrap()
                 )
             }
-            container.addView(
+            stack.addView(
                 memoCard,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -691,7 +881,7 @@ object LockOverlayManager {
         }
 
         // ── 箴言卡片（带左侧竖线的引用样式） ──────────────────
-        container.addView(
+        stack.addView(
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 background = GradientDrawable().apply {
@@ -728,17 +918,9 @@ object LockOverlayManager {
             ).apply { topMargin = dp(context, 14) }
         )
 
-        // 弹性占位：把按钮压到屏幕下部，消除底部大片空白
-        container.addView(
-            View(context),
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
-            )
-        )
-
         // ── 底部操作区：全宽按钮（贴近拇指区域，视觉更稳） ──────
         if (lockState.unlockStrength < 4) {
-            container.addView(
+            stack.addView(
                 Button(context).apply {
                     text = if (lockState.unlockStrength == 3) "去解锁" else "答题解锁"
                     textSize = 15f
@@ -764,7 +946,7 @@ object LockOverlayManager {
             )
             // 暂停按钮：设置了"允许中途暂停"且有剩余配额时显示
             if (lockState.canPause && onRequestPause != null) {
-                container.addView(
+                stack.addView(
                     Button(context).apply {
                         text = "暂停（答题换取 ${lockState.pauseMinutes} 分钟）"
                         textSize = 13f
@@ -790,7 +972,7 @@ object LockOverlayManager {
                 )
             }
         } else {
-            container.addView(
+            stack.addView(
                 TextView(context).apply {
                     text = "本次锁机不可提前解锁，请等待时间结束"
                     textSize = 12f
@@ -809,9 +991,8 @@ object LockOverlayManager {
             )
         }
 
-        return container
+        return stack
     }
-
     private fun matchWrap(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1216,14 +1397,44 @@ object LockOverlayManager {
     ): View {
         val p = palette(context)
         overlayPalette = p
+        val landscape = context.resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val scroll = android.widget.ScrollView(context).apply {
             isFillViewport = true
             overScrollMode = View.OVER_SCROLL_NEVER
         }
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            // 顶部留状态栏高度：窗口铺满全屏（无缺口），内容不被刘海压住
-            setPadding(dp(context, 20), dp(context, 52), dp(context, 20), dp(context, 20))
+            // 顶部留状态栏高度：窗口铺满全屏（无缺口），内容不被刘海压住（横屏降级）
+            setPadding(
+                dp(context, if (landscape) 16 else 20),
+                dp(context, if (landscape) 20 else 52),
+                dp(context, if (landscape) 16 else 20),
+                dp(context, 20)
+            )
+        }
+        // 横屏：题目区（左）与键盘（右）并排；竖屏：上下堆叠
+        val host: ViewGroup = if (landscape) {
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(dp(context, 24), dp(context, 18), dp(context, 24), dp(context, 16))
+                val leftScroll = android.widget.ScrollView(context).apply {
+                    isFillViewport = true
+                    overScrollMode = View.OVER_SCROLL_NEVER
+                    addView(container, android.widget.FrameLayout.LayoutParams(
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                    ))
+                }
+                addView(
+                    leftScroll,
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0.95f)
+                        .apply { marginEnd = dp(context, 14) }
+                )
+            }
+        } else {
+            scroll.addView(container)
+            scroll
         }
 
         // ── 标题 + 进度 ──────────────────────────────
@@ -1347,7 +1558,18 @@ object LockOverlayManager {
             orientation = LinearLayout.VERTICAL
         }
         challengeKeyboardBox = keyboardBox
-        container.addView(keyboardBox, matchWrap().apply { topMargin = dp(context, 12) })
+        if (landscape) {
+            host.addView(
+                keyboardBox,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.05f)
+                    .apply {
+                        marginStart = dp(context, 14)
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+            )
+        } else {
+            container.addView(keyboardBox, matchWrap().apply { topMargin = dp(context, 12) })
+        }
         renderKeyboard(context, lockState, session)
 
         // ── 返回锁机 ────────────────────────────────
@@ -1388,7 +1610,7 @@ object LockOverlayManager {
                 android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
             )
         )
-        return scroll
+        return host
     }
 
     /** 构建朋友密码验证界面（纯传统 View，与答题界面同构）。 */
@@ -1398,13 +1620,43 @@ object LockOverlayManager {
     ): View {
         val p = palette(context)
         overlayPalette = p
+        val landscape = context.resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val scroll = android.widget.ScrollView(context).apply {
             isFillViewport = true
             overScrollMode = View.OVER_SCROLL_NEVER
         }
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(context, 20), dp(context, 52), dp(context, 20), dp(context, 20))
+            setPadding(
+                dp(context, if (landscape) 16 else 20),
+                dp(context, if (landscape) 20 else 52),
+                dp(context, if (landscape) 16 else 20),
+                dp(context, 20)
+            )
+        }
+        // 横屏：验证区（左）与键盘（右）并排；竖屏：上下堆叠
+        val host: ViewGroup = if (landscape) {
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(dp(context, 24), dp(context, 18), dp(context, 24), dp(context, 16))
+                val leftScroll = android.widget.ScrollView(context).apply {
+                    isFillViewport = true
+                    overScrollMode = View.OVER_SCROLL_NEVER
+                    addView(container, android.widget.FrameLayout.LayoutParams(
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                    ))
+                }
+                addView(
+                    leftScroll,
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 0.95f)
+                        .apply { marginEnd = dp(context, 14) }
+                )
+            }
+        } else {
+            scroll.addView(container)
+            scroll
         }
 
         // ── 标题 ──────────────────────────────────────
@@ -1412,7 +1664,7 @@ object LockOverlayManager {
             TextView(context).apply {
                 text = "朋友辅助解锁"
                 textSize = 19f
-                setTextColor(Color.WHITE)
+                setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text)))
                 typeface = Typeface.DEFAULT_BOLD
             },
             matchWrap()
@@ -1525,7 +1777,18 @@ object LockOverlayManager {
             orientation = LinearLayout.VERTICAL
         }
         challengeKeyboardBox = keyboardBox
-        container.addView(keyboardBox, matchWrap().apply { topMargin = dp(context, 12) })
+        if (landscape) {
+            host.addView(
+                keyboardBox,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.05f)
+                    .apply {
+                        marginStart = dp(context, 14)
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+            )
+        } else {
+            container.addView(keyboardBox, matchWrap().apply { topMargin = dp(context, 12) })
+        }
         renderFriendKeyboard(context, lockState)
 
         // ── 返回锁机 ────────────────────────────────
@@ -1559,14 +1822,7 @@ object LockOverlayManager {
             }
         )
 
-        scroll.addView(
-            container,
-            android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
-        return scroll
+        return host
     }
 
     /** 渲染朋友密码验证的自绘键盘（字母页 / 数字页可切换，默认字母页）。 */
