@@ -135,6 +135,11 @@ object LockOverlayManager {
     private var friendUnlockInput = ""
     private var friendUnlockFeedback = ""
     private var friendUnlockCipherShown = false
+
+    /** 失焦抢焦节流/熔断（防与系统窗口拉锯致 ANR）：上次抢焦时间、失焦计数、窗口起点。 */
+    private var lastFocusLossAt = 0L
+    private var focusLossCount = 0
+    private var focusLossWindowStart = 0L
     private var friendUnlockFeedbackIsError = false
     /** 朋友密码明文多为字母，默认字母页。 */
     private var friendUnlockLetterPage = true
@@ -329,13 +334,27 @@ object LockOverlayManager {
                  * 失焦监听：被更高 z-order 的系统窗口（ANR 对话框/低电量/SIM 提示）
                  * 抢走焦点时，夺回焦点并重新隐藏系统栏。系统窗口盖顶期间
                  * isAttachedToWindow 仍为 true，verifyAttached 检测不到，只能靠这里。
+                 *
+                 * 节流 500ms + 熔断：与系统窗口高频拉锯会塞满主线程导致 ANR/被杀，
+                 * 连续失焦 3 次后暂停抢焦 2s，只保留系统栏压制。
                  */
                 override fun onWindowFocusChanged(hasFocus: Boolean) {
                     super.onWindowFocusChanged(hasFocus)
                     if (!hasFocus) {
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (now - focusLossWindowStart > 5_000L) {
+                            // 5s 无失焦：重置计数窗口
+                            focusLossCount = 0
+                            focusLossWindowStart = now
+                        }
+                        focusLossCount++
                         hideSystemBars(this)
                         notifyShadeDismiss()
-                        requestFocus()
+                        // 节流：500ms 内不重复抢焦；连续 3 次失焦 → 熔断（等窗口归零）
+                        if (now - lastFocusLossAt >= 500L && focusLossCount < 3) {
+                            lastFocusLossAt = now
+                            requestFocus()
+                        }
                     }
                 }
             }.apply {
@@ -402,6 +421,43 @@ object LockOverlayManager {
                 val savedCb = cb ?: {}
                 show(context, lockState, force = true, onStartChallenge = savedCb, onRequestPause = cbPause)
             }
+        }
+    }
+
+    /** 锁机结束：清空挑战会话与模式标志（防止第二次锁机复现旧答题界面）。 */
+    fun resetChallengeState() {
+        challengeSession = null
+        isChallengeMode = false
+        isFriendUnlockMode = false
+    }
+
+    /**
+     * 空内容自愈：窗口还挂着但没有任何子 View（界面构建异常/被清空的兜底）
+     * → 按当前模式重建内容。守护巡检调用，防止用户被锁死在空白里。
+     */
+    fun rebuildIfEmpty() {        if (Looper.myLooper() != Looper.getMainLooper()) {
+            uiHandler.post { rebuildIfEmpty() }
+            return
+        }
+        val root = overlayRoot ?: return
+        if (root.childCount > 0) return
+        val ctx = lastContext ?: return
+        val state = currentLockState ?: return
+        Log.w(TAG, "检测到空内容悬浮窗，按当前模式重建")
+        if (isChallengeMode && isFriendUnlockMode) {
+            root.addView(buildFriendUnlockContent(ctx.applicationContext, state))
+        } else if (isChallengeMode) {
+            challengeSession?.let {
+                root.addView(buildChallengeContent(ctx.applicationContext, state, it))
+            }
+        } else {
+            root.addView(
+                buildContent(
+                    ctx.applicationContext, state,
+                    lastChallengeCallback ?: {},
+                    lastPauseCallback
+                )
+            )
         }
     }
 
@@ -1280,7 +1336,25 @@ object LockOverlayManager {
         isChallengeMode = true
         val session = challengeSession ?: return
         root.removeAllViews()
-        attachWithReveal(root, buildChallengeContent(context.applicationContext, lockState, session))
+        // 防御：构建失败（异常）时回退锁机主界面，绝不把用户锁死在空白里
+        val challengeView = try {
+            buildChallengeContent(context.applicationContext, lockState, session)
+        } catch (e: Exception) {
+            Log.e(TAG, "答题界面构建失败，回退锁机主界面：${e.message}", e)
+            isChallengeMode = false
+            attachWithReveal(
+                root,
+                buildContent(
+                    context.applicationContext, lockState,
+                    lastChallengeCallback ?: {},
+                    lastPauseCallback
+                )
+            )
+            root.requestFocus()
+            hideSystemBars(root)
+            return
+        }
+        attachWithReveal(root, challengeView)
         root.requestFocus()
         hideSystemBars(root)
         Log.d(TAG, "已进入悬浮窗内答题模式（需答对 ${session.requiredCorrect} 题）")
@@ -1636,13 +1710,6 @@ object LockOverlayManager {
             }
         )
 
-        scroll.addView(
-            container,
-            android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
         return host
     }
 

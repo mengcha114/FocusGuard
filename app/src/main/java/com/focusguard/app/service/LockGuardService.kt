@@ -413,9 +413,13 @@ class LockGuardService : Service() {
         val blockingNow = lockState.isLocked && lockState.shouldBlockNow
         if (blockingNow != uninstallBlocked) {
             uninstallBlocked = blockingNow
-            com.focusguard.app.enhance.DhizukuEnhancer.setUninstallBlocked(
-                applicationContext, blockingNow
-            )
+            // 只读缓存门槛：未就绪（无 Dhizuku）直接跳过，避免后台线程
+            // 触发 HiddenApiBypass/Dhizuku.init Binder 初始化（死锁/ANR 隐患）
+            if (com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()) {
+                com.focusguard.app.enhance.DhizukuEnhancer.setUninstallBlocked(
+                    applicationContext, blockingNow
+                )
+            }
         }
 
         // 媒体键抢占随锁机状态切换（蓝牙/线控长按语音助手在源头失效）
@@ -449,6 +453,8 @@ class LockGuardService : Service() {
             // 拉起/隐藏动作，只在窗口被 ROM 回收时重建（重建保留进度）。
             if (LockOverlayManager.isChallengeMode) {
                 LockOverlayManager.verifyAttached(applicationContext, lockState)
+                // 空内容自愈：界面构建异常被清空时重建（防锁死空白）
+                LockOverlayManager.rebuildIfEmpty()
                 return
             }
 
@@ -574,6 +580,8 @@ class LockGuardService : Service() {
         // 锁机结束或暂停 → 撤销覆盖层
         if (LockOverlayManager.isShowing) {
             LockOverlayManager.hide()
+            // 会话状态复位：防止第二次锁机复现旧答题界面（白屏/旧题）
+            LockOverlayManager.resetChallengeState()
         }
 
         // ── B. 应用硬封锁守护 ───────────────────────

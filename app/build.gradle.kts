@@ -11,7 +11,7 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 76
+        versionCode = 77
         versionName = "3.6.0"
     }
 

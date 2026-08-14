@@ -77,13 +77,26 @@ class UnlockChallengeActivity : ComponentActivity() {
          * 答题流程是否处于活跃状态（锁机页据此暂停顶回）。
          *
          * 关键：启动窗口会自动过期，绝不会因启动失败而永久卡住。
+         * 已创建实例被压后台超 5s（未销毁）也自动失效——
+         * 防止让位标志永久化导致顶回/助手拦截被跳过。
          */
         val active: Boolean
             get() {
-                if (created) return true
+                if (created) {
+                    if (!foreground &&
+                        System.currentTimeMillis() - lastForegroundAt > 5_000L
+                    ) {
+                        return false
+                    }
+                    return true
+                }
                 val elapsed = System.currentTimeMillis() - launchRequestedAt
                 return elapsed in 0..LAUNCH_INTENT_WINDOW_MS
             }
+
+        /** 最近一次进入前台的时间戳（active 前台校验用）。 */
+        @Volatile
+        var lastForegroundAt: Long = 0L
 
         /**
          * 答题页是否在前台可见。
@@ -277,6 +290,7 @@ class UnlockChallengeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         foreground = true
+        lastForegroundAt = System.currentTimeMillis()
         applyEdgeToEdge()
         hideSystemBars()
         // 取消 onPause 的延迟挂载（正常恢复前台，如输入法弹起/窗口切换）
