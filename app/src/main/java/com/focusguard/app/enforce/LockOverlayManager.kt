@@ -508,6 +508,7 @@ object LockOverlayManager {
         onStartChallenge: () -> Unit,
         onRequestPause: (() -> Unit)?
     ): View {
+        val p = palette(context)
         overlayPalette = p
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL

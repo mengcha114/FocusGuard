@@ -33,7 +33,7 @@ class BootReceiver : BroadcastReceiver() {
             "android.intent.action.LOCKED_BOOT_COMPLETED",
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_USER_UNLOCKED,
-            Intent.ACTION_USER_SWITCHED,
+            "android.intent.action.USER_SWITCHED",
             "android.intent.action.QUICKBOOT_POWERON",
             "com.htc.intent.action.QUICKBOOT_POWERON",
             Intent.ACTION_MY_PACKAGE_REPLACED
