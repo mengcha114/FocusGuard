@@ -126,11 +126,9 @@ object FocusColors {
         }
     }
 
-    /** 锁机页/悬浮窗用：浅色主题回退深色·墨（夜光表盘需暗场）。 */
-    fun paletteForLockScreen(mode: Int, context: Context? = null): Palette {
-        val p = paletteFor(mode, context)
-        return if (p.isLight) ink else p
-    }
+    /** 锁机页/悬浮窗调色板：与全局一致，跟随系统深浅与所选主题。 */
+    fun paletteForLockScreen(mode: Int, context: Context? = null): Palette =
+        paletteFor(mode, context)
 
     /** Android 12+ 莫奈取色：从壁纸生成调色板；低版本或失败返回 null（回退手工令牌）。 */
     fun dynamicPalette(context: Context, dark: Boolean): Palette? {

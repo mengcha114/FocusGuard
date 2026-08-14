@@ -1498,6 +1498,28 @@ object LockOverlayManager {
             matchWrap().apply { topMargin = dp(context, 10) }
         )
 
+        // ── 确认按钮（输入区正下方固定可见，无需滚动） ──────
+        container.addView(
+            Button(context).apply {
+                text = "验证密码"
+                textSize = 15f
+                setTextColor(
+                    android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.bg))
+                )
+                isAllCaps = false
+                typeface = Typeface.DEFAULT_BOLD
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(context, 10).toFloat()
+                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+                }
+                setOnClickListener { onSubmitFriendUnlock(context, lockState) }
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(context, 50)
+            ).apply { topMargin = dp(context, 12) }
+        )
+
         // ── 自绘键盘 ────────────────────────────────
         val keyboardBox = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -1634,26 +1656,6 @@ object LockOverlayManager {
                 )
             },
             matchWrap()
-        )
-
-        // 提交
-        box.addView(
-            Button(context).apply {
-                text = "验证密码"
-                textSize = 15f
-                setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.bg)))
-                isAllCaps = false
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 10).toFloat()
-                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
-                }
-                setOnClickListener { onSubmitFriendUnlock(context, lockState) }
-            },
-            LinearLayout.LayoutParams(0, dp(context, 50), 2f).apply {
-                marginStart = dp(context, 3)
-                marginEnd = dp(context, 3)
-                topMargin = dp(context, 8)
-            }
         )
     }
 
