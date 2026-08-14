@@ -262,7 +262,7 @@ class GuardAccessibilityService : AccessibilityService() {
 
         if (hasShadeFocused) {
             Log.d(TAG, "锁机中检测到通知栏/QS 面板获得焦点，立即收起")
-            dismissNotificationShade()
+            dismissNotificationShadeImmediate()
         }
 
         if (hasSplit || hasForeignSysWindow) {
@@ -301,6 +301,15 @@ class GuardAccessibilityService : AccessibilityService() {
         }
     }
 
+    /** 精准信号直通（shade 获得焦点/拦截条命中触摸）：不经节流立即收起。 */
+    fun dismissNotificationShadeImmediate() {
+        try {
+            performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+        } catch (e: Exception) {
+            Log.w(TAG, "立即收起通知栏失败：${e.message}")
+        }
+    }
+
     /**
      * 状态栏物理拦截条：锁机期间在状态栏高度区域挂一条
      * TYPE_ACCESSIBILITY_OVERLAY 全宽细条，直接吞掉下拉手势的起点——
@@ -313,13 +322,20 @@ class GuardAccessibilityService : AccessibilityService() {
             val state = lockState ?: return
             val needed = state.isLocked && state.shouldBlockNow
             if (needed && statusBarBlock == null) {
-                val barHeight = runCatching {
+                // 拦截条高度 = 状态栏 + 下拉手势热区。
+                // status_bar_height 读取失败时兜底 32dp；再加 24dp 热区，
+                // 保证手指从状态栏下缘附近开始下拉也会先落到拦截条上。
+                val density = resources.displayMetrics.density
+                val statusBar = runCatching {
                     val rid = resources.getIdentifier("status_bar_height", "dimen", "android")
-                    if (rid > 0) resources.getDimensionPixelSize(rid) else 0
-                }.getOrDefault(0) + (8 * resources.displayMetrics.density).toInt()
+                    if (rid > 0) resources.getDimensionPixelSize(rid) else (32 * density).toInt()
+                }.getOrDefault((32 * density).toInt())
+                val barHeight = statusBar + (24 * density).toInt()
                 val block = object : android.view.View(this) {
                     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
-                        dismissNotificationShade()
+                        Log.d(TAG, "状态栏拦截条命中触摸 ${event.actionMasked}")
+                        // 立即收起（用户手指碰到通知栏区域 = 有下拉意图）
+                        dismissNotificationShadeImmediate()
                         return true
                     }
                 }
@@ -331,10 +347,14 @@ class GuardAccessibilityService : AccessibilityService() {
                         android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                         android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                     android.graphics.PixelFormat.TRANSLUCENT
-                ).apply { gravity = android.view.Gravity.TOP }
+                ).apply {
+                    gravity = android.view.Gravity.TOP
+                    layoutInDisplayCutoutMode =
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
                 getSystemService(android.view.WindowManager::class.java).addView(block, lp)
                 statusBarBlock = block
-                Log.d(TAG, "状态栏拦截条已挂载")
+                Log.d(TAG, "状态栏拦截条已挂载，高度 ${barHeight}px（状态栏 ${statusBar}px + 热区）")
             } else if (!needed && statusBarBlock != null) {
                 removeStatusBarBlock()
             }

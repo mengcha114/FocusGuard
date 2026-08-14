@@ -272,9 +272,12 @@ object LockOverlayManager {
                  * 任何窗口外/边缘触摸都触发系统栏重新隐藏与通知栏收起。
                  */
                 override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
-                    if (event.action == android.view.MotionEvent.ACTION_OUTSIDE ||
-                        event.action == android.view.MotionEvent.ACTION_DOWN
-                    ) {
+                    if (event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                        // 手指落在悬浮窗之外（含状态栏区域）：立即收起，不等待节流
+                        hideSystemBars(this)
+                        com.focusguard.app.access.GuardAccessibilityService.instance
+                            ?.dismissNotificationShadeImmediate()
+                    } else if (event.action == android.view.MotionEvent.ACTION_DOWN) {
                         hideSystemBars(this)
                         notifyShadeDismiss()
                     }
@@ -289,7 +292,8 @@ object LockOverlayManager {
                 override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
                     if (event.rawY < dp(appContext, 90)) {
                         hideSystemBars(this)
-                        notifyShadeDismiss()
+                        com.focusguard.app.access.GuardAccessibilityService.instance
+                            ?.dismissNotificationShadeImmediate()
                         if (event.action == android.view.MotionEvent.ACTION_DOWN ||
                             event.action == android.view.MotionEvent.ACTION_MOVE
                         ) {
