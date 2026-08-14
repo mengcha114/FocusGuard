@@ -86,15 +86,8 @@ class GuardAccessibilityService : AccessibilityService() {
     /** 收起通知栏节流：SystemUI 对高频全局动作限流，250ms 一次最稳。 */
     private var lastDismissAt = 0L
 
-    /** 注入手势冷却：与 performGlobalAction 双保险时避免手势风暴。 */
-    private var lastGestureAt = 0L
-
     /** 状态栏物理拦截条（TYPE_ACCESSIBILITY_OVERLAY）：吃掉下拉起始手势。 */
     private var statusBarBlock: android.view.View? = null
-
-    /** 动态手势阻断窗：触摸落到顶部区域时弹出，打断进行中的下拉手势。 */
-    private var gestureBlocker: android.view.View? = null
-    private var gestureBlockerTeardown: java.lang.Runnable? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -158,26 +151,9 @@ class GuardAccessibilityService : AccessibilityService() {
         // 会盖住验证界面、打断输入。
         if (com.focusguard.app.enforce.LockOverlayManager.isFriendUnlockMode) return
 
-        // 悬浮窗内答题模式（v3.0.0）：触摸开始事件会在此大量触发，
-        // 弹阻断窗会打断自绘键盘输入——答题期间禁止弹窗。
-        if (com.focusguard.app.enforce.LockOverlayManager.isChallengeMode) return
-
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> handleWindowsChanged()
-            AccessibilityEvent.TYPE_TOUCH_INTERACTION_END -> {
-                // 手势结束：立即撤阻断窗（比 400ms 自撤更快，减少视觉残留）
-                removeGestureBlocker()
-            }
-            AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> {
-                // 手指接触屏幕（锁机中、非答题场景）→ 立即弹阻断窗打断下拉手势。
-                // 不依赖悬浮窗的 OUTSIDE 事件（部分 ROM 不转发窗口外触摸）。
-                if (gestureBlocker != null) {
-                    scheduleGestureBlockerTeardown()
-                } else {
-                    popGestureBlocker()
-                }
-            }
         }
     }
 
@@ -285,9 +261,8 @@ class GuardAccessibilityService : AccessibilityService() {
         }
 
         if (hasShadeFocused) {
-            Log.d(TAG, "锁机中检测到通知栏/QS 面板获得焦点，立即收起（双通道）")
+            Log.d(TAG, "锁机中检测到通知栏/QS 面板获得焦点，立即收起")
             dismissNotificationShadeImmediate()
-            dismissShadeByGesture()
         }
 
         if (hasSplit || hasForeignSysWindow) {
@@ -333,105 +308,6 @@ class GuardAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.w(TAG, "立即收起通知栏失败：${e.message}")
         }
-    }
-
-    /**
-     * 注入「屏幕中部向下滑」手势：shade 展开时下滑 = 物理收起。
-     * 与 performGlobalAction 双通道互备（部分 ROM 对全局动作限流时手势仍有效）。
-     * 1s 冷却防手势风暴。
-     */
-    fun dismissShadeByGesture() {
-        val now = System.currentTimeMillis()
-        if (now - lastGestureAt < 1_000L) return
-        lastGestureAt = now
-        try {
-            val dm = resources.displayMetrics
-            val path = android.graphics.Path().apply {
-                moveTo(dm.widthPixels / 2f, dm.heightPixels * 0.2f)
-                lineTo(dm.widthPixels / 2f, dm.heightPixels * 0.8f)
-            }
-            val gesture = android.accessibilityservice.GestureDescription.Builder()
-                .addStroke(
-                    android.accessibilityservice.GestureDescription.StrokeDescription(
-                        path, 0, 120
-                    )
-                )
-                .build()
-            dispatchGesture(gesture, null, null)
-            Log.d(TAG, "已注入下滑手势收起通知栏")
-        } catch (e: Exception) {
-            Log.w(TAG, "注入下滑手势失败：${e.message}")
-        }
-    }
-
-    /**
-     * 动态手势阻断窗（模仿第三方锁机软件机制）：
-     * 触摸落到顶部区域时弹出，窗口出现在手势路径上 → 系统对进行中的
-     * 下拉手势发送 CANCEL，shade 无法展开；触摸结束或 400ms 后自撤。
-     */
-    fun popGestureBlocker() {
-        try {
-            val state = lockState ?: return
-            if (!state.isLocked || !state.shouldBlockNow) return
-            if (gestureBlocker != null) {
-                // 已有窗口：刷新撤窗定时（连续下拉场景）
-                scheduleGestureBlockerTeardown()
-                return
-            }
-            val density = resources.displayMetrics.density
-            val statusBar = runCatching {
-                val rid = resources.getIdentifier("status_bar_height", "dimen", "android")
-                if (rid > 0) resources.getDimensionPixelSize(rid) else (32 * density).toInt()
-            }.getOrDefault((32 * density).toInt())
-            val height = statusBar + (160 * density).toInt()
-            val blocker = object : android.view.View(this) {
-                override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
-                    Log.d(TAG, "手势阻断窗吞掉触摸 ${event.actionMasked}")
-                    dismissNotificationShadeImmediate()
-                    return true
-                }
-            }.apply {
-                // 淡红半透明：与第三方「红框」机制对齐，同时确认窗口真实弹出
-                setBackgroundColor(0x22FF3B30)
-            }
-            val lp = android.view.WindowManager.LayoutParams(
-                android.view.WindowManager.LayoutParams.MATCH_PARENT,
-                height,
-                android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                android.graphics.PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = android.view.Gravity.TOP
-                layoutInDisplayCutoutMode =
-                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-            getSystemService(android.view.WindowManager::class.java).addView(blocker, lp)
-            gestureBlocker = blocker
-            Log.d(TAG, "手势阻断窗弹出（高 ${height}px）")
-            scheduleGestureBlockerTeardown()
-        } catch (e: Exception) {
-            Log.w(TAG, "手势阻断窗弹出失败：${e.message}")
-        }
-    }
-
-    private fun scheduleGestureBlockerTeardown() {
-        gestureBlockerTeardown?.let { runCatching { android.os.Handler(android.os.Looper.getMainLooper()).removeCallbacks(it) } }
-        val r = java.lang.Runnable { removeGestureBlocker() }
-        gestureBlockerTeardown = r
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(r, 400L)
-    }
-
-    private fun removeGestureBlocker() {
-        try {
-            gestureBlocker?.let {
-                getSystemService(android.view.WindowManager::class.java).removeView(it)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "移除手势阻断窗失败：${e.message}")
-        }
-        gestureBlocker = null
     }
 
     /**
@@ -505,7 +381,6 @@ class GuardAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         removeStatusBarBlock()
-        removeGestureBlocker()
         instance = null
         Log.d(TAG, "无障碍服务已销毁")
 

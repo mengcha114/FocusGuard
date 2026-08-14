@@ -273,14 +273,10 @@ object LockOverlayManager {
                  */
                 override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
                     if (event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
-                        // 手指落在悬浮窗之外（含状态栏区域）：立即收起，不等待节流；
-                        // 若在顶部区域则弹出动态手势阻断窗，打断进行中的下拉手势
+                        // 手指落在悬浮窗之外（含状态栏区域）：立即收起，不等待节流
                         hideSystemBars(this)
-                        val acc = com.focusguard.app.access.GuardAccessibilityService.instance
-                        if (event.rawY < dp(appContext, 200)) {
-                            acc?.popGestureBlocker()
-                        }
-                        acc?.dismissNotificationShadeImmediate()
+                        com.focusguard.app.access.GuardAccessibilityService.instance
+                            ?.dismissNotificationShadeImmediate()
                     } else if (event.action == android.view.MotionEvent.ACTION_DOWN) {
                         hideSystemBars(this)
                         notifyShadeDismiss()
