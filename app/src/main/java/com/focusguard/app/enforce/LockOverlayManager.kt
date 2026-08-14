@@ -138,6 +138,9 @@ object LockOverlayManager {
     private var friendUnlockLetterPage = true
     private var friendUnlockPassedCallback: (() -> Unit)? = null
 
+    /** 当前界面的设计令牌（窗口重建/无 context 的刷新函数共用）。 */
+    private var overlayPalette: com.focusguard.app.ui.theme.FocusColors.Palette? = null
+
     /** 悬浮窗内答题的会话状态。 */
     private data class ChallengeSession(
         var question: com.focusguard.app.challenge.ChallengeQuestion,
@@ -293,7 +296,7 @@ object LockOverlayManager {
                     return super.dispatchTouchEvent(event)
                 }
             }.apply {
-                background = buildBackground()
+                background = buildBackground(appContext)
                 isFocusableInTouchMode = true
                 isFocusable = true
             }
@@ -395,10 +398,27 @@ object LockOverlayManager {
         (value * context.resources.displayMetrics.density).toInt()
 
     /** 深色渐变背景：比纯黑更有质感，也和锁机页视觉统一。 */
-    private fun buildBackground(): GradientDrawable = GradientDrawable(
-        GradientDrawable.Orientation.TOP_BOTTOM,
-        intArrayOf(0xFF0A0A0F.toInt(), 0xFF151221.toInt(), 0xFF0D0B14.toInt())
+    private fun palette(context: Context): com.focusguard.app.ui.theme.FocusColors.Palette =
+        com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
+            com.focusguard.app.data.Settings(context).themeMode
+        )
+
+    /** 传统 View 侧：令牌颜色 + 透明度的 `#AARRGGBB` 字符串。 */
+    private fun tint(
+        c: androidx.compose.ui.graphics.Color,
+        alpha: Int
+    ): String = String.format(
+        "#%02X%s",
+        alpha,
+        com.focusguard.app.ui.theme.FocusColors.hex(c).substring(1)
     )
+
+    /** 墨色纯色背景（令牌 bg），与锁机页 Compose 同源。 */
+    private fun buildBackground(context: Context): GradientDrawable = GradientDrawable().apply {
+        setColor(com.focusguard.app.ui.theme.FocusColors.hex(palette(context).bg).let {
+            android.graphics.Color.parseColor(it)
+        })
+    }
 
     private fun buildContent(
         context: Context,
@@ -406,6 +426,8 @@ object LockOverlayManager {
         onStartChallenge: () -> Unit,
         onRequestPause: (() -> Unit)?
     ): View {
+        val p = palette(context)
+        overlayPalette = p
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -427,7 +449,7 @@ object LockOverlayManager {
         val wallClock = TextView(context).apply {
             text = "--:--"
             textSize = 58f
-            setTextColor(Color.WHITE)
+            setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text)))
             typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
             gravity = Gravity.CENTER
             letterSpacing = 0.02f
@@ -438,7 +460,7 @@ object LockOverlayManager {
         val wallDate = TextView(context).apply {
             text = ""
             textSize = 13f
-            setTextColor(Color.parseColor("#8FFFFFFF"))
+            setTextColor(Color.parseColor(tint(p.haze, 0x8F)))
             gravity = Gravity.CENTER
             letterSpacing = 0.06f
             setPadding(0, dp(context, 2), 0, 0)
@@ -446,47 +468,27 @@ object LockOverlayManager {
         wallDateText = wallDate
         container.addView(wallDate, matchWrap())
 
-        // ── 中部：锁定状态卡（圆角卡片 + 锁标 + 倒计时） ──────
+        // ── 中部：锁定状态卡（细边框卡片 + 锁标 + 倒计时） ──────
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             background = GradientDrawable().apply {
-                cornerRadius = dp(context, 24).toFloat()
-                setColor(0x14FFFFFF)
-                setStroke(dp(context, 1), 0x26FFFFFF)
+                cornerRadius = dp(context, 12).toFloat()
+                setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
             }
             setPadding(dp(context, 22), dp(context, 20), dp(context, 22), dp(context, 20))
         }
 
-        // 锁标 + 应用名（一行）
+        // 应用名（一行，居中）
         card.addView(
-            LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
+            TextView(context).apply {
+                text = "专注卫士"
+                textSize = 14f
+                setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text)))
+                typeface = Typeface.DEFAULT_BOLD
+                letterSpacing = 0.1f
                 gravity = Gravity.CENTER
-                addView(
-                    TextView(context).apply {
-                        text = "\uD83D\uDD12"
-                        textSize = 17f
-                    },
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
-                )
-                addView(
-                    TextView(context).apply {
-                        text = "专注卫士"
-                        textSize = 14f
-                        setTextColor(Color.WHITE)
-                        typeface = Typeface.DEFAULT_BOLD
-                        letterSpacing = 0.1f
-                        setPadding(dp(context, 8), 0, 0, 0)
-                    },
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
-                )
             },
             matchWrap()
         )
@@ -495,7 +497,7 @@ object LockOverlayManager {
         val status = TextView(context).apply {
             text = "设备已锁定"
             textSize = 11f
-            setTextColor(Color.parseColor("#9C8BC9"))
+            setTextColor(Color.parseColor(tint(p.haze, 0xE6)))
             gravity = Gravity.CENTER
             letterSpacing = 0.08f
             setPadding(0, dp(context, 10), 0, 0)
@@ -503,12 +505,12 @@ object LockOverlayManager {
         statusText = status
         card.addView(status, matchWrap())
 
-        // 大号剩余时长
+        // 大号剩余时长（衬线数字，与 Compose 锁机页签名一致）
         val time = TextView(context).apply {
             text = "--:--"
             textSize = 46f
-            setTextColor(Color.parseColor("#B4A5FF"))
-            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+            typeface = Typeface.create("serif", Typeface.BOLD)
             gravity = Gravity.CENTER
             setPadding(0, dp(context, 4), 0, 0)
         }
@@ -519,7 +521,7 @@ object LockOverlayManager {
             TextView(context).apply {
                 text = "剩余锁定时间"
                 textSize = 10f
-                setTextColor(Color.parseColor("#60FFFFFF"))
+                setTextColor(Color.parseColor(tint(p.faint, 0xFF)))
                 gravity = Gravity.CENTER
                 letterSpacing = 0.14f
             },
@@ -540,9 +542,9 @@ object LockOverlayManager {
             val memoCard = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 18).toFloat()
-                    setColor(0x0FFFFFFF)
-                    setStroke(dp(context, 1), 0x1FFFFFFF)
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                    setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
                 }
                 setPadding(dp(context, 18), dp(context, 14), dp(context, 18), dp(context, 14))
             }
@@ -557,7 +559,7 @@ object LockOverlayManager {
                             textSize = 11f
                             letterSpacing = 0.16f
                             typeface = Typeface.DEFAULT_BOLD
-                            setTextColor(Color.parseColor("#B4A5FF"))
+                            setTextColor(Color.parseColor(tint(p.haze, 0xE6)))
                         },
                         LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     )
@@ -565,7 +567,7 @@ object LockOverlayManager {
                         TextView(context).apply {
                             text = "${pending.size} 项"
                             textSize = 10f
-                            setTextColor(Color.parseColor("#60FFFFFF"))
+                            setTextColor(Color.parseColor(tint(p.faint, 0xFF)))
                         },
                         LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -583,9 +585,9 @@ object LockOverlayManager {
                     else -> ""
                 }
                 val tagColor = when {
-                    item.overdue || item.priority == 2 -> "#EF9A9A"
-                    item.priority == 1 -> "#FFCC80"
-                    else -> "#60FFFFFF"
+                    item.overdue || item.priority == 2 -> com.focusguard.app.ui.theme.FocusColors.hex(p.error)
+                    item.priority == 1 -> com.focusguard.app.ui.theme.FocusColors.hex(p.accent)
+                    else -> tint(p.faint, 0xFF)
                 }
                 memoCard.addView(
                     LinearLayout(context).apply {
@@ -608,7 +610,7 @@ object LockOverlayManager {
                             TextView(context).apply {
                                 text = item.text
                                 textSize = 12f
-                                setTextColor(Color.parseColor("#D0FFFFFF"))
+                                setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text)))
                                 maxLines = 1
                                 ellipsize = android.text.TextUtils.TruncateAt.END
                             },
@@ -623,7 +625,7 @@ object LockOverlayManager {
                                     setTextColor(Color.parseColor(tagColor))
                                     background = GradientDrawable().apply {
                                         cornerRadius = dp(context, 6).toFloat()
-                                        setColor(0x14FFFFFF)
+                                        setColor(android.graphics.Color.parseColor(tint(p.line, 0x40)))
                                     }
                                     setPadding(
                                         dp(context, 6), dp(context, 2),
@@ -645,7 +647,7 @@ object LockOverlayManager {
                     TextView(context).apply {
                         text = "还有 ${pending.size - 4} 项…"
                         textSize = 10f
-                        setTextColor(Color.parseColor("#50FFFFFF"))
+                        setTextColor(Color.parseColor(tint(p.faint, 0xFF)))
                         setPadding(dp(context, 13), dp(context, 3), 0, 0)
                     },
                     matchWrap()
@@ -665,16 +667,16 @@ object LockOverlayManager {
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 16).toFloat()
-                    setColor(0x0AFFFFFF)
-                    setStroke(dp(context, 1), 0x18FFFFFF)
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                    setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
                 }
                 setPadding(dp(context, 16), dp(context, 14), dp(context, 16), dp(context, 14))
                 addView(
                     View(context).apply {
                         background = GradientDrawable().apply {
                             cornerRadius = dp(context, 2).toFloat()
-                            setColor(Color.parseColor("#8B7CF6"))
+                            setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
                         }
                     },
                     LinearLayout.LayoutParams(dp(context, 3), LinearLayout.LayoutParams.MATCH_PARENT)
@@ -685,7 +687,7 @@ object LockOverlayManager {
                         text = pickMotto(context)
                         textSize = 13f
                         setLineSpacing(dp(context, 3).toFloat(), 1f)
-                        setTextColor(Color.parseColor("#C0B4FF"))
+                        setTextColor(Color.parseColor(tint(p.haze, 0xE6)))
                         maxLines = 3
                         ellipsize = android.text.TextUtils.TruncateAt.END
                     },
@@ -712,13 +714,13 @@ object LockOverlayManager {
                 Button(context).apply {
                     text = if (lockState.unlockStrength == 3) "去解锁" else "答题解锁"
                     textSize = 15f
-                    setTextColor(Color.WHITE)
+                    setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.bg)))
                     typeface = Typeface.DEFAULT_BOLD
                     isAllCaps = false
-                    background = GradientDrawable(
-                        GradientDrawable.Orientation.LEFT_RIGHT,
-                        intArrayOf(0xFF7C4DFF.toInt(), 0xFF5E35B1.toInt())
-                    ).apply { cornerRadius = dp(context, 16).toFloat() }
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(context, 10).toFloat()
+                        setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+                    }
                     setOnClickListener {
                         try {
                             onStartChallenge()
@@ -738,12 +740,12 @@ object LockOverlayManager {
                     Button(context).apply {
                         text = "暂停（答题换取 ${lockState.pauseMinutes} 分钟）"
                         textSize = 13f
-                        setTextColor(Color.parseColor("#C0B4FF"))
+                        setTextColor(Color.parseColor(tint(p.haze, 0xE6)))
                         isAllCaps = false
                         background = GradientDrawable().apply {
-                            cornerRadius = dp(context, 14).toFloat()
-                            setColor(0x1AFFFFFF)
-                            setStroke(dp(context, 1), 0x334F378B)
+                            cornerRadius = dp(context, 10).toFloat()
+                            setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                            setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                         }
                         setOnClickListener {
                             try {
@@ -764,11 +766,11 @@ object LockOverlayManager {
                 TextView(context).apply {
                     text = "本次锁机不可提前解锁，请等待时间结束"
                     textSize = 12f
-                    setTextColor(Color.parseColor("#EF9A9A"))
+                    setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.error)))
                     gravity = Gravity.CENTER
                     background = GradientDrawable().apply {
-                        cornerRadius = dp(context, 14).toFloat()
-                        setColor(0x14EF5350)
+                        cornerRadius = dp(context, 12).toFloat()
+                        setColor(android.graphics.Color.parseColor(tint(p.error, 0x14)))
                     }
                     setPadding(dp(context, 16), dp(context, 14), dp(context, 16), dp(context, 14))
                 },
@@ -942,20 +944,23 @@ object LockOverlayManager {
                     ls.lockSource == "POMODORO" -> "番茄钟休息阶段"
                     else -> "设备已锁定"
                 }
-                // 配色随阶段切换：专注=紫（严肃），暂停/休息=绿（放松）——
-                // 与旧版 Compose 锁机页的视觉语言一致
+                // 配色随阶段切换：专注=强调色，暂停/休息=成功色（与 Compose 锁机页同令牌）
                 val relaxed = ls.isPaused ||
                     (ls.lockSource == "POMODORO" && !ls.pomodoroIsWorkPhase)
-                val accentColor = if (relaxed) {
-                    android.graphics.Color.parseColor("#34D399")
-                } else {
-                    android.graphics.Color.parseColor("#B4A5FF")
+                val p = lastContext?.let { palette(it) }
+                if (p != null) {
+                    val accentColor = android.graphics.Color.parseColor(
+                        com.focusguard.app.ui.theme.FocusColors.hex(
+                            if (relaxed) p.success else p.accent
+                        )
+                    )
+                    timeText?.setTextColor(accentColor)
+                    statusText?.setTextColor(
+                        Color.parseColor(
+                            tint(if (relaxed) p.success else p.haze, 0xE6)
+                        )
+                    )
                 }
-                timeText?.setTextColor(accentColor)
-                statusText?.setTextColor(
-                    if (relaxed) android.graphics.Color.parseColor("#6EE7B7")
-                    else android.graphics.Color.parseColor("#9C8BC9")
-                )
                 uiHandler.postDelayed(this, 1000L)
             }
         }
@@ -1179,6 +1184,8 @@ object LockOverlayManager {
         lockState: LockState,
         session: ChallengeSession
     ): View {
+        val p = palette(context)
+        overlayPalette = p
         val scroll = android.widget.ScrollView(context).apply {
             isFillViewport = true
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -1207,7 +1214,7 @@ object LockOverlayManager {
                     TextView(context).apply {
                         text = "${session.correctCount} / ${session.requiredCorrect}"
                         textSize = 14f
-                        setTextColor(Color.parseColor("#66BB6A"))
+                        setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.success)))
                         typeface = Typeface.DEFAULT_BOLD
                         challengeProgressText = this
                     },
@@ -1228,7 +1235,7 @@ object LockOverlayManager {
                     "答对 ${session.requiredCorrect} 题即可解锁；答错会给出解析并换题"
                 }
                 textSize = 11f
-                setTextColor(Color.parseColor("#70FFFFFF"))
+                setTextColor(Color.parseColor(tint(p.haze, 0xC4)))
                 setPadding(0, dp(context, 4), 0, 0)
             },
             matchWrap()
@@ -1239,12 +1246,12 @@ object LockOverlayManager {
             TextView(context).apply {
                 text = session.question.question
                 textSize = 16f
-                setTextColor(Color.WHITE)
+                setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text)))
                 setLineSpacing(dp(context, 5).toFloat(), 1f)
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 16).toFloat()
-                    setColor(0x14FFFFFF)
-                    setStroke(dp(context, 1), 0x26FFFFFF)
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                    setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
                 }
                 setPadding(dp(context, 16), dp(context, 16), dp(context, 16), dp(context, 16))
                 challengeQuestionText = this
@@ -1259,13 +1266,17 @@ object LockOverlayManager {
                 textSize = 22f
                 gravity = Gravity.CENTER
                 setTextColor(
-                    if (session.input.isEmpty()) Color.parseColor("#50FFFFFF") else Color.WHITE
+                    if (session.input.isEmpty()) {
+                        Color.parseColor(tint(p.faint, 0xFF))
+                    } else {
+                        android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text))
+                    }
                 )
                 typeface = Typeface.DEFAULT_BOLD
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 12).toFloat()
-                    setColor(0xFF1A1622.toInt())
-                    setStroke(dp(context, 1), 0xFF4F378B.toInt())
+                    cornerRadius = dp(context, 10).toFloat()
+                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.surface)))
+                    setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                 }
                 setPadding(dp(context, 12), dp(context, 12), dp(context, 12), dp(context, 12))
                 challengeAnswerText = this
@@ -1280,12 +1291,19 @@ object LockOverlayManager {
                 textSize = 12f
                 setLineSpacing(dp(context, 4).toFloat(), 1f)
                 setTextColor(
-                    if (session.feedbackIsError) Color.parseColor("#EF9A9A")
-                    else Color.parseColor("#A5D6A7")
+                    if (session.feedbackIsError) {
+                        android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.error))
+                    } else {
+                        android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.success))
+                    }
                 )
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 12).toFloat()
-                    setColor(if (session.feedbackIsError) 0x18EF5350 else 0x1866BB6A)
+                    cornerRadius = dp(context, 10).toFloat()
+                    setColor(
+                        android.graphics.Color.parseColor(
+                            tint(if (session.feedbackIsError) p.error else p.success, 0x18)
+                        )
+                    )
                 }
                 setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10))
                 visibility = if (session.feedback.isBlank()) View.GONE else View.VISIBLE
@@ -1307,11 +1325,12 @@ object LockOverlayManager {
             Button(context).apply {
                 text = "返回锁机界面"
                 textSize = 13f
-                setTextColor(Color.parseColor("#C0B4FF"))
+                setTextColor(Color.parseColor(tint(p.haze, 0xE6)))
                 isAllCaps = false
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 12).toFloat()
-                    setColor(0x334F378B.toInt())
+                    cornerRadius = dp(context, 10).toFloat()
+                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                    setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                 }
                 setPadding(dp(context, 20), dp(context, 9), dp(context, 20), dp(context, 9))
                 setOnClickListener {
@@ -1347,6 +1366,8 @@ object LockOverlayManager {
         context: Context,
         lockState: LockState
     ): View {
+        val p = palette(context)
+        overlayPalette = p
         val scroll = android.widget.ScrollView(context).apply {
             isFillViewport = true
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -1371,7 +1392,7 @@ object LockOverlayManager {
             TextView(context).apply {
                 text = "输入朋友提供的密码即可解锁"
                 textSize = 11f
-                setTextColor(Color.parseColor("#70FFFFFF"))
+                setTextColor(Color.parseColor(tint(p.haze, 0xC4)))
                 setPadding(0, dp(context, 4), 0, 0)
             },
             matchWrap()
@@ -1382,13 +1403,13 @@ object LockOverlayManager {
             TextView(context).apply {
                 text = "密文：${lockState.friendCipher}\n偏移量：${lockState.friendShift}"
                 textSize = 17f
-                setTextColor(Color.parseColor("#D0BCFF"))
-                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+                typeface = Typeface.create("monospace", Typeface.BOLD)
                 setLineSpacing(dp(context, 6).toFloat(), 1f)
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 16).toFloat()
-                    setColor(0x144F378B.toInt())
-                    setStroke(dp(context, 1), 0x334F378B.toInt())
+                    cornerRadius = dp(context, 12).toFloat()
+                    setColor(android.graphics.Color.parseColor(tint(p.accent, 0x14)))
+                    setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                 }
                 setPadding(dp(context, 16), dp(context, 16), dp(context, 16), dp(context, 16))
             },
@@ -1402,13 +1423,17 @@ object LockOverlayManager {
                 textSize = 22f
                 gravity = Gravity.CENTER
                 setTextColor(
-                    if (friendUnlockInput.isEmpty()) Color.parseColor("#50FFFFFF") else Color.WHITE
+                    if (friendUnlockInput.isEmpty()) {
+                        Color.parseColor(tint(p.faint, 0xFF))
+                    } else {
+                        android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text))
+                    }
                 )
                 typeface = Typeface.DEFAULT_BOLD
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 12).toFloat()
-                    setColor(0xFF1A1622.toInt())
-                    setStroke(dp(context, 1), 0xFF4F378B.toInt())
+                    cornerRadius = dp(context, 10).toFloat()
+                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.surface)))
+                    setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                 }
                 setPadding(dp(context, 12), dp(context, 12), dp(context, 12), dp(context, 12))
                 challengeAnswerText = this
@@ -1422,12 +1447,19 @@ object LockOverlayManager {
                 text = friendUnlockFeedback
                 textSize = 12f
                 setTextColor(
-                    if (friendUnlockFeedbackIsError) Color.parseColor("#EF9A9A")
-                    else Color.parseColor("#A5D6A7")
+                    if (friendUnlockFeedbackIsError) {
+                        android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.error))
+                    } else {
+                        android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.success))
+                    }
                 )
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 12).toFloat()
-                    setColor(if (friendUnlockFeedbackIsError) 0x18EF5350 else 0x1866BB6A)
+                    cornerRadius = dp(context, 10).toFloat()
+                    setColor(
+                        android.graphics.Color.parseColor(
+                            tint(if (friendUnlockFeedbackIsError) p.error else p.success, 0x18)
+                        )
+                    )
                 }
                 setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10))
                 visibility = if (friendUnlockFeedback.isBlank()) View.GONE else View.VISIBLE
@@ -1449,11 +1481,12 @@ object LockOverlayManager {
             Button(context).apply {
                 text = "返回锁机界面"
                 textSize = 13f
-                setTextColor(Color.parseColor("#C0B4FF"))
+                setTextColor(Color.parseColor(tint(p.haze, 0xE6)))
                 isAllCaps = false
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 12).toFloat()
-                    setColor(0x334F378B.toInt())
+                    cornerRadius = dp(context, 10).toFloat()
+                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card)))
+                    setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                 }
                 setPadding(dp(context, 20), dp(context, 9), dp(context, 20), dp(context, 9))
                 setOnClickListener {
@@ -1577,11 +1610,11 @@ object LockOverlayManager {
             Button(context).apply {
                 text = "验证密码"
                 textSize = 15f
-                setTextColor(Color.WHITE)
+                setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.bg)))
                 isAllCaps = false
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(context, 12).toFloat()
-                    setColor(0xFF7C4DFF.toInt())
+                    cornerRadius = dp(context, 10).toFloat()
+                    setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
                 }
                 setOnClickListener { onSubmitFriendUnlock(context, lockState) }
             },
@@ -1607,10 +1640,15 @@ object LockOverlayManager {
     }
 
     private fun refreshFriendAnswerText() {
+        val p = overlayPalette ?: com.focusguard.app.ui.theme.FocusColors.ink
         challengeAnswerText?.let { tv ->
             tv.text = if (friendUnlockInput.isEmpty()) "请输入密码" else friendUnlockInput
             tv.setTextColor(
-                if (friendUnlockInput.isEmpty()) Color.parseColor("#50FFFFFF") else Color.WHITE
+                if (friendUnlockInput.isEmpty()) {
+                    Color.parseColor(tint(p.faint, 0xFF))
+                } else {
+                    android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text))
+                }
             )
         }
     }
@@ -1638,7 +1676,13 @@ object LockOverlayManager {
             challengeFeedbackText?.let { tv ->
                 tv.text = friendUnlockFeedback
                 tv.visibility = View.VISIBLE
-                tv.setTextColor(Color.parseColor("#EF9A9A"))
+                tv.setTextColor(
+                    android.graphics.Color.parseColor(
+                        com.focusguard.app.ui.theme.FocusColors.hex(
+                            (overlayPalette ?: com.focusguard.app.ui.theme.FocusColors.ink).error
+                        )
+                    )
+                )
             }
             refreshFriendAnswerText()
         }
@@ -1749,11 +1793,11 @@ object LockOverlayManager {
                     Button(context).apply {
                         text = "提交答案"
                         textSize = 15f
-                        setTextColor(Color.WHITE)
+                        setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.bg)))
                         isAllCaps = false
                         background = GradientDrawable().apply {
-                            cornerRadius = dp(context, 12).toFloat()
-                            setColor(0xFF7C4DFF.toInt())
+                            cornerRadius = dp(context, 10).toFloat()
+                            setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
                         }
                         setOnClickListener { onSubmitAnswer(context, lockState, session) }
                     },
@@ -1772,12 +1816,16 @@ object LockOverlayManager {
                         isAllCaps = false
                         isEnabled = !exhausted
                         setTextColor(
-                            if (exhausted) Color.parseColor("#50FFFFFF")
-                            else Color.parseColor("#C0B4FF")
+                            if (exhausted) Color.parseColor(tint(p.faint, 0xFF))
+                            else Color.parseColor(tint(p.haze, 0xE6))
                         )
                         background = GradientDrawable().apply {
-                            cornerRadius = dp(context, 12).toFloat()
-                            setColor(if (exhausted) 0x22FFFFFF else 0x334F378B.toInt())
+                            cornerRadius = dp(context, 10).toFloat()
+                            setColor(
+                                if (exhausted) android.graphics.Color.parseColor(tint(p.card, 0x66))
+                                else android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.card))
+                            )
+                            setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xFF)))
                         }
                         challengeRefreshButton = this
                         setOnClickListener {
@@ -1804,14 +1852,15 @@ object LockOverlayManager {
         label: String,
         onClick: () -> Unit
     ): Button = Button(context).apply {
+        val p = palette(context)
         text = label
         textSize = if (label.length > 1) 13f else 17f
-        setTextColor(Color.WHITE)
+        setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text)))
         isAllCaps = false
         setPadding(0, 0, 0, 0)
         background = GradientDrawable().apply {
             cornerRadius = dp(context, 10).toFloat()
-            setColor(0xFF2E2740.toInt())
+            setColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.surface)))
         }
         setOnClickListener {
             try {
@@ -1838,10 +1887,15 @@ object LockOverlayManager {
     }
 
     private fun refreshAnswerText(session: ChallengeSession) {
+        val p = overlayPalette ?: com.focusguard.app.ui.theme.FocusColors.ink
         challengeAnswerText?.let { tv ->
             tv.text = session.input.ifEmpty { "请输入答案" }
             tv.setTextColor(
-                if (session.input.isEmpty()) Color.parseColor("#50FFFFFF") else Color.WHITE
+                if (session.input.isEmpty()) {
+                    Color.parseColor(tint(p.faint, 0xFF))
+                } else {
+                    android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text))
+                }
             )
         }
     }
@@ -1897,13 +1951,16 @@ object LockOverlayManager {
     }
 
     private fun showFeedback(session: ChallengeSession, msg: String, isError: Boolean) {
+        val p = overlayPalette ?: com.focusguard.app.ui.theme.FocusColors.ink
         session.feedback = msg
         session.feedbackIsError = isError
         challengeFeedbackText?.let { tv ->
             tv.text = msg
             tv.visibility = View.VISIBLE
             tv.setTextColor(
-                if (isError) Color.parseColor("#EF9A9A") else Color.parseColor("#A5D6A7")
+                android.graphics.Color.parseColor(
+                    com.focusguard.app.ui.theme.FocusColors.hex(if (isError) p.error else p.success)
+                )
             )
         }
     }
@@ -1928,10 +1985,12 @@ object LockOverlayManager {
         challengeRefreshButton?.let { btn ->
             val used = lockState.challengeRefreshCount
             val exhausted = used >= 5
+            val p = palette(context)
             btn.text = if (exhausted) "换题已满(5/5)" else "换一题($used/5)"
             btn.isEnabled = !exhausted
             btn.setTextColor(
-                if (exhausted) Color.parseColor("#50FFFFFF") else Color.parseColor("#C0B4FF")
+                if (exhausted) Color.parseColor(tint(p.faint, 0xFF))
+                else Color.parseColor(tint(p.haze, 0xE6))
             )
         }
     }
