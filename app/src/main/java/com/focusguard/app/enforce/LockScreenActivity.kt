@@ -1173,7 +1173,8 @@ private fun LockScreenContent(
             Spacer(Modifier.height(26.dp))
 
             // ── 底部内容（编排第三段：上移淡入） ──────────────
-            val bottomRise = (1f - stageBottom.value) * 24.dp.toPx()
+            val bottomRise = (1f - stageBottom.value) *
+                with(androidx.compose.ui.platform.LocalDensity.current) { 24.dp.toPx() }
             androidx.compose.foundation.layout.Box(
                 modifier = Modifier
                     .fillMaxWidth()
