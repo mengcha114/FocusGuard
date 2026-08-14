@@ -458,7 +458,20 @@ object LockOverlayManager {
         if (!animationsOn(root.context)) return
         view.alpha = 0f
         view.translationY = dp(root.context, 12).toFloat()
-        view.animate().alpha(1f).translationY(0f).setDuration(180L).start()
+        view.animate().alpha(1f).translationY(0f).setDuration(180L)
+            .withEndAction {
+                // 动画可能被窗口重建/旋转打断：结束态强制可见，杜绝 alpha 卡 0 白屏
+                view.alpha = 1f
+                view.translationY = 0f
+            }
+            .start()
+        // 兜底：300ms 后无论动画状态如何都强制可见
+        view.postDelayed({
+            if (view.isAttachedToWindow) {
+                view.alpha = 1f
+                view.translationY = 0f
+            }
+        }, 300L)
     }
 
     /** 提交失败反馈：横向轻晃提示（仅装饰，不影响文字说明）。 */

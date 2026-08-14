@@ -158,6 +158,10 @@ class GuardAccessibilityService : AccessibilityService() {
         // 会盖住验证界面、打断输入。
         if (com.focusguard.app.enforce.LockOverlayManager.isFriendUnlockMode) return
 
+        // 悬浮窗内答题模式（v3.0.0）：触摸开始事件会在此大量触发，
+        // 弹阻断窗会打断自绘键盘输入——答题期间禁止弹窗。
+        if (com.focusguard.app.enforce.LockOverlayManager.isChallengeMode) return
+
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> handleWindowsChanged()
@@ -166,8 +170,13 @@ class GuardAccessibilityService : AccessibilityService() {
                 removeGestureBlocker()
             }
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> {
-                // 连续手势：刷新撤窗定时（阻断窗保持到手势完全结束）
-                if (gestureBlocker != null) scheduleGestureBlockerTeardown()
+                // 手指接触屏幕（锁机中、非答题场景）→ 立即弹阻断窗打断下拉手势。
+                // 不依赖悬浮窗的 OUTSIDE 事件（部分 ROM 不转发窗口外触摸）。
+                if (gestureBlocker != null) {
+                    scheduleGestureBlockerTeardown()
+                } else {
+                    popGestureBlocker()
+                }
             }
         }
     }
