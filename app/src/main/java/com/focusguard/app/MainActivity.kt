@@ -90,6 +90,14 @@ class MainActivity : ComponentActivity() {
     private var stopVerifyAnswer by mutableStateOf("")
     private var stopVerifyError by mutableStateOf<String?>(null)
 
+    /** 待办提醒通知 / 第三方分享进来的「打开备忘录」请求。 */
+    private var pendingMemoOpen by mutableStateOf(false)
+
+    companion object {
+        /** 待办到期通知点击后带上的 extra：主界面直接打开备忘录页。 */
+        const val EXTRA_OPEN_MEMO = "open_memo"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appSettings = AppSettings(this)
@@ -126,6 +134,13 @@ class MainActivity : ComponentActivity() {
             // 状态检查失败不能阻塞应用启动
             android.util.Log.w("MainActivity", "锁机状态检查失败：${e.message}")
         }
+
+        // ── 备忘录入口意图处理（分享导入 / 到期通知点击）────
+        // 锁机中不会走到这里；处理完再进入 setContent，冷启动直达备忘录页。
+        handleMemoIntent(intent)
+
+        // ── 待办到期提醒重排（打开应用即兜底，防系统清理闹钟）────
+        runCatching { com.focusguard.app.service.MemoReminder.sync(this) }
 
         // ── 守护自动恢复 ──────────────────────────────
         // 曾开启 AI 守护但服务已中断（进程被杀 / MediaProjection 被系统回收）
@@ -292,15 +307,31 @@ class MainActivity : ComponentActivity() {
                     ) { padding ->
                         NavHost(
                             navController = navController,
-                            startDestination = "home",
+                            startDestination = if (pendingMemoOpen) "memo" else "home",
                             modifier = Modifier.padding(padding)
                         ) {
+                            // 热路径：应用已在运行（分享/通知点击）→ 切到备忘录页
+                            LaunchedEffect(pendingMemoOpen) {
+                                if (pendingMemoOpen) {
+                                    val current = navController.currentDestination?.route
+                                    if (current != "memo") {
+                                        navController.navigate("memo")
+                                    }
+                                    pendingMemoOpen = false
+                                }
+                            }
                             composable("home") {
                                 HomeScreen(
                                     serviceRunning = serviceRunning,
                                     onStartGuard = { startGuard() },
                                     onStopGuard = { requestStopGuard() },
-                                    onTestDetection = { testDetection() }
+                                    onTestDetection = { testDetection() },
+                                    onOpenMemo = { navController.navigate("memo") }
+                                )
+                            }
+                            composable("memo") {
+                                com.focusguard.app.ui.screens.MemoScreen(
+                                    onBack = { navController.popBackStack() }
                                 )
                             }
                             composable("apps") {
@@ -396,6 +427,32 @@ class MainActivity : ComponentActivity() {
         // 必需权限只有：应用使用情况（识别前台）+ 无障碍（锁机拦截）
         return com.focusguard.app.util.PermissionChecker.isUsageStatsGranted(this) &&
             com.focusguard.app.util.PermissionChecker.isAccessibilityEnabled(this)
+    }
+
+    /** 应用运行中收到新 Intent（分享导入 / 到期通知点击）。 */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleMemoIntent(intent)
+    }
+
+    /**
+     * 备忘录相关 Intent：
+     * - ACTION_SEND（text/plain）：第三方备忘录/便签分享的文本 → 导入桥
+     * - EXTRA_OPEN_MEMO：待办到期通知点击 → 打开备忘录页
+     */
+    private fun handleMemoIntent(intent: Intent?) {
+        intent ?: return
+        if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if (!text.isNullOrBlank()) {
+                com.focusguard.app.ui.screens.MemoImportBridge.pendingText = text
+                pendingMemoOpen = true
+            }
+        }
+        if (intent.getBooleanExtra(EXTRA_OPEN_MEMO, false)) {
+            pendingMemoOpen = true
+        }
     }
 
     /** 把系统真实权限同步回 Settings 标记（overlay、screen capture）。 */

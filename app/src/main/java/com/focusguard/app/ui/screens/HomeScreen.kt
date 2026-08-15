@@ -31,7 +31,8 @@ fun HomeScreen(
     serviceRunning: Boolean,
     onStartGuard: () -> Unit,
     onStopGuard: () -> Unit,
-    onTestDetection: () -> Unit
+    onTestDetection: () -> Unit,
+    onOpenMemo: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val logStore = remember { LogStore(context) }
@@ -216,7 +217,7 @@ fun HomeScreen(
 
         // ── 备忘录 ──────────────────────────────────────────────
         item {
-            MemoCard()
+            MemoCard(onOpenMemo = onOpenMemo)
         }
 
         // Recent logs
@@ -376,20 +377,34 @@ fun LogItem(
  * 备忘录卡片：首页显眼位置展示未完成待办。
  *
  * 支持：勾选完成、优先级色标、截止时间提示（逾期红色）、AI 添加标记。
- * 「管理」进入完整编辑面板（新增/改优先级/设截止/删除/清理已完成）。
+ * 点击卡片进入独立备忘录页（完整编辑 / 统计热力图 / 导入 / 外观）。
+ * 从其他页返回首页时自动刷新（AI 对话里新增的待办立即显示）。
  */
 @Composable
-private fun MemoCard() {
+private fun MemoCard(onOpenMemo: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val memoStore = remember { MemoStore(context) }
     var items by remember { mutableStateOf(memoStore.getAll()) }
-    var showManage by remember { mutableStateOf(false) }
+
+    // 回前台刷新：AI 对话/锁机页勾选的待办，返回首页立即同步
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                items = memoStore.getAll()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val pending = items.filter { !it.done }
     val doneCount = items.size - pending.size
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenMemo),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
     ) {
@@ -456,23 +471,13 @@ private fun MemoCard() {
 
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
-                onClick = { showManage = true },
+                onClick = onOpenMemo,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("管理备忘录", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+                Text("打开备忘录", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
             }
         }
-    }
-
-    if (showManage) {
-        MemoManageDialog(
-            memoStore = memoStore,
-            onDismiss = {
-                showManage = false
-                items = memoStore.getAll()
-            }
-        )
     }
 }
 
@@ -532,139 +537,4 @@ private fun MemoRow(item: MemoItem, onToggle: () -> Unit) {
             }
         }
     }
-}
-
-/** 备忘录管理面板：新增（含优先级/截止）、勾选、删除、清理已完成。 */
-@Composable
-private fun MemoManageDialog(memoStore: MemoStore, onDismiss: () -> Unit) {
-    var items by remember { mutableStateOf(memoStore.getAll()) }
-    var newText by remember { mutableStateOf("") }
-    var newPriority by remember { mutableIntStateOf(0) }
-    var newDue by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("备忘录", fontSize = 18.sp) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (items.isEmpty()) {
-                    Text(
-                        text = "还没有待办事项",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
-                    )
-                } else {
-                    items.forEach { item ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                MemoRow(
-                                    item = item,
-                                    onToggle = {
-                                        memoStore.toggleDone(item.id)
-                                        items = memoStore.getAll()
-                                    }
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    memoStore.remove(item.id)
-                                    items = memoStore.getAll()
-                                },
-                                modifier = Modifier.size(26.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "删除",
-                                    tint = Color(0xFFF44336),
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            }
-                        }
-                    }
-                    if (items.any { it.done }) {
-                        TextButton(
-                            onClick = {
-                                memoStore.clearDone()
-                                items = memoStore.getAll()
-                            },
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text(
-                                "清理已完成",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.1f))
-
-                OutlinedTextField(
-                    value = newText,
-                    onValueChange = { newText = it },
-                    label = { Text("新增待办") },
-                    placeholder = { Text("例如：完成数学作业第三章") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true
-                )
-
-                Text("优先级", fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(0 to "普通", 1 to "重要", 2 to "紧急").forEach { (p, label) ->
-                        FilterChip(shape = RoundedCornerShape(10.dp),
-                            selected = newPriority == p,
-                            onClick = { newPriority = p },
-                            label = { Text(label, fontSize = 11.sp) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                OutlinedTextField(
-                    value = newDue,
-                    onValueChange = { newDue = it },
-                    label = { Text("截止（可选）") },
-                    placeholder = { Text("30m / 2h / 今天 / 明天") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (newText.isNotBlank()) {
-                        memoStore.add(
-                            text = newText,
-                            priority = newPriority,
-                            dueAt = MemoStore.parseDueText(newDue)
-                        )
-                        newText = ""
-                        newPriority = 0
-                        newDue = ""
-                        items = memoStore.getAll()
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-            ) { Text("添加") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("完成", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(12.dp)
-    )
 }

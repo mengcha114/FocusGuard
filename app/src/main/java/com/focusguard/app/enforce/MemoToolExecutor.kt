@@ -82,17 +82,26 @@ object MemoToolExecutor {
 
         if (added.isNotEmpty() || completed.isNotEmpty()) {
             Log.d(TAG, "备忘录工具执行：新增 ${added.size} 条，完成 ${completed.size} 条")
+            // 数据已变：重排到期提醒（新增带截止的待办 / 完成项不再提醒）
+            try {
+                com.focusguard.app.service.MemoReminder.sync(context)
+            } catch (e: Exception) {
+                Log.w(TAG, "提醒重排失败：${e.message}")
+            }
         }
         return Result(added, completed)
     }
 
-    /** 把回复里的工具标记整行删掉（不让协议文本出现在气泡里）。 */
+    /**
+     * 把回复里的工具标记整行删掉（不让协议文本出现在气泡里）。
+     * 标记删除后把连续 3 个以上的空行压缩成 2 个，避免残留空白。
+     */
     fun stripMarkers(reply: String): String = reply
         .replace(addPattern, "")
         .replace(donePattern, "")
         .lines()
-        .filterNot { it.isBlank() && false }
-        .joinToString("\n")
+        .joinToString("\n") { it.trimEnd() }
+        .replace(Regex("""\n{3,}"""), "\n\n")
         .trim()
 
     private fun parsePriority(raw: String?): Int {

@@ -24,6 +24,9 @@ class FocusGuardApp : Application() {
          */
         const val ALERT_CHANNEL_ID = "focus_guard_alert"
 
+        /** 待办到期提醒通知渠道。 */
+        const val MEMO_CHANNEL_ID = "focus_guard_memo"
+
         const val NOTIFICATION_ID = 1001
 
         /** 娱乐提醒通知 id（每次覆盖同一条，不堆积）。 */
@@ -118,5 +121,19 @@ class FocusGuardApp : Application() {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         manager.createNotificationChannel(alertChannel)
+
+        // 待办到期提醒：IMPORTANCE_HIGH 横幅 + 提示音，与专注提醒同级
+        val memoChannel = NotificationChannel(
+            MEMO_CHANNEL_ID,
+            "待办到期提醒",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "备忘录事项到达截止时间时提醒"
+            setShowBadge(true)
+            enableVibration(true)
+            vibrationPattern = longArrayOf(0, 180, 100, 180)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        }
+        manager.createNotificationChannel(memoChannel)
     }
 }

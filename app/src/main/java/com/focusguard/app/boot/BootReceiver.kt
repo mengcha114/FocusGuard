@@ -69,6 +69,13 @@ class BootReceiver : BroadcastReceiver() {
                 Log.w(TAG, "注册开机自愈闹钟失败：${e.message}")
             }
 
+            // 2.5 待办到期提醒重排：重启后 AlarmManager 全部清空，必须重建
+            try {
+                com.focusguard.app.service.MemoReminder.sync(app)
+            } catch (e: Exception) {
+                Log.w(TAG, "待办提醒重排失败：${e.message}")
+            }
+
             // 3. 锁机状态仍在 → 立即恢复锁机页/全屏悬浮窗
             if (lockState.isLocked && lockState.shouldBlockNow) {
                 Log.d(TAG, "开机后锁机状态仍有效，恢复锁机页与悬浮窗")
