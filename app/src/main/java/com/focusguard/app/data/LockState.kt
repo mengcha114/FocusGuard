@@ -49,6 +49,44 @@ class LockState(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    init {
+        // 每次构造时校准重启基准：elapsedRealtime 在设备重启时归零，
+        // 若持久化的基准来自上一次启动周期（base > 当前 elapsed），
+        // 不校准会把剩余时长算成「原时长 + 设备已运行时长」（用户反馈
+        // 重启后锁机变成 100 多小时）。用墙钟剩余重新锚定即可恢复。
+        recalibrateAfterReboot()
+    }
+
+    /**
+     * 重启校准：检测单调时钟基准是否来自上一次启动周期，是则用墙钟剩余
+     * 重新锚定（防篡改基准在新周期重新生效，锁定时长不变）。
+     */
+    private fun recalibrateAfterReboot() {
+        val base = prefs.getLong(KEY_LOCK_ELAPSED_BASE, 0L)
+        if (base <= 0L) return
+        val nowElapsed = android.os.SystemClock.elapsedRealtime()
+        if (base <= nowElapsed) return
+        // 设备重启过（elapsed 归零，base 成了"未来"值）
+        val wallRemaining = (prefs.getLong(KEY_LOCK_UNTIL, 0L) - System.currentTimeMillis())
+            .coerceAtLeast(0L)
+        if (wallRemaining <= 0L) {
+            // 墙钟剩余已尽（重启期间已到期）：清锁
+            prefs.edit()
+                .putLong(KEY_LOCK_UNTIL, 0L)
+                .putLong(KEY_LOCK_ELAPSED_BASE, 0L)
+                .putLong(KEY_LOCK_DURATION_MS, 0L)
+                .putLong(KEY_LOCK_WALL_BASE, 0L)
+                .apply()
+        } else {
+            // 用墙钟剩余重新锚定新启动周期
+            prefs.edit()
+                .putLong(KEY_LOCK_ELAPSED_BASE, nowElapsed)
+                .putLong(KEY_LOCK_DURATION_MS, wallRemaining)
+                .putLong(KEY_LOCK_WALL_BASE, System.currentTimeMillis())
+                .apply()
+        }
+    }
+
     // ── 定时锁机 ──────────────────────────────────────
 
     /** 锁机截止时间戳（墙钟，兼容旧数据/展示），0 表示未锁机。 */
