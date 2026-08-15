@@ -127,6 +127,13 @@ gacha
         private const val KEY_SCREEN_CAPTURE_GRANTED = "screen_capture_granted"
         private const val KEY_OVERLAY_GRANTED = "overlay_granted"
         private const val KEY_ACCESSIBILITY_GRANTED = "accessibility_granted"
+
+        // ── 隐私保护 ───────────────────────────────────────────
+        // 敏感应用隐私保护（默认开启）：检测到银行/支付/密码管理等
+        // 敏感应用时，本轮不截屏、不读屏幕文字、不上传任何内容。
+        private const val KEY_PRIVACY_PROTECT = "privacy_protect"
+        // 用户自定义敏感应用列表（逗号/换行分隔，按包名或应用名片段匹配）。
+        private const val KEY_SENSITIVE_APPS = "sensitive_apps"
     }
     
     enum class EnforcementMode(val value: Int) {
@@ -150,16 +157,44 @@ gacha
         }
     }
     
+    private val appContext: Context = context.applicationContext
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     
     // API settings
     var apiBaseUrl: String
         get() = prefs.getString(KEY_API_BASE_URL, "https://api.moonshot.cn/v1") ?: "https://api.moonshot.cn/v1"
         set(value) = prefs.edit().putString(KEY_API_BASE_URL, value).apply()
-    
+
+    /**
+     * API 密钥（AES-256-GCM 加密存储，密文在独立 prefs 文件中）。
+     *
+     * - setter：直接加密落盘，明文不再写入 SharedPreferences；
+     * - getter：发现旧版明文时做一次性加密迁移（加密成功后删除明文），
+     *   之后只从保险库解密读取。解密失败（换机恢复/密文损坏）返回空串，
+     *   表现为"未配置密钥"，用户重新输入即可。
+     */
     var apiKey: String
-        get() = prefs.getString(KEY_API_KEY, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_API_KEY, value).apply()
+        get() {
+            // ── 旧版明文迁移 ────────────────────────────────
+            // 历史版本把密钥明文存在本 prefs 的 api_key 键里。
+            // 首次读取时加密到保险库并删除明文；迁移期间进程被杀也无害——
+            // 明文仍在，下次读取会重新迁移。
+            val legacy = prefs.getString(KEY_API_KEY, null)
+            if (!legacy.isNullOrEmpty()) {
+                if (com.focusguard.app.privacy.ApiKeyVault.encrypt(appContext, legacy)) {
+                    prefs.edit().remove(KEY_API_KEY).apply()
+                }
+                return legacy
+            }
+            return com.focusguard.app.privacy.ApiKeyVault.decrypt(appContext)
+        }
+        set(value) {
+            if (value.isBlank()) {
+                com.focusguard.app.privacy.ApiKeyVault.clear(appContext)
+            } else {
+                com.focusguard.app.privacy.ApiKeyVault.encrypt(appContext, value)
+            }
+        }
     
     var modelName: String
         get() {
@@ -427,4 +462,26 @@ gacha
     var accessibilityGranted: Boolean
         get() = prefs.getBoolean(KEY_ACCESSIBILITY_GRANTED, false)
         set(value) = prefs.edit().putBoolean(KEY_ACCESSIBILITY_GRANTED, value).apply()
+
+    // ── 隐私保护 ───────────────────────────────────────────────
+
+    /**
+     * 敏感应用隐私保护开关。默认开启。
+     *
+     * 开启后，检测流水线在发现前台应用是银行/支付/密码管理等敏感应用时，
+     * 本轮直接跳过：不截屏、不通过无障碍读屏幕文字、不发任何网络请求，
+     * 只记录一条「隐私保护」日志。判定为中性，不会触发执法。
+     */
+    var privacyProtectEnabled: Boolean
+        get() = prefs.getBoolean(KEY_PRIVACY_PROTECT, true)
+        set(value) = prefs.edit().putBoolean(KEY_PRIVACY_PROTECT, value).apply()
+
+    /**
+     * 用户自定义敏感应用列表（逗号/换行分隔）。
+     * 每项按"包含"匹配包名或应用名（忽略大小写），例如
+     * "notion" 或 "密码本"。为空时仅使用内置特征表。
+     */
+    var sensitiveApps: String
+        get() = prefs.getString(KEY_SENSITIVE_APPS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_SENSITIVE_APPS, value).apply()
 }

@@ -634,13 +634,19 @@ class MonitorService : Service() {
 
         // 调度反馈：学习→逐步放宽间隔，娱乐→立刻加密
         try {
-            scheduler?.onResult(outcome.classification)
-            // 智能调度：风险 EWMA 更新 + 错误退避标记
-            lastDetectionWasError = outcome.source == DetectionSource.ERROR
-            smartScheduler?.onDetectionResult(
-                outcome.classification,
-                isError = lastDetectionWasError
-            )
+            if (outcome.source == DetectionSource.PRIVACY_SKIP) {
+                // 隐私跳过不含任何行为信息：不参与风险计算，
+                // 否则"打开银行 app"会被当成中性 0.35 混入 EWMA，无谓推高风险
+                lastDetectionWasError = false
+            } else {
+                scheduler?.onResult(outcome.classification)
+                // 智能调度：风险 EWMA 更新 + 错误退避标记
+                lastDetectionWasError = outcome.source == DetectionSource.ERROR
+                smartScheduler?.onDetectionResult(
+                    outcome.classification,
+                    isError = lastDetectionWasError
+                )
+            }
         } catch (e: Exception) {
             Log.w(TAG, "调度反馈失败：${e.message}")
         }

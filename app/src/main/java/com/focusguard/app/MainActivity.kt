@@ -168,7 +168,8 @@ class MainActivity : ComponentActivity() {
                                 text = "在使用「专注卫士」前，请仔细阅读以下内容：\n\n" +
                                     "1. 本软件目前处于测试阶段，可能存在稳定性问题或误判，请理性使用。\n\n" +
                                     "2. 屏幕检测功能会定期截取屏幕画面并上传到您配置的 AI 模型服务进行识别，" +
-                                    "请确保您使用的是可信的服务商，并留意画面中可能包含的个人隐私信息。\n\n" +
+                                    "请确保您使用的是可信的服务商，并留意画面中可能包含的个人隐私信息。" +
+                                    "应用已内置敏感应用保护：银行、支付、密码管理等应用不会截屏、不会被读取内容（可在设置中调整）。\n\n" +
                                     "3. 锁机功能为自我约束工具，无法阻止物理手段（如关机、拔电池），" +
                                     "也不构成对设备的完全控制。\n\n" +
                                     "4. 本项目为开源软件（MIT 协议），按「现状」提供，不附带任何担保。" +
@@ -261,9 +262,9 @@ class MainActivity : ComponentActivity() {
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.Chat, contentDescription = null) },
                                     label = { Text("AI 对话") },
-                                    selected = currentRoute == "logs",
+                                    selected = currentRoute == "ai_chat",
                                     onClick = {
-                                        navController.navigate("logs") {
+                                        navController.navigate("ai_chat") {
                                             popUpTo(navController.graph.findStartDestination().id) {
                                                 saveState = true
                                             }
@@ -305,7 +306,7 @@ class MainActivity : ComponentActivity() {
                             composable("apps") {
                                 AppControlScreen()
                             }
-                            composable("logs") {
+                            composable("ai_chat") {
                                 com.focusguard.app.ui.screens.AiChatScreen()
                             }
                             composable("settings") {

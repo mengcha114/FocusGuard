@@ -45,9 +45,11 @@
         <package android:name="com.rosan.dhizuku" />
     </queries>
 
+    <!-- allowBackup=false：本应用处理屏幕内容日志与 API 密钥等敏感数据，
+         禁止云备份与设备迁移，杜绝"备份文件泄露隐私/换机恢复带回过期锁机状态"。 -->
     <application
         android:name=".FocusGuardApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

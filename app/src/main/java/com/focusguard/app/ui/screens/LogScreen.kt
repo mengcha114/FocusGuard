@@ -267,6 +267,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
         "BLANK_SCREEN" -> "空白画面"
         "BUDGET_EXCEEDED" -> "配额用尽"
         "AI_VISION" -> "AI 视觉"
+        "PRIVACY_SKIP" -> "隐私保护"
         "ERROR" -> "错误"
         else -> log.source
     }

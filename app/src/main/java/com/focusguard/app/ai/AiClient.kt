@@ -265,29 +265,29 @@ class AiClient {
                     if (!line.startsWith("data:")) continue
                     val payload = line.removePrefix("data:").trim()
                     if (payload == "[DONE]") break
-                    val delta = try {
-                        when (apiFormat) {
-                            "anthropic" -> JSONObject(payload)
-                                .optString("type").let { t ->
-                                    if (t == "content_block_delta") {
-                                        JSONObject(payload)
-                                            .optJSONObject("delta")
-                                            ?.optString("text", "")
-                                    } else ""
-                                }
-                            "gemini" -> JSONObject(payload)
-                                .optJSONArray("candidates")?.optJSONObject(0)
-                                ?.optJSONObject("content")?.optJSONArray("parts")
-                                ?.optJSONObject(0)?.optString("text", "")
-                            else -> JSONObject(payload)
-                                .optJSONArray("choices")?.optJSONObject(0)
-                                ?.optJSONObject("delta")?.optString("content", "")
-                        }.orEmpty()
-                        // 过滤思考块：reasoning/<think> 分片不展示（智谱等）
-                        stripThinking(delta)
-                    } catch (e: Exception) {
-                        ""
-                    }
+                    val delta = stripThinking(
+                        try {
+                            when (apiFormat) {
+                                "anthropic" -> JSONObject(payload)
+                                    .optString("type").let { t ->
+                                        if (t == "content_block_delta") {
+                                            JSONObject(payload)
+                                                .optJSONObject("delta")
+                                                ?.optString("text", "")
+                                        } else ""
+                                    }
+                                "gemini" -> JSONObject(payload)
+                                    .optJSONArray("candidates")?.optJSONObject(0)
+                                    ?.optJSONObject("content")?.optJSONArray("parts")
+                                    ?.optJSONObject(0)?.optString("text", "")
+                                else -> JSONObject(payload)
+                                    .optJSONArray("choices")?.optJSONObject(0)
+                                    ?.optJSONObject("delta")?.optString("content", "")
+                            }.orEmpty()
+                        } catch (e: Exception) {
+                            ""
+                        }
+                    )
                     if (delta.isNotEmpty()) {
                         full.append(delta)
                         onDelta(delta)

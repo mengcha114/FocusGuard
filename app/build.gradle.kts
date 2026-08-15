@@ -100,9 +100,6 @@ dependencies {
     
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    
-    // DataStore for settings
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     // WorkManager：守护看门狗（进程被杀后仍能被系统唤起重启守护服务）
     implementation("androidx.work:work-runtime-ktx:2.9.0")

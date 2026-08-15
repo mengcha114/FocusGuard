@@ -76,6 +76,10 @@ fun SettingsScreen(
     var studyKeywords by remember { mutableStateOf(settings.studyKeywords) }
     var entertainmentKeywords by remember { mutableStateOf(settings.entertainmentKeywords) }
 
+    // 隐私保护（敏感应用跳过截屏/文字读取/上传）
+    var privacyProtectEnabled by remember { mutableStateOf(settings.privacyProtectEnabled) }
+    var sensitiveApps by remember { mutableStateOf(settings.sensitiveApps) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -176,6 +180,32 @@ fun SettingsScreen(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "附加到 AI 检测提示词末尾，可让提醒更有趣、更有温度",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
+            )
+        }
+
+        // ── 隐私保护 ──────────────────────────────────────────────
+        SettingsSection(title = "隐私保护", icon = Icons.Default.VerifiedUser) {
+            TokenSavingToggle(
+                title = "敏感应用保护",
+                subtitle = "检测到银行/支付/密码管理等敏感应用时，本轮不截屏、不读取屏幕文字、不上传任何内容",
+                icon = Icons.Default.VisibilityOff,
+                checked = privacyProtectEnabled,
+                onCheckedChange = { privacyProtectEnabled = it },
+                highlight = true
+            )
+            Spacer(Modifier.height(6.dp))
+            OutlinedTextField(
+                value = sensitiveApps, onValueChange = { sensitiveApps = it },
+                label = { Text("自定义敏感应用（可选）") },
+                placeholder = { Text("包名或应用名片段，逗号分隔，例如：notion, 密码本") },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                minLines = 2
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "命中敏感应用时仅记录一条「隐私保护」日志，判定为中性、不触发任何执法。API 密钥已使用系统级 AES 加密存储，不会以明文写入应用数据。",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
@@ -690,6 +720,9 @@ fun SettingsScreen(
             settings.smartScheduleEnabled = smartScheduleEnabled
             settings.appBlockMinutes = appBlockMinutes.coerceIn(1, 480)
             settings.customMottos = customMottos
+            // 隐私保护
+            settings.privacyProtectEnabled = privacyProtectEnabled
+            settings.sensitiveApps = sensitiveApps
         }
 
         // ── 方向判定：修改是否在「降低对自己的限制」 ──────────────
@@ -739,7 +772,8 @@ fun SettingsScreen(
             screenTextPrefilter, decisionCacheEnabled, adaptiveInterval, dailyCallLimit,
             aiLockMinutes, aiLockStrength, aiAlertEnabled, aiAlertDelaySeconds,
             appBlockMinutes, customMottos, smartScheduleEnabled,
-            studyKeywords, entertainmentKeywords
+            studyKeywords, entertainmentKeywords,
+            privacyProtectEnabled, sensitiveApps
         ) {
             if (isFirstSave) {
                 // 首次组合：只保存不提示（避免一进页面就弹"已保存"）

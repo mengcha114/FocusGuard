@@ -22,6 +22,7 @@ enum class DetectionSource {
     BLANK_SCREEN,   // 息屏/纯色屏，无识别价值，零 token
     BUDGET_EXCEEDED, // 今日配额用尽，退化为本地判定
     AI_VISION,      // 视觉大模型判定，消耗 token
+    PRIVACY_SKIP,   // 敏感应用隐私保护：不截屏、不读取、不上传
     ERROR
 }
 
@@ -42,14 +43,16 @@ data class DetectionOutcome(
  *
  * 判定顺序（越靠前越省钱，命中即返回）：
  *
- *  L0 白名单        用户显式声明的应用 → 直接放行
- *  L1 应用分类      纯游戏 / 纯学习 / 系统应用 → 直接定论
- *  L2 屏幕文字      无障碍读文字，关键词打分 → 有明显倾向就定论
- *  L3 画面去重      与上一帧感知哈希几乎相同 → 复用上次结论
- *  L4 空白画面      息屏、纯色屏 → 判为中性
- *  L5 判定缓存      历史上见过高度相似的画面 → 复用历史结论
- *  L6 预算闸门      今日 token 配额耗尽 → 退化为本地保守判定
- *  L7 视觉大模型    以上都无法定论时才真正调用
+ *  L0 隐私保护      前台是敏感应用（银行/支付/密码管理等）→
+ *                   不截屏、不读文字、不上传，只记一条隐私日志
+ *  L1 白名单        用户显式声明的应用 → 直接放行
+ *  L2 应用分类      纯游戏 / 纯学习 / 系统应用 → 直接定论
+ *  L3 屏幕文字      无障碍读文字，关键词打分 → 有明显倾向就定论
+ *  L4 画面去重      与上一帧感知哈希几乎相同 → 复用上次结论
+ *  L5 空白画面      息屏、纯色屏 → 判为中性
+ *  L6 判定缓存      历史上见过高度相似的画面 → 复用历史结论
+ *  L7 预算闸门      今日 token 配额耗尽 → 退化为本地保守判定
+ *  L8 视觉大模型    以上都无法定论时才真正调用
  *
  * 关键设计取舍：视频平台不因"是视频应用"就判娱乐。
  * B 站上的编程教程必须能被识别为学习，宁可多花一次 token，
@@ -79,11 +82,11 @@ class DetectionPipeline(
 
     /**
      * 各级开关。用户在设置里关掉 Token 节约系统后，
-     * L2 文字预过滤、L3 画面去重、L5 判定缓存全部跳过，
+     * L3 文字预过滤、L4 画面去重、L6 判定缓存全部跳过，
      * 每轮检测都直接调用视觉大模型。
      *
-     * L0 白名单、L1 应用分类、L4 空白画面保持始终生效：
-     * 这三级是零成本的常识判断（用户显式声明、纯游戏应用、息屏），
+     * L0 隐私保护、L1 白名单、L2 应用分类、L5 空白画面保持始终生效：
+     * 这些是零成本的常识判断（隐私边界、用户显式声明、纯游戏应用、息屏），
      * 没有任何理由花钱去问模型"现在是不是息屏"。
      */
     private val dedupOn: Boolean get() = settings.screenHashDedupEnabled
@@ -95,7 +98,24 @@ class DetectionPipeline(
         val pkg = appInfo?.packageName.orEmpty()
         val label = appInfo?.label.ifNullOrBlank { pkg }
 
-        // ── L0 白名单 ─────────────────────────────────
+        // ── L0 隐私保护（优先于一切判定，含白名单）─────────────────
+        // 银行/支付/密码管理等敏感应用的内容绝不能离开设备。即使该应用
+        // 被加进白名单，也只是"不判违规"，用户未必愿意把截图发出去——
+        // 隐私优先级高于检测功能：本轮不截屏、不读屏幕文字、不上传。
+        if (settings.privacyProtectEnabled && pkg.isNotBlank()) {
+            val sensitive = com.focusguard.app.privacy.PrivacyGuard.isSensitive(
+                pkg, label, settings.sensitiveApps
+            ) || com.focusguard.app.privacy.PrivacyGuard.isFinanceCategory(context, pkg)
+            if (sensitive) {
+                return DetectionOutcome(
+                    "NEUTRAL", 1f,
+                    "隐私保护：$label 属于敏感应用，本轮已跳过截屏与内容读取",
+                    DetectionSource.PRIVACY_SKIP, pkg, label
+                )
+            }
+        }
+
+        // ── L1 白名单 ─────────────────────────────────
         if (isWhitelisted(label, pkg)) {
             return saved(
                 DetectionOutcome(
@@ -105,7 +125,7 @@ class DetectionPipeline(
             )
         }
 
-        // ── L1 应用分类 ───────────────────────────────
+        // ── L2 应用分类 ───────────────────────────────
         if (appInfo != null) {
             val verdict = AppClassifier.classifyByAppInfo(appInfo)
             if (verdict != "NEEDS_AI") {
@@ -120,7 +140,7 @@ class DetectionPipeline(
             }
         }
 
-        // ── L2 屏幕文字（可关闭）──────────────────────
+        // ── L3 屏幕文字（可关闭）──────────────────────
         if (textPrefilterOn) {
             ScreenTextReader.readCurrentScreenText()?.let { text ->
                 // 完整词表（内置默认 + 用户编辑，设置页可查看/修改）
@@ -159,7 +179,7 @@ class DetectionPipeline(
         try {
             val hash = ImageHasher.dHash(capture.bitmap)
 
-            // ── L3 画面去重（可关闭）─────────────────
+            // ── L4 画面去重（可关闭）─────────────────
             val prevHash = lastHash
             if (dedupOn &&
                 prevHash != null &&
@@ -177,7 +197,7 @@ class DetectionPipeline(
                 )
             }
 
-            // ── L4 空白画面 ───────────────────────────
+            // ── L5 空白画面 ───────────────────────────
             if (ImageHasher.isNearlyBlank(capture.bitmap)) {
                 remember(hash, pkg, "NEUTRAL", 0.9f, "息屏或纯色画面")
                 return saved(
@@ -188,7 +208,7 @@ class DetectionPipeline(
                 )
             }
 
-            // ── L5 判定缓存（可关闭）─────────────────
+            // ── L6 判定缓存（可关闭）─────────────────
             if (cacheOn) {
                 decisionCache.lookup(pkg, hash)?.let { cached ->
                     remember(hash, pkg, cached.classification, cached.confidence, cached.reason)
@@ -202,7 +222,7 @@ class DetectionPipeline(
                 }
             }
 
-            // ── L6 预算闸门 ───────────────────────────
+            // ── L7 预算闸门 ───────────────────────────
             // 每次都从 SharedPreferences 重新读取，而不是构造时缓存，
             // 否则用户在设置里改完密钥后仍会看到"未配置"
             val currentApiKey = settings.apiKey
@@ -221,7 +241,7 @@ class DetectionPipeline(
                 )
             }
 
-            // ── L7 视觉大模型 ─────────────────────────
+            // ── L8 视觉大模型 ─────────────────────────
             // 把备忘录未完成事项注入提示词：检测到娱乐时，
             // 让模型在提醒语里引用待办（如"你还有 xxx 没做呢"）
             val memoText = runCatching {
