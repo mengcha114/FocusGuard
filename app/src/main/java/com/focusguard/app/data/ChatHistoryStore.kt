@@ -21,7 +21,12 @@ class ChatHistoryStore(context: Context) {
     }
 
     /** 一条对话消息（与 AiChatScreen 展示格式一致）。 */
-    data class ChatEntry(val role: String, val text: String, val time: String)
+    data class ChatEntry(
+        val role: String,
+        val text: String,
+        val time: String,
+        val thinking: String = ""
+    )
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -36,7 +41,8 @@ class ChatHistoryStore(context: Context) {
                 ChatEntry(
                     role = obj.optString("role", "user"),
                     text = obj.optString("text", ""),
-                    time = obj.optString("time", "")
+                    time = obj.optString("time", ""),
+                    thinking = obj.optString("thinking", "")
                 )
             }
         } catch (e: Exception) {
@@ -58,12 +64,12 @@ class ChatHistoryStore(context: Context) {
      * 流式回复每收到一段增量就调用一次——即使页面销毁、协程被取消，
      * 已收到的内容也已落盘，用户重新进入能看到（部分）回复。
      */
-    fun updateLastMessage(text: String) {
+    fun updateLastMessage(text: String, thinking: String = "") {
         val list = getMessages().toMutableList()
         if (list.isEmpty()) return
         val lastIndex = list.indexOfLast { it.role == "ai" }
         if (lastIndex < 0) return
-        list[lastIndex] = list[lastIndex].copy(text = text)
+        list[lastIndex] = list[lastIndex].copy(text = text, thinking = thinking)
         save(list)
     }
 
@@ -80,6 +86,7 @@ class ChatHistoryStore(context: Context) {
                     .put("role", entry.role)
                     .put("text", entry.text)
                     .put("time", entry.time)
+                    .put("thinking", entry.thinking)
             )
         }
         // commit() 同步落盘：聊天记录数据量小（≤100 条），

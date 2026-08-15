@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
@@ -30,7 +32,12 @@ import java.util.Date
 import java.util.Locale
 
 /** 对话消息（本地展示用）。 */
-private data class ChatMsg(val role: String, val text: String, val time: String)
+private data class ChatMsg(
+    val role: String,
+    val text: String,
+    val time: String,
+    val thinking: String = ""
+)
 
 /**
  * AI 对话页。
@@ -66,7 +73,7 @@ fun AiChatScreen() {
     var messages by remember {
         mutableStateOf(
             chatHistory.getMessages()
-                .map { ChatMsg(it.role, it.text, it.time) } + loadAiReminders()
+                .map { ChatMsg(it.role, it.text, it.time, it.thinking) } + loadAiReminders()
         )
     }
 
@@ -358,9 +365,11 @@ fun AiChatScreen() {
                                 // 并持久化（更新占位所在的那条记录，绝不追加第二条）。
                                 val last = messages.lastOrNull()
                                 if (last != null && last.role == "ai") {
+                                    val thinking =
+                                        com.focusguard.app.ai.AiClient.extractThinking(reply)
                                     messages = messages.dropLast(1) +
-                                        last.copy(text = displayReply)
-                                    chatHistory.updateLastMessage(displayReply)
+                                        last.copy(text = displayReply, thinking = thinking)
+                                    chatHistory.updateLastMessage(displayReply, thinking)
                                 }
                             } catch (e: Exception) {
                                 // 流式/网络异常：把占位消息替换为错误说明并保存——
@@ -444,16 +453,57 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                         )
                     } else {
-                        // AI 消息：Markdown 渲染（compose-markdown 开源库）
-                        MarkdownText(
-                            markdown = msg.text,
-                            modifier = Modifier,
-                            style = LocalTextStyle.current.copy(
-                                color = MaterialTheme.colorScheme.onBackground,
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp
+                        Column {
+                            // 思考过程：默认折叠，点击展开/收起
+                            if (msg.thinking.isNotBlank()) {
+                                var expanded by remember { mutableStateOf(false) }
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { expanded = !expanded }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = if (expanded) {
+                                            Icons.Default.ExpandLess
+                                        } else {
+                                            Icons.Default.ExpandMore
+                                        },
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = if (expanded) "收起思考" else "💭 查看思考过程",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
+                                    )
+                                }
+                                if (expanded) {
+                                    Text(
+                                        text = msg.thinking,
+                                        fontSize = 12.sp,
+                                        lineHeight = 18.sp,
+                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                        modifier = Modifier
+                                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    )
+                                }
+                                Spacer(Modifier.height(4.dp))
+                            }
+                            // AI 消息：Markdown 渲染（compose-markdown 开源库）
+                            MarkdownText(
+                                markdown = msg.text,
+                                modifier = Modifier,
+                                style = LocalTextStyle.current.copy(
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }

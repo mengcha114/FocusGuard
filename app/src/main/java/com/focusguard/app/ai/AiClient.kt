@@ -49,13 +49,23 @@ class AiClient {
         /**
          * 移除模型输出的思考块：智谱等模型会把推理过程以
          * `<think>...</think>` 标签混入正文（或 reasoning_content 被网关
-         * 拼进 content），对话中不应展示。
+         * 拼进 content），正文展示中不应包含。
          */
         fun stripThinking(text: String): String =
             text.replace(
                 Regex("""<think>[\s\S]*?</think>""", RegexOption.IGNORE_CASE),
                 ""
             )
+
+        /**
+         * 提取模型输出的思考块内容（去标签），供「折叠展示、点击展开」。
+         * 无思考块时返回空串。
+         */
+        fun extractThinking(text: String): String {
+            val m = Regex("""<think>([\s\S]*?)</think>""", RegexOption.IGNORE_CASE)
+                .find(text)
+            return m?.groupValues?.get(1)?.trim().orEmpty()
+        }
         /**
          * 输出上限。
          *
@@ -221,10 +231,6 @@ class AiClient {
                             put("messages", JSONArray().apply { msgs.forEach { put(it) } })
                             put("max_tokens", 1024)
                             put("stream", true)
-                            // 智谱：关闭深度思考，避免 <think> 推理内容混入正文
-                            if (baseUrl.contains("bigmodel.cn")) {
-                                put("thinking", JSONObject().put("type", "disabled"))
-                            }
                         }, "${baseUrl.trimEnd('/')}/chat/completions", mapOf(
                             "Authorization" to "Bearer $apiKey",
                             "Content-Type" to "application/json"
@@ -374,10 +380,6 @@ class AiClient {
                             put("model", modelName)
                             put("messages", JSONArray().apply { msgs.forEach { put(it) } })
                             put("max_tokens", 1024)
-                            // 智谱：关闭深度思考，避免 <think> 推理内容混入正文
-                            if (baseUrl.contains("bigmodel.cn")) {
-                                put("thinking", JSONObject().put("type", "disabled"))
-                            }
                         }, "${baseUrl.trimEnd('/')}/chat/completions", mapOf(
                             "Authorization" to "Bearer $apiKey",
                             "Content-Type" to "application/json"
