@@ -336,7 +336,10 @@ fun AiChatScreen() {
 
                                 // 去掉协议标记，再把执行结果作为系统提示追加到气泡
                                 var displayReply = com.focusguard.app.enforce
-                                    .MemoToolExecutor.stripMarkers(reply)
+                                    .MemoToolExecutor
+                                    .stripMarkers(
+                                        com.focusguard.app.ai.AiClient.stripThinking(reply)
+                                    )
                                     .replace(Regex("""__LOCK__:\d+"""), "")
                                     // 过滤模型输出的 function calling JSON（lock_phone 行）
                                     .replace(

@@ -45,6 +45,17 @@ class AiClient {
 
     companion object {
         private const val TAG = "AiClient"
+
+        /**
+         * 移除模型输出的思考块：智谱等模型会把推理过程以
+         * `<think>...</think>` 标签混入正文（或 reasoning_content 被网关
+         * 拼进 content），对话中不应展示。
+         */
+        fun stripThinking(text: String): String =
+            text.replace(
+                Regex("""<think>[\s\S]*?</think>""", RegexOption.IGNORE_CASE),
+                ""
+            )
         /**
          * 输出上限。
          *
@@ -210,6 +221,10 @@ class AiClient {
                             put("messages", JSONArray().apply { msgs.forEach { put(it) } })
                             put("max_tokens", 1024)
                             put("stream", true)
+                            // 智谱：关闭深度思考，避免 <think> 推理内容混入正文
+                            if (baseUrl.contains("bigmodel.cn")) {
+                                put("thinking", JSONObject().put("type", "disabled"))
+                            }
                         }, "${baseUrl.trimEnd('/')}/chat/completions", mapOf(
                             "Authorization" to "Bearer $apiKey",
                             "Content-Type" to "application/json"
@@ -262,6 +277,8 @@ class AiClient {
                                 .optJSONArray("choices")?.optJSONObject(0)
                                 ?.optJSONObject("delta")?.optString("content", "")
                         }.orEmpty()
+                        // 过滤思考块：reasoning/<think> 分片不展示（智谱等）
+                        stripThinking(delta)
                     } catch (e: Exception) {
                         ""
                     }
@@ -357,6 +374,10 @@ class AiClient {
                             put("model", modelName)
                             put("messages", JSONArray().apply { msgs.forEach { put(it) } })
                             put("max_tokens", 1024)
+                            // 智谱：关闭深度思考，避免 <think> 推理内容混入正文
+                            if (baseUrl.contains("bigmodel.cn")) {
+                                put("thinking", JSONObject().put("type", "disabled"))
+                            }
                         }, "${baseUrl.trimEnd('/')}/chat/completions", mapOf(
                             "Authorization" to "Bearer $apiKey",
                             "Content-Type" to "application/json"
@@ -383,17 +404,19 @@ class AiClient {
                             recordDiagnostic("对话 HTTP ${resp.code} 响应=${respBody.take(200)}")
                             return@withContext "请求失败（${resp.code}）：${respBody.take(120)}"
                         }
-                        when (apiFormat) {
-                            "anthropic" -> JSONObject(respBody)
-                                .optJSONArray("content")?.optJSONObject(0)?.optString("text")
-                            "gemini" -> JSONObject(respBody)
-                                .optJSONArray("candidates")?.optJSONObject(0)
-                                ?.optJSONObject("content")?.optJSONArray("parts")
-                                ?.optJSONObject(0)?.optString("text")
-                            else -> JSONObject(respBody)
-                                .optJSONArray("choices")?.optJSONObject(0)
-                                ?.optJSONObject("message")?.optString("content")
-                        }.orEmpty()
+                        stripThinking(
+                            when (apiFormat) {
+                                "anthropic" -> JSONObject(respBody)
+                                    .optJSONArray("content")?.optJSONObject(0)?.optString("text")
+                                "gemini" -> JSONObject(respBody)
+                                    .optJSONArray("candidates")?.optJSONObject(0)
+                                    ?.optJSONObject("content")?.optJSONArray("parts")
+                                    ?.optJSONObject(0)?.optString("text")
+                                else -> JSONObject(respBody)
+                                    .optJSONArray("choices")?.optJSONObject(0)
+                                    ?.optJSONObject("message")?.optString("content")
+                            }.orEmpty()
+                        )
                     }
                     return@withContext if (result.isBlank()) {
                         "（AI 未返回内容，请确认模型支持文本对话）"
