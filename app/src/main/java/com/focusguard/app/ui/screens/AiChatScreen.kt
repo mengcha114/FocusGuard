@@ -275,7 +275,9 @@ fun AiChatScreen() {
                                     append(
                                         "\n你拥有 lock_phone 工具：当用户请求锁机、自律、管住自己、限制使用手机时，" +
                                             "在你的回复末尾单独输出一行 __LOCK__:<分钟数>（例如 __LOCK__:30 表示锁机 30 分钟），" +
-                                            "应用会自动执行锁机。其余情况不要输出该标记。"
+                                            "应用会自动执行锁机。其余情况不要输出该标记。" +
+                                            "注意：只能输出 __LOCK__: 这样的文本标记，禁止输出 JSON 或函数调用格式" +
+                                            "（例如 {\"name\":\"lock_phone\"...} 是错误的，写了应用也无法识别）。"
                                     )
                                     append(
                                         com.focusguard.app.enforce.MemoToolExecutor
@@ -336,6 +338,11 @@ fun AiChatScreen() {
                                 var displayReply = com.focusguard.app.enforce
                                     .MemoToolExecutor.stripMarkers(reply)
                                     .replace(Regex("""__LOCK__:\d+"""), "")
+                                    // 过滤模型输出的 function calling JSON（lock_phone 行）
+                                    .replace(
+                                        Regex("""\{\s*"name"\s*:\s*"lock_phone"[^\n]*"""),
+                                        ""
+                                    )
                                     .trim()
                                 if (!memoResult.isEmpty) {
                                     displayReply += "\n\n" + memoResult.summary()

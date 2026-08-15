@@ -21,14 +21,31 @@ object LockToolExecutor {
 
     private val lockPattern = Regex("""__LOCK__:\s*(\d{1,4})""")
 
+    /** 模型输出 function calling JSON 格式：{"name":"lock_phone","arguments":{"duration":60}} */
+    private val toolCallPattern = Regex("""lock_phone[\s\S]{0,300}?"duration"\s*:\s*(\d{1,4})""")
+
+    /** 兜底：文本含 lock_phone 但格式不规则时，直接找最近的 duration 数字。 */
+    private val durationPattern = Regex("""duration["']?\s*:\s*(\d{1,4})""")
+
     /**
      * 解析文本中的锁机标记并执行。
+     * 兼容三种形态：`__LOCK__:30`、function calling JSON、
+     * 以及含 lock_phone/duration 的自由文本。
      *
      * @return 执行成功时返回锁机分钟数，无标记或失败返回 null
      */
     fun tryExecute(context: Context, reply: String): Int? {
-        val match = lockPattern.find(reply) ?: return null
-        val minutes = match.groupValues[1].toIntOrNull()?.coerceIn(1, 480) ?: return null
+        var minutes: Int? = lockPattern.find(reply)?.groupValues?.get(1)?.toIntOrNull()
+        if (minutes == null) {
+            // JSON 兜底：模型 function calling 语境的 duration 单位是秒（60 = 1 分钟）
+            val raw = toolCallPattern.find(reply)?.groupValues?.get(1)?.toIntOrNull()
+            if (raw != null) minutes = (raw / 60).coerceAtLeast(1)
+        }
+        if (minutes == null && reply.contains("lock_phone", ignoreCase = true)) {
+            val raw = durationPattern.find(reply)?.groupValues?.get(1)?.toIntOrNull()
+            if (raw != null) minutes = (raw / 60).coerceAtLeast(1)
+        }
+        minutes = minutes?.coerceIn(1, 480) ?: return null
 
         try {
             val lockState = com.focusguard.app.data.LockState(context)
