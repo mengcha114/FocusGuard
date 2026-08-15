@@ -305,21 +305,22 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     ) { padding ->
+                        // 热路径：应用已在运行（分享/通知点击）→ 切到备忘录页。
+                        // 必须在 NavHost 外（NavGraphBuilder 作用域不是 Composable）。
+                        LaunchedEffect(pendingMemoOpen) {
+                            if (pendingMemoOpen) {
+                                val current = navController.currentDestination?.route
+                                if (current != "memo") {
+                                    navController.navigate("memo")
+                                }
+                                pendingMemoOpen = false
+                            }
+                        }
                         NavHost(
                             navController = navController,
                             startDestination = if (pendingMemoOpen) "memo" else "home",
                             modifier = Modifier.padding(padding)
                         ) {
-                            // 热路径：应用已在运行（分享/通知点击）→ 切到备忘录页
-                            LaunchedEffect(pendingMemoOpen) {
-                                if (pendingMemoOpen) {
-                                    val current = navController.currentDestination?.route
-                                    if (current != "memo") {
-                                        navController.navigate("memo")
-                                    }
-                                    pendingMemoOpen = false
-                                }
-                            }
                             composable("home") {
                                 HomeScreen(
                                     serviceRunning = serviceRunning,
