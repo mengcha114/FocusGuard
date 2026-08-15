@@ -283,16 +283,18 @@ class GuardAccessibilityService : AccessibilityService() {
         }
 
         // 检测"不抢焦点的系统悬浮窗"（华为智慧多窗侧边栏、助手常驻球等）：
-        // 规则：SYS 类型 + 非自身 + 非 launcher；仅当确认是常驻状态栏/导航栏
-        // （systemui 且不可聚焦、不可触摸的纯系统栏）才排除。
-        // 助手常驻球/面板由 SystemUI 进程承载时亦可聚焦/可触摸，必须顶回。
+        // 规则：SYS 类型 + 非自身 + 非 launcher；仅当确认是常驻状态栏
+        // （systemui、不抢焦点、且无标题的纯系统栏）才排除。
+        // 助手常驻球/面板由 SystemUI 进程承载时通常带标题（如"小爱同学"），必须顶回。
         val hasForeignSysWindow = try {
             windows?.any { w ->
                 w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
                     w.root?.packageName?.toString()?.let { pkg ->
                         pkg != packageName &&
                             !pkg.contains("launcher", ignoreCase = true) &&
-                            !(pkg == "com.android.systemui" && !w.isFocusable && !w.isTouchable)
+                            !(pkg == "com.android.systemui" &&
+                                !w.isFocused &&
+                                w.title?.toString().isNullOrBlank())
                     } == true
             } ?: false
         } catch (e: Exception) {
