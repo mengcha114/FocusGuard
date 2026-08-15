@@ -86,6 +86,9 @@ class GuardAccessibilityService : AccessibilityService() {
     /** 窗口列表事件顶回节流。 */
     private var lastWindowsReassertAt = 0L
 
+    /** 让位期（答题/朋友验证）语音助手顶回节流。 */
+    private var lastYieldReassertAt = 0L
+
     /** 收起通知栏节流：SystemUI 对高频全局动作限流，250ms 一次最稳。 */
     private var lastDismissAt = 0L
 
@@ -139,6 +142,24 @@ class GuardAccessibilityService : AccessibilityService() {
         val pkgName = event.packageName?.toString() ?: ""
         if (pkgName == "com.android.systemui" || pkgName in blockedSystemPackages) {
             dismissNotificationShade()
+        }
+
+        // ── 答题/验证让位期间的唯一例外：语音助手/侧边栏仍强制拦截 ──
+        // （用户报告：答题页面语音助手拦不下）。HOME 不影响悬浮窗答题 UI；
+        // Activity 答题页被压后台后由守护拉回锁机界面，拦截优先于答题进度。
+        if (pkgName in voiceAssistantPackages || isSideBarPackage(pkgName)) {
+            val now = System.currentTimeMillis()
+            if (now - lastYieldReassertAt >= 300L) {
+                lastYieldReassertAt = now
+                Log.d(TAG, "让位期间检测到语音助手/侧边栏 $pkgName，仍执行顶回")
+                try {
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                    LockScreenActivity.reassert(this)
+                } catch (e: Exception) {
+                    Log.w(TAG, "让位期顶回失败：${e.message}")
+                }
+            }
+            return
         }
 
         // ── 答题页前台：精准放行（防破解加固） ──────────
