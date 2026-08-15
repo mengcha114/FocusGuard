@@ -105,7 +105,7 @@ class DetectionPipeline(
         if (settings.privacyProtectEnabled && pkg.isNotBlank()) {
             val sensitive = com.focusguard.app.privacy.PrivacyGuard.isSensitive(
                 pkg, label, settings.sensitiveApps
-            ) || com.focusguard.app.privacy.PrivacyGuard.isFinanceCategory(context, pkg)
+            )
             if (sensitive) {
                 return DetectionOutcome(
                     "NEUTRAL", 1f,

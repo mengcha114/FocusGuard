@@ -1,8 +1,5 @@
 package com.focusguard.app.privacy
 
-import android.content.Context
-import android.content.pm.ApplicationInfo
-import android.os.Build
 import android.util.Log
 
 /**
@@ -21,10 +18,12 @@ import android.util.Log
  *
  * ## 特征来源
  * 1. 内置包名/应用名特征片段（[builtinPackageHints] / [builtinLabelHints]）
- * 2. 系统声明的应用类目（Android 11+ 的 CATEGORY_FINANCE）
- * 3. 用户在设置里自定义的敏感应用列表（逗号分隔，按包名/应用名片段匹配）
+ * 2. 用户在设置里自定义的敏感应用列表（逗号分隔，按包名/应用名片段匹配）
  *
  * 核心判定 [isSensitive] 是纯函数（不依赖 Context），便于单元测试。
+ *
+ * 注：Android 系统类目（ApplicationInfo.category）只有游戏/音频/视频/图片/
+ * 社交/新闻/地图/生产力/无障碍等，没有金融类目，故不依赖系统类目判定。
  */
 object PrivacyGuard {
 
@@ -91,21 +90,5 @@ object PrivacyGuard {
             }
         }
         return false
-    }
-
-    /**
-     * 系统声明的敏感类目：Android 11+ 应用可声明 CATEGORY_FINANCE
-     * （银行/支付类）。这是开发者自己声明的属性，比关键词猜测更可靠。
-     */
-    fun isFinanceCategory(context: Context, packageName: String): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
-        if (packageName.isBlank()) return false
-        return try {
-            val pm = context.packageManager
-            val info = pm.getApplicationInfo(packageName, 0)
-            info.category == ApplicationInfo.CATEGORY_FINANCE
-        } catch (e: Exception) {
-            false
-        }
     }
 }
