@@ -318,6 +318,9 @@ class AiClient {
                     )
                 }
                 "gemini" -> {
+                    // system 消息走 systemInstruction 字段（此前被静默丢弃 → 不读人设）
+                    val system = messages.filter { it.role == "system" }
+                        .joinToString("\n") { it.content }
                     val contents = messages.filter { it.role != "system" }.map {
                         JSONObject()
                             .put("role", if (it.role == "user") "user" else "model")
@@ -325,6 +328,15 @@ class AiClient {
                     }
                     Triple(
                         JSONObject().apply {
+                            if (system.isNotBlank()) {
+                                put(
+                                    "systemInstruction",
+                                    JSONObject().put(
+                                        "parts",
+                                        JSONArray().put(JSONObject().put("text", system))
+                                    )
+                                )
+                            }
                             put("contents", JSONArray().apply { contents.forEach { put(it) } })
                             put(
                                 "generationConfig",
@@ -665,13 +677,20 @@ class AiClient {
         withDetail: Boolean
     ): Request {
         val body = JSONObject().apply {
+            // 系统指令必须走 systemInstruction 字段：
+            // 塞在 contents[user] 里模型会当作普通用户输入而不服从
+            // （症状：不读 prompt、不输出分类 JSON、无法触发锁机）
+            put("systemInstruction", JSONObject().apply {
+                put("parts", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("text", buildSystemPrompt(whitelist, customPrompt))
+                    })
+                })
+            })
             put("contents", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "user")
                     put("parts", JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("text", buildSystemPrompt(whitelist, customPrompt))
-                        })
                         put(JSONObject().apply {
                             put("inline_data", JSONObject().apply {
                                 put("mime_type", "image/jpeg")
@@ -684,6 +703,8 @@ class AiClient {
             put("generationConfig", JSONObject().apply {
                 put("maxOutputTokens", MAX_OUTPUT_TOKENS)
                 put("temperature", 0.2)
+                // 强制 JSON 输出（与提示词要求一致的约束）
+                put("responseMimeType", "application/json")
             })
         }
 
