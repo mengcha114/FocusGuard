@@ -636,7 +636,9 @@ private fun StatsTab(palette: FocusColors.Palette, memoStore: MemoStore) {
                     ) {
                         Icon(Icons.Default.GridOn, null, tint = palette.faint, modifier = Modifier.size(36.dp))
                         Spacer(Modifier.height(8.dp))
-                        Text("完成待办后，这里会长出一片琥珀色的「完成田」", fontSize = 12.sp, color = palette.haze)
+                        Text("还没有完成记录", fontSize = 12.sp, color = palette.haze)
+                        Spacer(Modifier.height(2.dp))
+                        Text("完成一条待办，日历就亮起一格", fontSize = 10.sp, color = palette.faint)
                     }
                 } else {
                     CompletionHeatmap(

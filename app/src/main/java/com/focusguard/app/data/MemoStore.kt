@@ -391,6 +391,22 @@ class MemoStore(context: Context) {
         }
     }
 
+    /**
+     * 注入 AI 对话提示词用的「最近完成」摘要。
+     *
+     * 让 AI 能回答"我最近完成了什么 / 昨天完成了哪些"这类回顾性问题。
+     * 每条带完成日期，最新在前。无历史时返回空串。
+     */
+    fun completionSummary(limit: Int = 10): String {
+        val history = getHistory().take(limit)
+        if (history.isEmpty()) return ""
+        return history.joinToString("\n") { item ->
+            val day = Instant.ofEpochMilli(item.completedAt)
+                .atZone(ZoneId.systemDefault()).toLocalDate()
+            "- ${item.text}（${day.monthValue}月${day.dayOfMonth}日完成）"
+        }
+    }
+
     // ── 内部实现 ────────────────────────────────────────────────
 
     /** 完成事件归档：同 id 覆盖（保留最近一次），总量封顶。 */

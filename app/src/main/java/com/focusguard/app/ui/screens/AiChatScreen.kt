@@ -38,7 +38,9 @@ private data class ChatMsg(
     val role: String,
     val text: String,
     val time: String,
-    val thinking: String = ""
+    val thinking: String = "",
+    /** 是否来自检测日志的 AI 提醒（不参与发送给模型的历史）。 */
+    val fromLog: Boolean = false
 )
 
 /**
@@ -66,11 +68,14 @@ fun AiChatScreen() {
     // 对话历史存储：手动对话（用户消息+AI回复）持久化，切页不丢
     val chatHistory = remember { com.focusguard.app.data.ChatHistoryStore(context) }
 
-    // 会话消息：持久化的手动对话历史 + 检测日志里 AI 给出的提醒（按时间正序）
+    // 会话消息：持久化的手动对话历史 + 检测日志里 AI 给出的提醒（按时间正序）。
+    // 检测提醒只回显最近 10 条——历史检测最多 500 条，全量塞进来会把手动
+    // 对话淹没（"退出重进后聊天记录被历史 AI 检测顶掉"的根因）。
     fun loadAiReminders(): List<ChatMsg> = logStore.getAllLogs()
         .filter { it.source == "AI_VISION" && it.reason.isNotBlank() }
-        .map { ChatMsg("ai", it.reason, it.getTimeFormatted()) }
+        .take(10)
         .reversed()
+        .map { ChatMsg("ai", it.reason, it.getTimeFormatted(), fromLog = true) }
 
     var messages by remember {
         mutableStateOf(
@@ -98,6 +103,14 @@ fun AiChatScreen() {
     var input by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+
+    // 消息数变化（含退出重进重新加载）时自动滚到最新一条，
+    // 让用户第一眼看到的是自己的最新对话而不是历史检测提醒
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.scrollToItem(messages.size - 1)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -263,16 +276,19 @@ fun AiChatScreen() {
                                 messages = messages + placeholder
                                 chatHistory.addMessage("ai", "…", now)
 
-                                val history = messages.filter { it !== placeholder }.map {
-                                    ChatMessage(
-                                        if (it.role == "user") "user" else "assistant",
-                                        it.text
-                                    )
-                                }
+                                val history = chatHistory.getMessages()
+                                    .filter { it.text != "…" }
+                                    .map {
+                                        ChatMessage(
+                                            if (it.role == "user") "user" else "assistant",
+                                            it.text
+                                        )
+                                    }
                                 // 系统提示词：复用设置里的提醒风格 + 注入备忘录 + 工具协议
                                 val memoStore =
                                     com.focusguard.app.data.MemoStore(context)
                                                                 val memoSummary = memoStore.promptSummary(limit = 10)
+                                val completedSummary = memoStore.completionSummary(limit = 10)
                                 val systemText = buildString {
                                     val prompt = settings.aiCustomPrompt.trim()
                                     if (prompt.isNotBlank()) {
@@ -297,6 +313,10 @@ fun AiChatScreen() {
                                         append(memoSummary)
                                     } else {
                                         append("\n用户当前没有待办事项。")
+                                    }
+                                    if (completedSummary.isNotBlank()) {
+                                        append("\n用户近期已完成的事项（用户问完成情况/回顾时据此回答）：\n")
+                                        append(completedSummary)
                                     }
                                 }
                                 val fullHistory = buildList {
@@ -516,6 +536,14 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                     fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
                 )
+                if (msg.fromLog) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "检测提醒",
+                        fontSize = 9.sp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    )
+                }
                 if (!isUser && msg.text != "…") {
                     Spacer(Modifier.width(10.dp))
                     IconButton(
