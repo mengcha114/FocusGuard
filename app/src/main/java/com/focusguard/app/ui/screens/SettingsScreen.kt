@@ -125,7 +125,7 @@ fun SettingsScreen(
                 "通义千问" to Triple("openai", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-vl-max"),
                 "Agnes" to Triple("openai", "https://apihub.agnes-ai.com/v1", "agnes-2.5-flash"),
                 "Claude" to Triple("anthropic", "https://api.anthropic.com", "claude-3-5-sonnet-latest"),
-                "Gemini" to Triple("gemini", "https://generativelanguage.googleapis.com", "gemini-1.5-flash"),
+                "Gemini" to Triple("gemini", "https://generativelanguage.googleapis.com", "gemini-3.1-flash-lite"),
                 "自定义 API" to Triple("openai", "", "")
             )
             presets.chunked(2).forEach { rowPresets ->

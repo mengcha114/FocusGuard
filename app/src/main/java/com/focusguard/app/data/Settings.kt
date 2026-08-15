@@ -162,7 +162,17 @@ gacha
         set(value) = prefs.edit().putString(KEY_API_KEY, value).apply()
     
     var modelName: String
-        get() = prefs.getString(KEY_MODEL_NAME, "moonshot-v1-8k-vision-preview") ?: "moonshot-v1-8k-vision-preview"
+        get() {
+            val raw = prefs.getString(KEY_MODEL_NAME, "moonshot-v1-8k-vision-preview")
+                ?: "moonshot-v1-8k-vision-preview"
+            // 已下架 Gemini 模型的自动迁移（Google 停新用户后旧模型名返回 404）
+            return when (raw) {
+                "gemini-1.5-flash", "gemini-1.5-pro",
+                "gemini-2.5-flash", "gemini-2.5-pro",
+                "gemini-2.0-flash", "gemini-2.0-flash-lite" -> "gemini-3.1-flash-lite"
+                else -> raw
+            }
+        }
         set(value) = prefs.edit().putString(KEY_MODEL_NAME, value).apply()
 
     /**
