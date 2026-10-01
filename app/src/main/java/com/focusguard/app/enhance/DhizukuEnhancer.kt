@@ -424,6 +424,27 @@ object DhizukuEnhancer {
         }
     }
 
+    /**
+     * 锁机期间禁止用户「强行停止 / 清除数据」本应用（Android 11+ Device Owner 能力）。
+     * 多数 ROM 的一键清理也会跳过受控应用——堵住「清后台 = 终止锁机」。
+     * 仅锁机中启用，锁机结束解除。
+     */
+    fun setUserControlDisabled(context: Context, disabled: Boolean): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+        try {
+            if (!ensureReady(context)) return false
+            val dpm = wrappedDpm ?: return false
+            val comp = ownerComponent ?: return false
+            val packages = if (disabled) listOf(context.packageName) else emptyList()
+            dpm.setUserControlDisabledPackages(comp, packages)
+            Log.d(TAG, "设置 setUserControlDisabledPackages($disabled) 成功")
+            return true
+        } catch (e: Throwable) {
+            Log.w(TAG, "setUserControlDisabledPackages 失败：${e.message}")
+            return false
+        }
+    }
+
     /** 本应用是否已被允许进入 Lock Task 模式。 */
     fun isLockTaskPermitted(packageName: String): Boolean {
         val dpm = wrappedDpm ?: return false

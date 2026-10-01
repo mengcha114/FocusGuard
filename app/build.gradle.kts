@@ -62,6 +62,12 @@ android {
         kotlinCompilerExtensionVersion = "1.5.8"
     }
 
+    testOptions {
+        // LockState 依赖 android.util / SharedPreferences 接口；测试中用假实现，
+        // 未覆盖的 android.* 调用返回默认值而不是抛异常
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -119,4 +125,7 @@ dependencies {
 
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // 单元测试（JVM，本地逻辑：锁机计时 / 篡改 / 番茄钟）
+    testImplementation("junit:junit:4.13.2")
 }

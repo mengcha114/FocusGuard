@@ -2,143 +2,150 @@ package com.focusguard.app.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 
-/** 主题模式：0=深色·墨 1=深色·简 2=深色·苔 3=浅色·纸。 */
+/**
+ * 主题模式编码。
+ *
+ * 新编码：`100 + 风格 × 10 + 外观`。
+ * 旧编码 0..3 继续可读（用户已保存的选择无缝迁移）：
+ * 0=跟随系统（莫奈） 1=深色·简 2=深色·苔 3=浅色·纸（莫奈）。
+ */
 object ThemeModes {
+    // 旧值（兼容）
     const val DARK_INK = 0
     const val DARK_MONO = 1
     const val DARK_MOSS = 2
     const val LIGHT_PAPER = 3
 
-    fun labelOf(mode: Int): String = when (mode) {
-        DARK_INK -> "跟随系统"
-        DARK_MONO -> "深色·简"
-        DARK_MOSS -> "深色·苔"
-        LIGHT_PAPER -> "浅色·纸"
+    // 外观
+    const val APPEARANCE_SYSTEM = 0
+    const val APPEARANCE_DARK = 1
+    const val APPEARANCE_LIGHT = 2
+
+    // 风格
+    const val STYLE_INK = 0
+    const val STYLE_MONO = 1
+    const val STYLE_MOSS = 2
+    const val STYLE_OCEAN = 3
+    const val STYLE_SAKURA = 4
+    const val STYLE_AURORA = 5
+    const val STYLE_SUNSET = 6
+    const val STYLE_MONET = 7
+
+    fun encode(style: Int, appearance: Int): Int =
+        100 + style.coerceIn(0, 9) * 10 + appearance.coerceIn(0, 2)
+
+    fun styleOf(mode: Int): Int = when {
+        mode >= 100 -> ((mode - 100) / 10).coerceIn(0, 9)
+        mode == DARK_MONO -> STYLE_MONO
+        mode == DARK_MOSS -> STYLE_MOSS
+        else -> STYLE_MONET
+    }
+
+    fun appearanceOf(mode: Int): Int = when {
+        mode >= 100 -> ((mode - 100) % 10).coerceIn(0, 2)
+        mode == DARK_MONO || mode == DARK_MOSS -> APPEARANCE_DARK
+        mode == LIGHT_PAPER -> APPEARANCE_LIGHT
+        else -> APPEARANCE_SYSTEM
+    }
+
+    fun appearanceLabel(appearance: Int): String = when (appearance) {
+        APPEARANCE_DARK -> "深色"
+        APPEARANCE_LIGHT -> "浅色"
         else -> "跟随系统"
+    }
+
+    fun labelOf(mode: Int): String {
+        val style = FocusColors.styles.firstOrNull { it.id == styleOf(mode) }?.label ?: "纸墨"
+        return "$style · ${appearanceLabel(appearanceOf(mode))}"
     }
 }
 
-/** 深色·墨（默认）—— 纸墨时间 · 琥珀夜光。 */
-private val DarkInkScheme = darkColorScheme(
-    primary = FocusColors.ink.accent,
-    onPrimary = FocusColors.ink.bg,
-    primaryContainer = FocusColors.ink.accentDeep,
-    onPrimaryContainer = FocusColors.ink.bg,
-    secondary = FocusColors.ink.haze,
-    onSecondary = FocusColors.ink.bg,
-    secondaryContainer = FocusColors.ink.card,
-    onSecondaryContainer = FocusColors.ink.text,
-    tertiary = FocusColors.ink.accentDeep,
-    onTertiary = FocusColors.ink.bg,
-    background = FocusColors.ink.bg,
-    onBackground = FocusColors.ink.text,
-    surface = FocusColors.ink.surface,
-    onSurface = FocusColors.ink.text,
-    surfaceVariant = FocusColors.ink.card,
-    onSurfaceVariant = FocusColors.ink.haze,
-    outline = FocusColors.ink.line,
-    error = FocusColors.ink.error,
-    onError = FocusColors.ink.bg
-)
-
-/** 深色·简 —— 极简计时 · 纯黑白信号。 */
-private val DarkMonoScheme = darkColorScheme(
-    primary = FocusColors.mono.accent,
-    onPrimary = FocusColors.mono.bg,
-    primaryContainer = FocusColors.mono.accentDeep,
-    onPrimaryContainer = FocusColors.mono.bg,
-    secondary = FocusColors.mono.haze,
-    onSecondary = FocusColors.mono.bg,
-    secondaryContainer = FocusColors.mono.card,
-    onSecondaryContainer = FocusColors.mono.text,
-    tertiary = FocusColors.mono.accentDeep,
-    onTertiary = FocusColors.mono.bg,
-    background = FocusColors.mono.bg,
-    onBackground = FocusColors.mono.text,
-    surface = FocusColors.mono.surface,
-    onSurface = FocusColors.mono.text,
-    surfaceVariant = FocusColors.mono.card,
-    onSurfaceVariant = FocusColors.mono.haze,
-    outline = FocusColors.mono.line,
-    error = FocusColors.mono.error,
-    onError = FocusColors.mono.bg
-)
-
-/** 深色·苔 —— 苔原专注 · 鼠尾草绿。 */
-private val DarkMossScheme = darkColorScheme(
-    primary = FocusColors.moss.accent,
-    onPrimary = FocusColors.moss.bg,
-    primaryContainer = FocusColors.moss.accentDeep,
-    onPrimaryContainer = FocusColors.moss.bg,
-    secondary = FocusColors.moss.haze,
-    onSecondary = FocusColors.moss.bg,
-    secondaryContainer = FocusColors.moss.card,
-    onSecondaryContainer = FocusColors.moss.text,
-    tertiary = Color(0xFFC9A87C),
-    onTertiary = FocusColors.moss.bg,
-    background = FocusColors.moss.bg,
-    onBackground = FocusColors.moss.text,
-    surface = FocusColors.moss.surface,
-    onSurface = FocusColors.moss.text,
-    surfaceVariant = FocusColors.moss.card,
-    onSurfaceVariant = FocusColors.moss.haze,
-    outline = FocusColors.moss.line,
-    error = FocusColors.moss.error,
-    onError = FocusColors.moss.bg
-)
-
-/** 浅色·纸 —— 暖纸浅色（仅设置/主界面）。 */
-private val LightPaperScheme = lightColorScheme(
-    primary = FocusColors.paper.accent,
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFE8D9BE),
-    onPrimaryContainer = FocusColors.paper.accentDeep,
-    secondary = FocusColors.paper.haze,
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = FocusColors.paper.card,
-    onSecondaryContainer = FocusColors.paper.text,
-    tertiary = FocusColors.paper.accentDeep,
-    onTertiary = Color(0xFFFFFFFF),
-    background = FocusColors.paper.bg,
-    onBackground = FocusColors.paper.text,
-    surface = FocusColors.paper.surface,
-    onSurface = FocusColors.paper.text,
-    surfaceVariant = FocusColors.paper.card,
-    onSurfaceVariant = FocusColors.paper.haze,
-    outline = FocusColors.paper.line,
-    error = FocusColors.paper.error,
-    onError = Color(0xFFFFFFFF)
-)
+/** 由调色板生成 Material 配色（所有风格共用一套映射）。 */
+fun schemeFrom(p: FocusColors.Palette): ColorScheme {
+    val onAccent = FocusColors.onAccent(p)
+    val base = if (p.isLight) lightColorScheme() else darkColorScheme()
+    return base.copy(
+        primary = p.accent,
+        onPrimary = onAccent,
+        primaryContainer = p.accentDeep,
+        onPrimaryContainer = if (p.isLight) Color.White else p.bg,
+        secondary = p.haze,
+        onSecondary = p.bg,
+        secondaryContainer = p.card,
+        onSecondaryContainer = p.text,
+        tertiary = p.glow,
+        onTertiary = p.bg,
+        background = p.bg,
+        onBackground = p.text,
+        surface = p.surface,
+        onSurface = p.text,
+        surfaceVariant = p.card,
+        onSurfaceVariant = p.haze,
+        surfaceContainer = p.surface,
+        surfaceContainerHigh = p.card,
+        surfaceContainerHighest = p.card,
+        surfaceContainerLow = p.surface,
+        outline = p.line,
+        outlineVariant = p.line.copy(alpha = 0.6f),
+        error = p.error,
+        onError = if (p.isLight) Color.White else p.bg
+    )
+}
 
 @Composable
 fun FocusGuardTheme(
     themeMode: Int = ThemeModes.DARK_INK,
+    accentOverride: Int = 0,
     content: @Composable () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    // 默认模式跟随系统深浅；简/苔强制深色，纸强制浅色
-    val effectiveDark = when (themeMode) {
-        ThemeModes.DARK_MONO, ThemeModes.DARK_MOSS -> true
-        ThemeModes.LIGHT_PAPER -> false
-        else -> isSystemInDarkTheme()
-    }
-    val dynamic = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
-        (themeMode == ThemeModes.DARK_INK || themeMode == ThemeModes.LIGHT_PAPER)
-    val scheme = when {
-        dynamic && !effectiveDark -> dynamicLightColorScheme(context)
-        dynamic -> dynamicDarkColorScheme(context)
-        !effectiveDark -> LightPaperScheme
-        themeMode == ThemeModes.DARK_MONO -> DarkMonoScheme
-        themeMode == ThemeModes.DARK_MOSS -> DarkMossScheme
-        else -> DarkInkScheme
+    // 读取系统深浅以便「跟随系统」随切换重组
+    val sysDark = isSystemInDarkTheme()
+    val palette = remember(themeMode, accentOverride, sysDark) {
+        FocusColors.paletteFor(themeMode, context, accentOverride)
     }
     MaterialTheme(
-        colorScheme = scheme,
+        colorScheme = schemeFrom(palette),
+        typography = Typography,
+        shapes = Shapes(
+            extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+            small = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+            medium = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            large = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+            extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
+        ),
         content = content
     )
+}
+
+private val Int.dp get() = androidx.compose.ui.unit.Dp(this.toFloat())
+
+/**
+ * 全局主题状态：设置页修改后即时生效（无需重启 Activity）。
+ * 首次读取时从 [com.focusguard.app.data.Settings] 初始化。
+ */
+object ThemeState {
+    var mode by androidx.compose.runtime.mutableIntStateOf(-1)
+    var accent by androidx.compose.runtime.mutableIntStateOf(0)
+
+    fun ensureLoaded(context: android.content.Context) {
+        if (mode >= 0) return
+        val s = com.focusguard.app.data.Settings(context)
+        mode = s.themeMode
+        accent = s.customAccent
+    }
+
+    fun update(context: android.content.Context, newMode: Int, newAccent: Int) {
+        val s = com.focusguard.app.data.Settings(context)
+        s.themeMode = newMode
+        s.customAccent = newAccent
+        mode = newMode
+        accent = newAccent
+    }
 }

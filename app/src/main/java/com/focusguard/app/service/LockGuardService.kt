@@ -132,33 +132,34 @@ class LockGuardService : Service() {
     /** 强停判定阈值：心跳陈旧超过此值（毫秒）即视为被强行停止。 */
     private val forceStopThresholdMs = 10_000L
 
-    /** 写心跳（每 ~3s 一次即可，apply 异步落盘）。 */
+    /** 写心跳 + 剩余时长快照（每 ~3s 一次，单调时钟节流，apply 异步落盘）。 */
     private var lastHeartbeatAt = 0L
     private fun beatHeartbeat() {
-        val now = System.currentTimeMillis()
+        val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastHeartbeatAt < 3_000L) return
         lastHeartbeatAt = now
-        heartbeatPrefs.edit().putLong("last_beat", now).apply()
+        heartbeatPrefs.edit().putLong("last_beat", System.currentTimeMillis()).apply()
+        lockState.writeSnapshot()
     }
 
-    /** 服务复活时检测心跳是否陈旧（曾被执行「强行停止」）。 */
+    /**
+     * 服务复活时检测守护是否曾被清后台 / 强行停止：
+     * 按设备清醒时间计算中断时长并补回锁机（被杀换不来自由时间）。
+     */
     private fun checkForceStopped() {
         try {
-            val lastBeat = heartbeatPrefs.getLong("last_beat", 0L)
-            if (lastBeat > 0L && System.currentTimeMillis() - lastBeat > forceStopThresholdMs) {
-                Log.w(TAG, "检测到守护曾被强制停止（心跳中断 ${(System.currentTimeMillis() - lastBeat) / 1000}s），已恢复")
-                val state = lockState
-                if (state.isLocked) {
-                    val notification = android.app.Notification.Builder(
-                        this, com.focusguard.app.FocusGuardApp.CHANNEL_ID
-                    )
-                        .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
-                        .setContentTitle("守护曾被强制停止，现已恢复")
-                        .setContentText("锁机倒计时以设备运行时间为准，强制停止不会缩短锁机时长")
-                        .setAutoCancel(true)
-                        .build()
-                    getSystemService(NotificationManager::class.java).notify(1007, notification)
-                }
+            val compensated = lockState.compensateGuardGap()
+            if (compensated > 0L && lockState.isLocked) {
+                Log.w(TAG, "检测到守护曾被强制停止，已补回锁机 ${compensated / 1000}s")
+                val notification = android.app.Notification.Builder(
+                    this, com.focusguard.app.FocusGuardApp.CHANNEL_ID
+                )
+                    .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
+                    .setContentTitle("守护曾被强制停止，现已恢复")
+                    .setContentText("被停止的 ${compensated / 60_000 + 1} 分钟已补回锁机时长")
+                    .setAutoCancel(true)
+                    .build()
+                getSystemService(NotificationManager::class.java).notify(1007, notification)
             }
         } catch (e: Exception) {
             Log.w(TAG, "强停检测失败：${e.message}")
@@ -319,6 +320,28 @@ class LockGuardService : Service() {
         }
     }
 
+    /** 番茄钟阶段切换提醒（专注结束 → 休息；休息结束 → 专注 / 全部完成）。 */
+    private fun notifyPomodoroPhase() {
+        try {
+            val (title, text) = when {
+                !lockState.isLocked -> "番茄钟全部完成" to "今日已完成 ${lockState.pomodoroCompletedToday} 个番茄"
+                lockState.pomodoroIsWorkPhase -> "休息结束" to "进入专注阶段，${lockState.pomodoroWorkMinutes} 分钟"
+                else -> "专注完成" to "休息 ${lockState.pomodoroBreakMinutes} 分钟，可以自由使用手机"
+            }
+            val notification = android.app.Notification.Builder(
+                this, com.focusguard.app.FocusGuardApp.CHANNEL_ID
+            )
+                .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setAutoCancel(true)
+                .build()
+            getSystemService(NotificationManager::class.java).notify(1008, notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "番茄钟提醒失败：${e.message}")
+        }
+    }
+
     /** 锁机中抢占媒体键：蓝牙/线控长按（唤醒语音助手的物理入口）在广播层被吞掉。 */
     private fun registerMediaButtonBlocker() {
         try {
@@ -406,18 +429,40 @@ class LockGuardService : Service() {
         // （事件驱动之外，锁机到期/解除也能及时摘掉拦截条）
         com.focusguard.app.access.GuardAccessibilityService.instance?.ensureStatusBarBlock()
 
-        // 心跳（强停检测数据源）
+        // ── 时间篡改检测：整段锁机（含暂停 / 番茄钟休息）都检测 ──
+        // 旧实现只在 shouldBlockNow 分支检测，暂停期间回拨时间即可无限暂停。
+        if (lockState.isLocked) {
+            val tamper = lockState.detectTimeTamper()
+            if (tamper > LockState.TIME_TAMPER_THRESHOLD_MS) {
+                Log.w(TAG, "检测到系统时间被篡改（偏差 ${tamper / 1000}s），追加锁定时长")
+                lockState.applyTamperPenalty(tamper)
+                notifyTimeTamper(tamper)
+            }
+        }
+
+        // 番茄钟阶段推进统一在守护里做：悬浮窗路径（无 Dhizuku）也能正常切换阶段
+        if (lockState.tickPomodoro()) {
+            Log.d(TAG, "番茄钟阶段切换：专注=${lockState.pomodoroIsWorkPhase}")
+            notifyPomodoroPhase()
+        }
+
+        // 心跳 + 剩余时长快照（强停补回 / 重启恢复数据源）
         beatHeartbeat()
 
-        // 卸载阻止随锁机状态切换（Dhizuku Device Owner 能力，防"卸载=绕过锁机"）
+        // 卸载阻止 + 禁止强行停止/清除数据，随锁机状态切换（Dhizuku Device Owner 能力）。
+        // 整段锁机（含暂停）都保持，否则暂停期间去设置里清数据即可绕过。
         val blockingNow = lockState.isLocked && lockState.shouldBlockNow
-        if (blockingNow != uninstallBlocked) {
-            uninstallBlocked = blockingNow
+        val lockedNow = lockState.isLocked
+        if (lockedNow != uninstallBlocked) {
             // 只读缓存门槛：未就绪（无 Dhizuku）直接跳过，避免后台线程
             // 触发 HiddenApiBypass/Dhizuku.init Binder 初始化（死锁/ANR 隐患）
             if (com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()) {
+                uninstallBlocked = lockedNow
                 com.focusguard.app.enhance.DhizukuEnhancer.setUninstallBlocked(
-                    applicationContext, blockingNow
+                    applicationContext, lockedNow
+                )
+                com.focusguard.app.enhance.DhizukuEnhancer.setUserControlDisabled(
+                    applicationContext, lockedNow
                 )
             }
         }
@@ -434,13 +479,6 @@ class LockGuardService : Service() {
 
         // ── A. 锁机守护 ─────────────────────────────
         if (lockState.isLocked && lockState.shouldBlockNow) {
-            // ── 时间篡改检测（单调钟基准，每 tick 校验墙钟推进是否一致） ──
-            val tamper = lockState.detectTimeTamper()
-            if (tamper > com.focusguard.app.data.LockState.TIME_TAMPER_THRESHOLD_MS) {
-                Log.w(TAG, "检测到系统时间被篡改（偏差 ${tamper / 1000}s），追加锁定时长")
-                lockState.applyTamperPenalty(tamper)
-                notifyTimeTamper(tamper)
-            }
             // 屏幕已息屏（用户按电源键/自动息屏）：尊重用户，不做任何拉起动作。
             // 否则拉起覆盖层会重新点亮屏幕——"锁机后无法息屏"的根因。
             val pm = getSystemService(android.os.PowerManager::class.java)
@@ -638,10 +676,12 @@ class LockGuardService : Service() {
         } catch (e: Exception) {
             Log.w(TAG, "取消自愈闹钟失败：${e.message}")
         }
-        // 服务销毁时解除卸载阻止（否则用户永远无法卸载应用）
-        if (uninstallBlocked) {
+        // 锁机已结束才解除卸载阻止 / 强停限制（否则用户永远无法卸载应用）；
+        // 锁机中被销毁则保持限制，服务会自重启。
+        if (uninstallBlocked && !lockState.isLocked) {
             uninstallBlocked = false
             com.focusguard.app.enhance.DhizukuEnhancer.setUninstallBlocked(applicationContext, false)
+            com.focusguard.app.enhance.DhizukuEnhancer.setUserControlDisabled(applicationContext, false)
         }
         isRunning = false
         guardJob?.cancel()

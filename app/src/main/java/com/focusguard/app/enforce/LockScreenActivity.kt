@@ -17,6 +17,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -955,7 +956,7 @@ private fun LockScreenContent(
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var pauseLeft by remember { mutableIntStateOf(lockState.pauseQuota - lockState.pauseUsed) }
 
-    val isPomodoro = lockState.lockSource == "POMODORO"
+    val isPomodoro = lockState.lockSource == com.focusguard.app.data.LockState.SOURCE_POMODORO
     // 箴言：优先用用户自定义（每行一条，随机取），否则用内置库。
     // 注意：LocalContext.current 是 @Composable 属性，必须在 Composable
     // 作用域取值，不能放进 remember 的 lambda（非 @Composable 上下文）。
@@ -977,7 +978,12 @@ private fun LockScreenContent(
     }
 
     // 进度环基准：首次进入时的剩余时间即为本段总时长
-    var totalSeconds by remember { mutableIntStateOf(lockState.remainingSeconds.coerceAtLeast(1)) }
+    var totalSeconds by remember {
+        mutableIntStateOf(
+            if (isPomodoro) lockState.pomodoroPhaseTotalSeconds
+            else lockState.remainingSeconds.coerceAtLeast(1)
+        )
+    }
 
     // 在 Composable 作用域取 Activity 引用（LaunchedEffect 内不能调 LocalContext.current）
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
@@ -995,15 +1001,13 @@ private fun LockScreenContent(
             pauseLeft = lockState.pauseQuota - lockState.pauseUsed
 
             if (isPomodoro) {
+                // 阶段推进由 LockGuardService.guardTick 统一负责（悬浮窗路径也生效），
+                // 这里只读显示，避免两处同时推进造成跳阶段。
                 phaseSeconds = lockState.pomodoroRemainingSeconds
                 isWorkPhase = lockState.pomodoroIsWorkPhase
-                if (phaseSeconds <= 0) {
-                    val finished = lockState.advancePomodoroPhase()
-                    if (finished) break
-                    isWorkPhase = lockState.pomodoroIsWorkPhase
-                    phaseSeconds = lockState.pomodoroRemainingSeconds
+                if (isWorkPhase != lastWorkPhase) {
                     // 新阶段开始：重置进度环基准
-                    totalSeconds = phaseSeconds.coerceAtLeast(1)
+                    totalSeconds = lockState.pomodoroPhaseTotalSeconds
                 }
                 // 阶段切换：休息→工作 重新进入 Lock Task；工作→休息 释放。
                 // 进入走 Activity 的异步路径（Binder 配置在后台线程，
@@ -1562,9 +1566,24 @@ private fun CountdownRing(
                 )
             )
 
-            // 进度弧（剩余时间比例，单一强调色）
+            // 进度弧外发光（同色低透明宽描边，夜光表盘质感）
             drawArc(
-                color = accent,
+                color = accent.copy(alpha = 0.18f),
+                startAngle = -90f,
+                sweepAngle = 360f * animatedProgress,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = stroke * 2.2f,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+            )
+            // 进度弧（剩余时间比例，强调色由深到亮）
+            drawArc(
+                brush = androidx.compose.ui.graphics.Brush.sweepGradient(
+                    listOf(accent.copy(alpha = 0.55f), accent, accent.copy(alpha = 0.55f))
+                ),
                 startAngle = -90f,
                 sweepAngle = 360f * animatedProgress,
                 useCenter = false,
@@ -1600,20 +1619,38 @@ private fun CountdownRing(
                     minuteBounce.animateTo(0f, tween(300))
                 }
             }
-            // 签名元素：衬线大数字（钟表刻度质感），见 DESIGN.md §3.3
-            Text(
-                text = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s),
-                fontSize = if (h > 0) 40.sp else 50.sp,
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
-                color = palette.text,
+            // 签名元素：衬线大数字（钟表刻度质感），见 DESIGN.md §3.3。
+            // 每一位独立滚动：数字变化时旧值上移淡出、新值自下滑入（120ms）。
+            val digits = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
+            Row(
                 modifier = Modifier.graphicsLayer {
                     val sc = 1f + 0.04f * minuteBounce.value
                     scaleX = sc
                     scaleY = sc
                 }
-            )
+            ) {
+                digits.forEachIndexed { i, ch ->
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = ch,
+                        transitionSpec = {
+                            (androidx.compose.animation.slideInVertically(tween(160)) { it / 2 } +
+                                androidx.compose.animation.fadeIn(tween(160))) togetherWith
+                                (androidx.compose.animation.slideOutVertically(tween(120)) { -it / 2 } +
+                                    androidx.compose.animation.fadeOut(tween(120)))
+                        },
+                        label = "digit$i"
+                    ) { c ->
+                        Text(
+                            text = c.toString(),
+                            fontSize = if (h > 0) 40.sp else 50.sp,
+                            fontFamily = FontFamily.Serif,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp,
+                            color = palette.text
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(4.dp))
             Text(
                 text = if (h > 0) "时 分 秒" else "分 秒",

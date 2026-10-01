@@ -5,7 +5,7 @@ name: Build APK
 # 2. 手动触发（Actions 页面点 "Run workflow"）
 on:
   push:
-    branches: [main]
+    branches: [main, 'fix/**', 'feat/**']
   workflow_dispatch:
 
 jobs:
@@ -54,6 +54,17 @@ jobs:
           printf 'FOCUSGUARD_STORE_PASSWORD=%s\n' "$FOCUSGUARD_STORE_PASSWORD" >> "$GITHUB_ENV"
           printf 'FOCUSGUARD_KEY_ALIAS=%s\n' "$FOCUSGUARD_KEY_ALIAS" >> "$GITHUB_ENV"
           printf 'FOCUSGUARD_KEY_PASSWORD=%s\n' "$FOCUSGUARD_KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: 单元测试
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: 上传测试报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: app/build/reports/tests/
+          retention-days: 7
 
       - name: 构建 Debug APK
         run: ./gradlew assembleDebug --no-daemon

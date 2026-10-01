@@ -1227,7 +1227,7 @@ object LockOverlayManager {
                 }
                 val secs = when {
                     ls.isPaused -> ls.pauseRemainingSeconds
-                    ls.lockSource == "POMODORO" -> ls.pomodoroRemainingSeconds
+                    ls.lockSource == com.focusguard.app.data.LockState.SOURCE_POMODORO -> ls.pomodoroRemainingSeconds
                     else -> ls.remainingSeconds
                 }
                 val h = secs / 3600
@@ -1238,13 +1238,13 @@ object LockOverlayManager {
 
                 statusText?.text = when {
                     ls.isPaused -> "暂停中 · 可自由使用"
-                    ls.lockSource == "POMODORO" && ls.pomodoroIsWorkPhase -> "番茄钟专注阶段"
-                    ls.lockSource == "POMODORO" -> "番茄钟休息阶段"
+                    ls.lockSource == com.focusguard.app.data.LockState.SOURCE_POMODORO && ls.pomodoroIsWorkPhase -> "番茄钟专注阶段"
+                    ls.lockSource == com.focusguard.app.data.LockState.SOURCE_POMODORO -> "番茄钟休息阶段"
                     else -> "设备已锁定"
                 }
                 // 配色随阶段切换：专注=强调色，暂停/休息=成功色（与 Compose 锁机页同令牌）
                 val relaxed = ls.isPaused ||
-                    (ls.lockSource == "POMODORO" && !ls.pomodoroIsWorkPhase)
+                    (ls.lockSource == com.focusguard.app.data.LockState.SOURCE_POMODORO && !ls.pomodoroIsWorkPhase)
                 val p = lastContext?.let { palette(it) }
                 if (p != null) {
                     val accentColor = android.graphics.Color.parseColor(
