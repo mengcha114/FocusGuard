@@ -62,6 +62,8 @@ class LockState internal constructor(
         private const val KEY_PAUSE_MINUTES = "pause_minutes"
         private const val KEY_PAUSE_ELAPSED_BASE = "pause_elapsed_base"
         private const val KEY_PAUSE_DURATION_MS = "pause_duration_ms"
+        /** 新锁机开始后允许一次完整的暂停配置，之后只能收紧。 */
+        private const val KEY_PAUSE_CONFIG_OPEN = "pause_config_open"
         private const val KEY_POMODORO_PHASE_BASE = "pomodoro_phase_base"
         private const val KEY_POMODORO_PHASE_MS = "pomodoro_phase_ms"
         private const val KEY_POMODORO_IS_WORK = "pomodoro_is_work"
@@ -211,6 +213,8 @@ class LockState internal constructor(
             .putInt(KEY_PAUSE_USED, 0)
             .putLong(KEY_PAUSE_ELAPSED_BASE, 0L)
             .putLong(KEY_PAUSE_DURATION_MS, 0L)
+            .putBoolean(KEY_PAUSE_ENABLED, false)
+            .putBoolean(KEY_PAUSE_CONFIG_OPEN, true)
             .putBoolean(KEY_POMODORO_RUNNING, false)
             .putLong(KEY_SNAP_REMAINING, durationMs)
             .putLong(KEY_SNAP_ELAPSED, now)
@@ -368,14 +372,15 @@ class LockState internal constructor(
     // ── 锁机暂停（需答题获取暂停时长） ─────────────────
 
     /**
-     * 配置暂停规则。锁机中调用只能收紧（关闭、减次数、缩短时长），
-     * 强度 4 一律禁止暂停。
+     * 配置暂停规则。新锁机开始后的第一次配置不受限（由开始锁机流程调用）；
+     * 之后锁机中再调用只能收紧（关闭、减次数、缩短时长）。强度 4 一律禁止暂停。
      */
     fun configurePause(enabled: Boolean, quota: Int, minutes: Int) {
         var on = enabled && unlockStrength < STRENGTH_LOCKED_FOREVER
         var q = quota.coerceAtLeast(0)
         var m = minutes.coerceIn(1, 60)
-        if (isLocked) {
+        val firstConfig = prefs.getBoolean(KEY_PAUSE_CONFIG_OPEN, false)
+        if (isLocked && !firstConfig) {
             on = on && pauseEnabled
             q = minOf(q, pauseQuota)
             m = minOf(m, pauseMinutes)
@@ -384,6 +389,7 @@ class LockState internal constructor(
             .putBoolean(KEY_PAUSE_ENABLED, on)
             .putInt(KEY_PAUSE_QUOTA, q)
             .putInt(KEY_PAUSE_MINUTES, m)
+            .putBoolean(KEY_PAUSE_CONFIG_OPEN, false)
             .apply()
     }
 
