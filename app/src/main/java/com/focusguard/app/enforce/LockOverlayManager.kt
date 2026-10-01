@@ -552,11 +552,15 @@ object LockOverlayManager {
         com.focusguard.app.ui.theme.FocusColors.hex(c).substring(1)
     )
 
-    /** 墨色纯色背景（令牌 bg），与锁机页 Compose 同源。 */
-    private fun buildBackground(context: Context): GradientDrawable = GradientDrawable().apply {
-        setColor(com.focusguard.app.ui.theme.FocusColors.hex(palette(context).bg).let {
-            android.graphics.Color.parseColor(it)
-        })
+    /** 雅致深空渐变背景，拒绝纯黑死黑，与系统级锁机页同源。 */
+    private fun buildBackground(context: Context): GradientDrawable {
+        val p = palette(context)
+        val bgTop = android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.bg))
+        val bgCenter = android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.surface))
+        return GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(bgTop, bgCenter, bgTop)
+        )
     }
 
     private fun buildContent(
@@ -614,35 +618,61 @@ object LockOverlayManager {
 
         val wallDate = TextView(context).apply {
             text = ""
-            textSize = 13f
-            setTextColor(Color.parseColor(tint(p.haze, 0x8F)))
+            textSize = 14f
+            setTextColor(Color.parseColor(tint(p.text, 0xD0)))
             gravity = Gravity.CENTER
-            letterSpacing = 0.06f
-            setPadding(0, dp(context, 2), 0, 0)
+            letterSpacing = 0.04f
+            setPadding(0, dp(context, 4), 0, 0)
         }
         wallDateText = wallDate
         container.addView(wallDate, matchWrap())
+
+        // ── 细节区分标识：悬浮窗专属模式胶囊 ─────────────────
+        val overlayBadge = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = dp(context, 16).toFloat()
+                setColor(Color.parseColor(tint(p.accent, 0x22)))
+                setStroke(dp(context, 1), Color.parseColor(tint(p.accent, 0x66)))
+            }
+            setPadding(dp(context, 14), dp(context, 6), dp(context, 14), dp(context, 6))
+            addView(TextView(context).apply {
+                text = "🪟 浮窗常驻守护"
+                textSize = 11f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+                letterSpacing = 0.05f
+            })
+        }
+        container.addView(
+            overlayBadge,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(context, 10) }
+        )
 
         // ── 中部：锁定状态卡（细边框卡片 + 锁标 + 倒计时） ──────
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             background = GradientDrawable().apply {
-                cornerRadius = dp(context, 12).toFloat()
-                setColor(android.graphics.Color.parseColor(tint(p.card, 0xA6)))
-                setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
+                cornerRadius = dp(context, 20).toFloat()
+                setColor(android.graphics.Color.parseColor(tint(p.card, 0xD9)))
+                setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xE6)))
             }
-            setPadding(dp(context, 22), dp(context, 20), dp(context, 22), dp(context, 20))
+            setPadding(dp(context, 24), dp(context, 24), dp(context, 24), dp(context, 24))
         }
 
-        // 应用名（一行，居中）
+        // 应用名与锁定标语
         card.addView(
             TextView(context).apply {
-                text = "专注卫士"
-                textSize = 14f
+                text = "专注卫士 · 专注锁定中"
+                textSize = 15f
                 setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text)))
                 typeface = Typeface.DEFAULT_BOLD
-                letterSpacing = 0.1f
+                letterSpacing = 0.05f
                 gravity = Gravity.CENTER
             },
             matchWrap()
@@ -651,11 +681,11 @@ object LockOverlayManager {
         // 状态行（锁定中 / 番茄钟专注 / 暂停中，每秒刷新）
         val status = TextView(context).apply {
             text = "设备已锁定"
-            textSize = 11f
-            setTextColor(Color.parseColor(tint(p.haze, 0xE6)))
+            textSize = 12f
+            setTextColor(Color.parseColor(tint(p.haze, 0xFF)))
             gravity = Gravity.CENTER
-            letterSpacing = 0.08f
-            setPadding(0, dp(context, 10), 0, 0)
+            letterSpacing = 0.04f
+            setPadding(0, dp(context, 8), 0, 0)
         }
         statusText = status
         card.addView(status, matchWrap())
@@ -663,22 +693,23 @@ object LockOverlayManager {
         // 大号剩余时长（衬线数字，与 Compose 锁机页签名一致）
         val time = TextView(context).apply {
             text = "--:--"
-            textSize = 46f
+            textSize = 50f
             setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
             typeface = Typeface.create("serif", Typeface.BOLD)
             gravity = Gravity.CENTER
-            setPadding(0, dp(context, 4), 0, 0)
+            setPadding(0, dp(context, 6), 0, 0)
         }
         timeText = time
         card.addView(time, matchWrap())
 
         card.addView(
             TextView(context).apply {
-                text = "剩余锁定时间"
-                textSize = 10f
+                text = "分 秒"
+                textSize = 11f
                 setTextColor(Color.parseColor(tint(p.faint, 0xFF)))
                 gravity = Gravity.CENTER
-                letterSpacing = 0.14f
+                letterSpacing = 0.2f
+                setPadding(0, dp(context, 2), 0, 0)
             },
             matchWrap()
         )

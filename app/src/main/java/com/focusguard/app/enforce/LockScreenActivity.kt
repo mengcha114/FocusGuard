@@ -1079,16 +1079,36 @@ private fun LockScreenContent(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(palette.bg)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        palette.bg,
+                        palette.surface.copy(alpha = 0.95f),
+                        palette.bg
+                    )
+                )
+            )
     ) {
-        // 中央夜光光晕（呼吸）——模拟夜光表盘反光，全应用唯一允许的渐变
+        // 双层环境光斑（深邃柔和漫反射，告别纯黑死黑）
+        Box(
+            modifier = Modifier
+                .size(460.dp)
+                .align(Alignment.TopCenter)
+                .offset(y = (-60).dp)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(palette.glow.copy(alpha = 0.15f), Color.Transparent)
+                    )
+                )
+        )
+        // 中央夜光光晕（呼吸）——模拟夜光表盘反光
         Box(
             modifier = Modifier
                 .size(560.dp)
                 .align(Alignment.Center)
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = glowAlpha), Color.Transparent)
+                        colors = listOf(accent.copy(alpha = glowAlpha * 1.5f), Color.Transparent)
                     )
                 )
         )
@@ -1139,7 +1159,7 @@ private fun LockScreenContent(
 
                     Spacer(Modifier.height(20.dp))
 
-                    // ── 状态胶囊 ─────────────────────────────────
+                    // ── 状态胶囊（系统级锁机细节标识） ─────────────────────────────────
                     StatusPill(
                         text = when {
                             isPausing -> "暂停中 · 可自由使用"
@@ -1148,6 +1168,7 @@ private fun LockScreenContent(
                             lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
                             else -> "专注锁定中"
                         },
+                        subBadge = "🛡️ 系统级守护",
                         accent = accent,
                         palette = palette,
                         locked = !isRelaxed
@@ -1332,7 +1353,7 @@ private fun LockScreenContent(
 
                     Spacer(Modifier.height(20.dp))
 
-                    // ── 状态胶囊 ─────────────────────────────────
+                    // ── 状态胶囊（系统级锁机细节标识） ─────────────────────────────────
                     StatusPill(
                         text = when {
                             isPausing -> "暂停中 · 可自由使用"
@@ -1341,6 +1362,7 @@ private fun LockScreenContent(
                             lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
                             else -> "专注锁定中"
                         },
+                        subBadge = "🛡️ 系统级守护",
                         accent = accent,
                         palette = palette,
                         locked = !isRelaxed
@@ -1490,6 +1512,7 @@ private fun LockScreenContent(
 @Composable
 private fun StatusPill(
     text: String,
+    subBadge: String? = null,
     accent: Color,
     palette: com.focusguard.app.ui.theme.FocusColors.Palette,
     locked: Boolean
@@ -1497,8 +1520,8 @@ private fun StatusPill(
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(accent.copy(alpha = 0.12f))
-            .border(1.dp, palette.line.copy(alpha = 0.6f), RoundedCornerShape(50))
+            .background(accent.copy(alpha = 0.16f))
+            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(50))
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1511,11 +1534,28 @@ private fun StatusPill(
         Spacer(Modifier.width(7.dp))
         Text(
             text = text,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.5.sp,
-            color = accent
+            color = palette.text
         )
+        if (subBadge != null) {
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(palette.card.copy(alpha = 0.85f))
+                    .border(1.dp, palette.line, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = subBadge,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = accent
+                )
+            }
+        }
     }
 }
 

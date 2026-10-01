@@ -37,107 +37,102 @@ object FocusColors {
 
     // ── 风格定义：每种风格的深色 / 浅色调色板 ──────────────────
 
-    /** 纸墨 · 琥珀夜光（默认）。 */
+    /** 纸墨 · 琥珀夜光（默认）——深邃夜空，告别死黑，文字高可读。 */
     val ink = Palette(
-        bg = Color(0xFF0E1217), surface = Color(0xFF151B22), card = Color(0xFF1B232C),
-        line = Color(0xFF2A343F), accent = Color(0xFFE2A65D), accentDeep = Color(0xFFB07E42),
-        text = Color(0xFFEDE6D6), haze = Color(0xFF8F887A), faint = Color(0xFF5B574E),
-        error = Color(0xFFC9776A), success = Color(0xFF8AAE8C)
+        bg = Color(0xFF111622), surface = Color(0xFF18202F), card = Color(0xFF1F293D),
+        line = Color(0xFF334155), accent = Color(0xFFF59E0B), accentDeep = Color(0xFFD97706),
+        text = Color(0xFFF8FAFC), haze = Color(0xFF94A3B8), faint = Color(0xFF64748B),
+        error = Color(0xFFF87171), success = Color(0xFF34D399), glow = Color(0xFFFBBF24)
     )
     val paper = Palette(
-        bg = Color(0xFFF4F0E6), surface = Color(0xFFEDE7D8), card = Color(0xFFE5DECD),
-        line = Color(0xFFD6CDB9), accent = Color(0xFFA9742F), accentDeep = Color(0xFF8C5F24),
-        text = Color(0xFF1D1A14), haze = Color(0xFF6B6455), faint = Color(0xFF9A9180),
-        error = Color(0xFFB15347), success = Color(0xFF4E7A58), isLight = true
+        bg = Color(0xFFF8FAFC), surface = Color(0xFFF1F5F9), card = Color(0xFFE2E8F0),
+        line = Color(0xFFCBD5E1), accent = Color(0xFFD97706), accentDeep = Color(0xFFB45309),
+        text = Color(0xFF0F172A), haze = Color(0xFF475569), faint = Color(0xFF64748B),
+        error = Color(0xFFEF4444), success = Color(0xFF10B981), isLight = true, glow = Color(0xFFFBBF24)
     )
 
-    /** 极简 · 黑白信号红。 */
+    /** 极简 · 炭黑与信号红（告别死黑，提升灰阶对比）。 */
     val mono = Palette(
-        bg = Color(0xFF050607), surface = Color(0xFF0C0E10), card = Color(0xFF121518),
-        line = Color(0xFF23272B), accent = Color(0xFFE5484D), accentDeep = Color(0xFFB93A3E),
-        text = Color(0xFFF2F2F0), haze = Color(0xFF9A9C9E), faint = Color(0xFF5C5E60),
-        error = Color(0xFFFF6B61), success = Color(0xFF8FBF8F)
+        bg = Color(0xFF121418), surface = Color(0xFF1A1D24), card = Color(0xFF222730),
+        line = Color(0xFF363E4D), accent = Color(0xFFEF4444), accentDeep = Color(0xFFDC2626),
+        text = Color(0xFFF8FAFC), haze = Color(0xFF94A3B8), faint = Color(0xFF64748B),
+        error = Color(0xFFF87171), success = Color(0xFF4ADE80), glow = Color(0xFFF87171)
     )
     private val monoLight = Palette(
-        bg = Color(0xFFFAFAF9), surface = Color(0xFFF2F2F1), card = Color(0xFFE9E9E8),
-        line = Color(0xFFD9D9D7), accent = Color(0xFFD2363C), accentDeep = Color(0xFFA9292E),
-        text = Color(0xFF111213), haze = Color(0xFF5E6062), faint = Color(0xFF9A9C9E),
-        error = Color(0xFFC62F2F), success = Color(0xFF3F7A46), isLight = true
+        bg = Color(0xFFF8FAFC), surface = Color(0xFFF1F5F9), card = Color(0xFFE2E8F0),
+        line = Color(0xFFCBD5E1), accent = Color(0xFFDC2626), accentDeep = Color(0xFFB91C1C),
+        text = Color(0xFF0F172A), haze = Color(0xFF475569), faint = Color(0xFF64748B),
+        error = Color(0xFFEF4444), success = Color(0xFF16A34A), isLight = true, glow = Color(0xFFEF4444)
     )
 
-    /** 苔原 · 鼠尾草绿。 */
+    /** 苔原 · 鼠尾草与松针绿。 */
     val moss = Palette(
-        bg = Color(0xFF0D1411), surface = Color(0xFF131B17), card = Color(0xFF18211C),
-        line = Color(0xFF263029), accent = Color(0xFF9BB894), accentDeep = Color(0xFF7A9673),
-        text = Color(0xFFE4E9E2), haze = Color(0xFF90988D), faint = Color(0xFF575E55),
-        error = Color(0xFFC9776A), success = Color(0xFFA9C3A0), glow = Color(0xFFC9A87C)
+        bg = Color(0xFF0F1713), surface = Color(0xFF16231D), card = Color(0xFF1E2F27),
+        line = Color(0xFF2D463A), accent = Color(0xFF34D399), accentDeep = Color(0xFF059669),
+        text = Color(0xFFF0FDF4), haze = Color(0xFF86EFAC).copy(alpha = 0.85f), faint = Color(0xFF6EE7B7).copy(alpha = 0.6f),
+        error = Color(0xFFF87171), success = Color(0xFF10B981), glow = Color(0xFF6EE7B7)
     )
     private val mossLight = Palette(
-        bg = Color(0xFFF1F4EE), surface = Color(0xFFE8EDE4), card = Color(0xFFDDE5D8),
-        line = Color(0xFFC9D3C3), accent = Color(0xFF557A4F), accentDeep = Color(0xFF41603C),
-        text = Color(0xFF16201A), haze = Color(0xFF5B665A), faint = Color(0xFF8E988C),
-        error = Color(0xFFAE4F43), success = Color(0xFF3F6D47), isLight = true,
-        glow = Color(0xFFB08A55)
+        bg = Color(0xFFF0FDF4), surface = Color(0xFFDCFCE7), card = Color(0xFFBBF7D0),
+        line = Color(0xFF86EFAC), accent = Color(0xFF059669), accentDeep = Color(0xFF047857),
+        text = Color(0xFF064E3B), haze = Color(0xFF065F46), faint = Color(0xFF047857),
+        error = Color(0xFFDC2626), success = Color(0xFF059669), isLight = true, glow = Color(0xFF34D399)
     )
 
     /** 深海 · 冰川蓝。 */
     private val ocean = Palette(
-        bg = Color(0xFF0A1220), surface = Color(0xFF0F1A2C), card = Color(0xFF142238),
-        line = Color(0xFF22324C), accent = Color(0xFF6CB4FF), accentDeep = Color(0xFF3F86D6),
-        text = Color(0xFFE3ECF7), haze = Color(0xFF8798AE), faint = Color(0xFF52627A),
-        error = Color(0xFFF07A7A), success = Color(0xFF6FCFB0), glow = Color(0xFF7E8CFF)
+        bg = Color(0xFF0C1322), surface = Color(0xFF131D33), card = Color(0xFF1B2947),
+        line = Color(0xFF2A3F6D), accent = Color(0xFF38BDF8), accentDeep = Color(0xFF0284C7),
+        text = Color(0xFFF0F9FF), haze = Color(0xFF7DD3FC), faint = Color(0xFF38BDF8).copy(alpha = 0.6f),
+        error = Color(0xFFF87171), success = Color(0xFF34D399), glow = Color(0xFF818CF8)
     )
     private val oceanLight = Palette(
-        bg = Color(0xFFF2F6FB), surface = Color(0xFFE8EFF8), card = Color(0xFFDCE6F3),
-        line = Color(0xFFC6D4E6), accent = Color(0xFF1F6FC9), accentDeep = Color(0xFF16559C),
-        text = Color(0xFF0E1A2A), haze = Color(0xFF55657A), faint = Color(0xFF8C9AAD),
-        error = Color(0xFFC0392B), success = Color(0xFF1E8A67), isLight = true,
-        glow = Color(0xFF5868E0)
+        bg = Color(0xFFF0F9FF), surface = Color(0xFFE0F2FE), card = Color(0xFFBAE6FD),
+        line = Color(0xFF7DD3FC), accent = Color(0xFF0284C7), accentDeep = Color(0xFF0369A1),
+        text = Color(0xFF082F49), haze = Color(0xFF075985), faint = Color(0xFF0369A1),
+        error = Color(0xFFDC2626), success = Color(0xFF059669), isLight = true, glow = Color(0xFF0284C7)
     )
 
     /** 樱夜 · 柔粉紫晕。 */
     private val sakura = Palette(
-        bg = Color(0xFF15101A), surface = Color(0xFF1C1522), card = Color(0xFF241B2B),
-        line = Color(0xFF362A3F), accent = Color(0xFFF29BB8), accentDeep = Color(0xFFC9718F),
-        text = Color(0xFFF3E8EF), haze = Color(0xFFA08F9C), faint = Color(0xFF65586A),
-        error = Color(0xFFFF8A80), success = Color(0xFF9BD1B0), glow = Color(0xFFB59BF2)
+        bg = Color(0xFF1A131F), surface = Color(0xFF241A2B), card = Color(0xFF2E2237),
+        line = Color(0xFF4A3757), accent = Color(0xFFF472B6), accentDeep = Color(0xFFDB2777),
+        text = Color(0xFFFDF2F8), haze = Color(0xFFF9A8D4), faint = Color(0xFFF472B6).copy(alpha = 0.65f),
+        error = Color(0xFFF87171), success = Color(0xFF34D399), glow = Color(0xFFC084FC)
     )
     private val sakuraLight = Palette(
-        bg = Color(0xFFFBF4F7), surface = Color(0xFFF5EAF0), card = Color(0xFFEEDDE6),
-        line = Color(0xFFE0C9D5), accent = Color(0xFFC2457A), accentDeep = Color(0xFF9C3561),
-        text = Color(0xFF231620), haze = Color(0xFF6E5A67), faint = Color(0xFFA592A0),
-        error = Color(0xFFB83A3A), success = Color(0xFF3C7D58), isLight = true,
-        glow = Color(0xFF8A63D2)
+        bg = Color(0xFFFDF2F8), surface = Color(0xFFFCE7F3), card = Color(0xFFFBCFE8),
+        line = Color(0xFFF472B6), accent = Color(0xFFDB2777), accentDeep = Color(0xFFBE185D),
+        text = Color(0xFF831843), haze = Color(0xFF9D174D), faint = Color(0xFFBE185D),
+        error = Color(0xFFDC2626), success = Color(0xFF059669), isLight = true, glow = Color(0xFFC084FC)
     )
 
     /** 极光 · 青紫霓虹。 */
     private val aurora = Palette(
-        bg = Color(0xFF080B14), surface = Color(0xFF0E1220), card = Color(0xFF141A2C),
-        line = Color(0xFF232B44), accent = Color(0xFF5EEAD4), accentDeep = Color(0xFF2CB9A4),
-        text = Color(0xFFE6EEF8), haze = Color(0xFF8A95AD), faint = Color(0xFF515B75),
-        error = Color(0xFFFF7A90), success = Color(0xFF7EE0A1), glow = Color(0xFFA78BFA)
+        bg = Color(0xFF0F1626), surface = Color(0xFF17223B), card = Color(0xFF1F2F52),
+        line = Color(0xFF334A7D), accent = Color(0xFF2DD4BF), accentDeep = Color(0xFF0D9488),
+        text = Color(0xFFF0FDFA), haze = Color(0xFF99F6E4), faint = Color(0xFF5EEAD4).copy(alpha = 0.65f),
+        error = Color(0xFFF87171), success = Color(0xFF34D399), glow = Color(0xFFA78BFA)
     )
     private val auroraLight = Palette(
-        bg = Color(0xFFF3F6FA), surface = Color(0xFFE9EEF6), card = Color(0xFFDDE4F0),
-        line = Color(0xFFC7D1E2), accent = Color(0xFF0F8F7E), accentDeep = Color(0xFF0B6E61),
-        text = Color(0xFF0E1424), haze = Color(0xFF56607A), faint = Color(0xFF8C95AB),
-        error = Color(0xFFC2334D), success = Color(0xFF237D4A), isLight = true,
-        glow = Color(0xFF7354D6)
+        bg = Color(0xFFF0FDFA), surface = Color(0xFFCCFBF1), card = Color(0xFF99F6E4),
+        line = Color(0xFF5EEAD4), accent = Color(0xFF0D9488), accentDeep = Color(0xFF0F766E),
+        text = Color(0xFF134E4A), haze = Color(0xFF115E59), faint = Color(0xFF0F766E),
+        error = Color(0xFFDC2626), success = Color(0xFF059669), isLight = true, glow = Color(0xFF8B5CF6)
     )
 
     /** 日落 · 珊瑚橙。 */
     private val sunset = Palette(
-        bg = Color(0xFF140E0C), surface = Color(0xFF1C1411), card = Color(0xFF251A16),
-        line = Color(0xFF3A2A23), accent = Color(0xFFFF8A5C), accentDeep = Color(0xFFD9653A),
-        text = Color(0xFFF7EAE2), haze = Color(0xFFA8928A), faint = Color(0xFF6C5A53),
-        error = Color(0xFFFF6B6B), success = Color(0xFF9CCF8E), glow = Color(0xFFFFC56B)
+        bg = Color(0xFF1C1310), surface = Color(0xFF281A16), card = Color(0xFF35231D),
+        line = Color(0xFF54372E), accent = Color(0xFFFB923C), accentDeep = Color(0xFFEA580C),
+        text = Color(0xFFFFF7ED), haze = Color(0xFFFED7AA), faint = Color(0xFFFDBA74).copy(alpha = 0.65f),
+        error = Color(0xFFF87171), success = Color(0xFF34D399), glow = Color(0xFFFDE047)
     )
     private val sunsetLight = Palette(
-        bg = Color(0xFFFCF5F0), surface = Color(0xFFF6EBE3), card = Color(0xFFEFDDD1),
-        line = Color(0xFFE2C9B9), accent = Color(0xFFCC5427), accentDeep = Color(0xFFA2411D),
-        text = Color(0xFF26170F), haze = Color(0xFF715E53), faint = Color(0xFFA8958A),
-        error = Color(0xFFB8342C), success = Color(0xFF3F7A3A), isLight = true,
-        glow = Color(0xFFD99A2B)
+        bg = Color(0xFFFFF7ED), surface = Color(0xFFFFEDD5), card = Color(0xFFFED7AA),
+        line = Color(0xFFFDBA74), accent = Color(0xFFEA580C), accentDeep = Color(0xFFC2410C),
+        text = Color(0xFF7C2D12), haze = Color(0xFF9A3412), faint = Color(0xFFC2410C),
+        error = Color(0xFFDC2626), success = Color(0xFF059669), isLight = true, glow = Color(0xFFEAB308)
     )
 
     /** 风格条目：供设置页渲染色板预览。 */
