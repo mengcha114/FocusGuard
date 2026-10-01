@@ -1662,6 +1662,11 @@ private fun CountdownRing(
             // 签名元素：衬线大数字（钟表刻度质感），见 DESIGN.md §3.3。
             // 每一位独立滚动：数字变化时旧值上移淡出、新值自下滑入（120ms）。
             val digits = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
+            val fontSerif = remember {
+                runCatching {
+                    com.focusguard.app.data.Settings(mottoContext).lockFontSerif
+                }.getOrDefault(true)
+            }
             Row(
                 modifier = Modifier.graphicsLayer {
                     val sc = 1f + 0.04f * minuteBounce.value
@@ -1683,7 +1688,7 @@ private fun CountdownRing(
                         Text(
                             text = c.toString(),
                             fontSize = if (h > 0) 40.sp else 50.sp,
-                            fontFamily = FontFamily.Serif,
+                            fontFamily = if (fontSerif) FontFamily.Serif else FontFamily.SansSerif,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp,
                             color = palette.text

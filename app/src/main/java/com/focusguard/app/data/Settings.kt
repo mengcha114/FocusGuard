@@ -15,6 +15,9 @@ class Settings(context: Context) {
         private const val KEY_AI_CUSTOM_PROMPT = "ai_custom_prompt"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_CUSTOM_ACCENT = "custom_accent"
+        private const val KEY_BG_BLUR_ENABLED = "bg_blur_enabled"
+        private const val KEY_LOCK_FONT_SERIF = "lock_font_serif"
+        private const val KEY_HIGH_CONTRAST_TEXT = "high_contrast_text"
         private const val KEY_API_FORMAT = "api_format"
         
         // Detection settings
@@ -234,6 +237,21 @@ gacha
     var customAccent: Int
         get() = prefs.getInt(KEY_CUSTOM_ACCENT, 0)
         set(value) = prefs.edit().putInt(KEY_CUSTOM_ACCENT, value).apply()
+
+    /** 背景流光漫反射光晕开关（默认开启）。 */
+    var bgBlurEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BG_BLUR_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_BG_BLUR_ENABLED, value).apply()
+
+    /** 锁机页时间大数字采用衬线钟表字体（关闭则为简洁无衬线）。 */
+    var lockFontSerif: Boolean
+        get() = prefs.getBoolean(KEY_LOCK_FONT_SERIF, true)
+        set(value) = prefs.edit().putBoolean(KEY_LOCK_FONT_SERIF, value).apply()
+
+    /** 高对比度文字增强：大幅强化副文字与标签明度，适合户外/强光下阅读。 */
+    var highContrastText: Boolean
+        get() = prefs.getBoolean(KEY_HIGH_CONTRAST_TEXT, false)
+        set(value) = prefs.edit().putBoolean(KEY_HIGH_CONTRAST_TEXT, value).apply()
 
     /**
      * API 协议格式：openai（默认，兼容 Kimi/GLM/Qwen/DeepSeek 等）、

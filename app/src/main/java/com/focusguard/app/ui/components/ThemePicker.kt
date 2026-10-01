@@ -118,6 +118,72 @@ fun ThemePicker() {
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         )
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), modifier = Modifier.padding(vertical = 4.dp))
+
+        // ── 高级自定义显示选项 ──
+        Text("显示与个性化细节", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+
+        val settings = remember { com.focusguard.app.data.Settings(context) }
+        var bgBlur by remember { mutableStateOf(settings.bgBlurEnabled) }
+        var fontSerif by remember { mutableStateOf(settings.lockFontSerif) }
+        var highContrast by remember { mutableStateOf(settings.highContrastText) }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("高对比度文字模式", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                Text("增强主副文字亮度与边框对比度，强光下更清晰", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(
+                checked = highContrast,
+                onCheckedChange = {
+                    highContrast = it
+                    settings.highContrastText = it
+                    // 重新刷新全局主题
+                    apply()
+                }
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("背景流光漫反射光晕", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                Text("在页面背景展现呼吸光晕（关闭后为纯色背景）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(
+                checked = bgBlur,
+                onCheckedChange = {
+                    bgBlur = it
+                    settings.bgBlurEnabled = it
+                }
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("锁机钟表衬线字体", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                Text("开启为典雅刻度数字，关闭为现代无衬线粗体", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(
+                checked = fontSerif,
+                onCheckedChange = {
+                    fontSerif = it
+                    settings.lockFontSerif = it
+                }
+            )
+        }
     }
 }
 

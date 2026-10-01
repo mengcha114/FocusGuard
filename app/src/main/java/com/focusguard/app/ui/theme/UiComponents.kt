@@ -58,6 +58,12 @@ fun AmbientGlow(
     secondary: Color = MaterialTheme.colorScheme.tertiary
 ) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val context = LocalContext.current
+    val enabled = remember(context) {
+        runCatching { com.focusguard.app.data.Settings(context).bgBlurEnabled }.getOrDefault(true)
+    }
+    if (!enabled) return
+
     // 两团光斑缓慢漂移呼吸（12s 周期，幅度克制）；系统关闭动画时静止
     val on = animationsEnabled()
     val drift = if (on) {

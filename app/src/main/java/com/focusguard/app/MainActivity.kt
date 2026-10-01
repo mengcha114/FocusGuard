@@ -226,7 +226,9 @@ class MainActivity : ComponentActivity() {
                     )
                 } else {
                     androidx.compose.foundation.layout.Box(
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
                     ) {
                         // 全局环境光斑：与半透明卡片叠加成玻璃材质（Android 12+ 生效）
                         com.focusguard.app.ui.theme.AmbientGlow(

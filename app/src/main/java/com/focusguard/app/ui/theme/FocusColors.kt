@@ -177,7 +177,27 @@ object FocusColors {
         }
         val custom = if (accentOverride != 0) accentOverride
         else context?.let { customAccentOf(it) } ?: 0
-        return if (custom != 0) withAccent(base, Color(custom)) else base
+        val withAccentPalette = if (custom != 0) withAccent(base, Color(custom)) else base
+
+        // 高对比度文字增强模式
+        val highContrast = context?.let { runCatching { com.focusguard.app.data.Settings(it).highContrastText }.getOrDefault(false) } ?: false
+        return if (highContrast) {
+            Palette(
+                bg = withAccentPalette.bg,
+                surface = withAccentPalette.surface,
+                card = withAccentPalette.card,
+                line = if (withAccentPalette.isLight) Color(0xFF64748B) else Color(0xFF94A3B8),
+                accent = withAccentPalette.accent,
+                accentDeep = withAccentPalette.accentDeep,
+                text = if (withAccentPalette.isLight) Color(0xFF000000) else Color(0xFFFFFFFF),
+                haze = if (withAccentPalette.isLight) Color(0xFF1E293B) else Color(0xFFE2E8F0),
+                faint = if (withAccentPalette.isLight) Color(0xFF334155) else Color(0xFFCBD5E1),
+                error = withAccentPalette.error,
+                success = withAccentPalette.success,
+                isLight = withAccentPalette.isLight,
+                glow = withAccentPalette.glow
+            )
+        } else withAccentPalette
     }
 
     /** 锁机页/悬浮窗调色板：与全局一致。 */
