@@ -1662,9 +1662,10 @@ private fun CountdownRing(
             // 签名元素：衬线大数字（钟表刻度质感），见 DESIGN.md §3.3。
             // 每一位独立滚动：数字变化时旧值上移淡出、新值自下滑入（120ms）。
             val digits = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
-            val fontSerif = remember {
+            val ringContext = androidx.compose.ui.platform.LocalContext.current
+            val fontSerif = remember(ringContext) {
                 runCatching {
-                    com.focusguard.app.data.Settings(mottoContext).lockFontSerif
+                    com.focusguard.app.data.Settings(ringContext).lockFontSerif
                 }.getOrDefault(true)
             }
             Row(
