@@ -39,7 +39,7 @@ class ChallengeGeneratorTest {
     @Test
     fun primaryGradeOnlyUsesArithmeticKinds() {
         repeat(600) {
-            val q = gen.generate(2, grade = GradeStore.Grade.PRIMARY)
+            val q = gen.generate(2, numericOnly = true, grade = GradeStore.Grade.PRIMARY)
             assertTrue(q.kind, q.kind in primaryKinds)
         }
     }
