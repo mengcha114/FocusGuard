@@ -67,6 +67,10 @@ fun UnlockChallengeScreen(
     val gradeLabel = remember { com.focusguard.app.data.GradeStore(context).effective.label }
     // 作答时限：每题独立计时，超时算错并换题
     var secondsLeft by remember { mutableIntStateOf(currentQuestion.timeLimitSec) }
+    // 答错冷却：免费次数用完后每次答错需等待 5 分钟（单调时钟，退出重进不重置）
+    var cooldownSec by remember { mutableIntStateOf(((lockState.cooldownRemainingMs + 999) / 1000).toInt()) }
+    var freeWrongLeft by remember { mutableIntStateOf(lockState.freeWrongLeft) }
+    val cooling = cooldownSec > 0
 
     fun nextQuestion() {
         userAnswer = ""
@@ -75,24 +79,50 @@ fun UnlockChallengeScreen(
         secondsLeft = currentQuestion.timeLimitSec
     }
 
-    LaunchedEffect(currentQuestion) {
+    /** 答错 / 超时统一处理：计数，次数用完则进入冷却。 */
+    fun onWrong(msg: String) {
+        val enteredCooldown = lockState.recordWrongAnswer()
+        freeWrongLeft = lockState.freeWrongLeft
+        feedbackMessage = msg
+        isError = true
+        switching = true
+        scope.launch {
+            kotlinx.coroutines.delay(2800L)
+            if (enteredCooldown) {
+                cooldownSec = ((lockState.cooldownRemainingMs + 999) / 1000).toInt()
+            } else {
+                nextQuestion()
+            }
+            switching = false
+        }
+    }
+
+    // 冷却倒计时：结束后换一道新题
+    LaunchedEffect(cooldownSec > 0) {
+        if (cooldownSec <= 0) return@LaunchedEffect
+        while (true) {
+            cooldownSec = ((lockState.cooldownRemainingMs + 999) / 1000).toInt()
+            if (cooldownSec <= 0) break
+            feedbackMessage = "答错次数已用完（${com.focusguard.app.data.LockState.FREE_WRONG_ANSWERS} 次），请等待 %d:%02d 后继续答题"
+                .format(cooldownSec / 60, cooldownSec % 60)
+            isError = true
+            kotlinx.coroutines.delay(1000L)
+        }
+        nextQuestion()
+    }
+
+    LaunchedEffect(currentQuestion, cooling) {
+        if (cooling) return@LaunchedEffect
         secondsLeft = currentQuestion.timeLimitSec
         while (secondsLeft > 0) {
             kotlinx.coroutines.delay(1000L)
             if (!switching) secondsLeft--
         }
-        if (!switching) {
-            feedbackMessage = "超时，算作答错。正确答案：${currentQuestion.answer}"
-            isError = true
-            switching = true
-            kotlinx.coroutines.delay(2200L)
-            nextQuestion()
-            switching = false
-        }
+        if (!switching) onWrong("超时，算作答错。正确答案：${currentQuestion.answer}")
     }
 
     fun submit() {
-        if (switching) return
+        if (switching || cooling || lockState.isInCooldown) return
         val question = currentQuestion
         val correct = generator.isAnswerCorrect(userAnswer, question.answer)
         if (correct) {
@@ -110,19 +140,12 @@ fun UnlockChallengeScreen(
                 }
             }
         } else {
-            feedbackMessage = buildString {
+            onWrong(buildString {
                 append("回答错误。正确答案：${question.answer}")
                 if (question.explanation.isNotBlank()) {
                     append("\n解析：${question.explanation}")
                 }
-            }
-            isError = true
-            switching = true
-            scope.launch {
-                kotlinx.coroutines.delay(2800L)
-                nextQuestion()
-                switching = false
-            }
+            })
         }
     }
 
@@ -199,7 +222,8 @@ fun UnlockChallengeScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "$gradeLabel · ${if (difficulty >= 3) "困难" else "中等"} · ${secondsLeft}s",
+                            text = if (cooling) "冷却 %d:%02d".format(cooldownSec / 60, cooldownSec % 60)
+                                else "$gradeLabel · ${secondsLeft}s · 可错 $freeWrongLeft",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = if (secondsLeft <= 15) palette.error else palette.haze
@@ -255,7 +279,7 @@ fun UnlockChallengeScreen(
                         rowKeys.forEach { key ->
                             Button(
                                 onClick = {
-                                    if (!switching && userAnswer.length < 24) {
+                                    if (!switching && !cooling && userAnswer.length < 24) {
                                         userAnswer += key
                                     }
                                 },
@@ -345,7 +369,7 @@ fun UnlockChallengeScreen(
             // ── 操作按钮 ──────────────────────────────
             Button(
                 onClick = { submit() },
-                enabled = userAnswer.isNotBlank() && !switching,
+                enabled = userAnswer.isNotBlank() && !switching && !cooling,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
@@ -369,7 +393,7 @@ fun UnlockChallengeScreen(
                         nextQuestion()
                     }
                 },
-                enabled = !switching && refreshCount < 5,
+                enabled = !switching && !cooling && refreshCount < 5,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp)
             ) {

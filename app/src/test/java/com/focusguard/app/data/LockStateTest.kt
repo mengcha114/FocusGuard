@@ -226,6 +226,54 @@ class LockStateTest {
         assertTrue(restored.shouldBlockNow)
     }
 
+    // ── 答错冷却 ──
+
+    @Test
+    fun cooldownStartsAfterFreeWrongAnswersUsedUp() {
+        state.startLock(60, "PLAIN", 1)
+        repeat(LockState.FREE_WRONG_ANSWERS) { assertFalse(state.recordWrongAnswer()) }
+        assertFalse(state.isInCooldown)
+        assertEquals(0, state.freeWrongLeft)
+        assertTrue(state.recordWrongAnswer())
+        assertTrue(state.isInCooldown)
+        clock.advance(4 * min)
+        assertTrue(state.isInCooldown)
+        clock.advance(min + 1000)
+        assertFalse(state.isInCooldown)
+        // 冷却结束后再答错，再次进入 5 分钟冷却
+        assertTrue(state.recordWrongAnswer())
+        assertTrue(state.isInCooldown)
+    }
+
+    @Test
+    fun cooldownIgnoresWallClockAndSurvivesReload() {
+        state.startLock(60, "PLAIN", 1)
+        repeat(LockState.FREE_WRONG_ANSWERS + 1) { state.recordWrongAnswer() }
+        clock.wallMs += 24 * 60 * min
+        assertTrue(reload().isInCooldown)
+    }
+
+    @Test
+    fun cooldownRestartsFullyAfterReboot() {
+        state.startLock(60, "PLAIN", 1)
+        state.writeSnapshot()
+        repeat(LockState.FREE_WRONG_ANSWERS + 1) { state.recordWrongAnswer() }
+        clock.reboot(offMs = min)
+        val s = reload()
+        assertTrue(s.isInCooldown)
+        assertEquals(LockState.WRONG_COOLDOWN_MS, s.cooldownRemainingMs)
+    }
+
+    @Test
+    fun newLockResetsWrongCount() {
+        state.startLock(60, "PLAIN", 1)
+        repeat(LockState.FREE_WRONG_ANSWERS + 1) { state.recordWrongAnswer() }
+        state.releaseLock()
+        state.startLock(30, "PLAIN", 1)
+        assertEquals(LockState.FREE_WRONG_ANSWERS, state.freeWrongLeft)
+        assertFalse(state.isInCooldown)
+    }
+
     @Test
     fun releaseClearsEverything() {
         state.startLock(60, "PLAIN", 3)

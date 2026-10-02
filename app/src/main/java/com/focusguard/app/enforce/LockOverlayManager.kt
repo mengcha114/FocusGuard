@@ -162,8 +162,27 @@ object LockOverlayManager {
         /** 反馈展示中（正在等待自动换题），此期间禁用输入。 */
         var switching: Boolean = false,
         /** 本题开始时刻（单调时钟），用于作答时限。 */
-        var startedAt: Long = android.os.SystemClock.elapsedRealtime()
+        var startedAt: Long = android.os.SystemClock.elapsedRealtime(),
+        /** 答错冷却中（禁止输入与提交）。 */
+        var cooling: Boolean = false
     )
+
+    /** 答错 / 超时统一处理：计数，必要时进入冷却，否则显示解析后换题。 */
+    private fun onWrong(context: Context, lockState: LockState, session: ChallengeSession, msg: String) {
+        val cooldown = lockState.recordWrongAnswer()
+        showFeedback(session, msg, isError = true)
+        session.switching = true
+        if (cooldown) {
+            // 冷却由计时器接管显示与恢复
+            session.cooling = true
+            uiHandler.postDelayed({ session.switching = false }, 2800L)
+            return
+        }
+        uiHandler.postDelayed({
+            session.switching = false
+            nextQuestion(context, lockState, session)
+        }, 2800L)
+    }
 
     /** 作答时限计时（每秒刷新进度行，超时算错并换题）。 */
     private var questionTimer: Runnable? = null
@@ -173,16 +192,32 @@ object LockOverlayManager {
         val tick = object : Runnable {
             override fun run() {
                 if (challengeSession !== session) return
+                val cooldown = lockState.cooldownRemainingMs
+                if (cooldown > 0) {
+                    // 答错次数用完：冷却中禁止作答，本题计时顺延
+                    session.cooling = true
+                    session.startedAt = android.os.SystemClock.elapsedRealtime()
+                    val sec = ((cooldown + 999) / 1000).toInt()
+                    challengeProgressText?.text = "冷却 %d:%02d".format(sec / 60, sec % 60)
+                    showFeedback(
+                        session,
+                        "答错次数已用完（${LockState.FREE_WRONG_ANSWERS} 次），请等待 %d:%02d 后继续答题".format(sec / 60, sec % 60),
+                        isError = true
+                    )
+                    uiHandler.postDelayed(this, 1000L)
+                    return
+                }
+                if (session.cooling) {
+                    session.cooling = false
+                    nextQuestion(context, lockState, session)
+                }
                 val limit = session.question.timeLimitSec.coerceAtLeast(30)
                 val left = limit - ((android.os.SystemClock.elapsedRealtime() - session.startedAt) / 1000).toInt()
-                challengeProgressText?.text = "${session.correctCount} / ${session.requiredCorrect} · ${left.coerceAtLeast(0)}s"
+                val free = lockState.freeWrongLeft
+                challengeProgressText?.text =
+                    "${session.correctCount} / ${session.requiredCorrect} · ${left.coerceAtLeast(0)}s · 可错 $free"
                 if (left <= 0 && !session.switching) {
-                    showFeedback(session, "超时，算作答错。正确答案：${session.question.answer}", isError = true)
-                    session.switching = true
-                    uiHandler.postDelayed({
-                        session.switching = false
-                        nextQuestion(context, lockState, session)
-                    }, 2200L)
+                    onWrong(context, lockState, session, "超时，算作答错。正确答案：${session.question.answer}")
                 }
                 uiHandler.postDelayed(this, 1000L)
             }
@@ -2375,6 +2410,8 @@ object LockOverlayManager {
                         setOnClickListener {
                             if (session.switching) return@setOnClickListener
                             if (lockState.challengeRefreshCount >= 5) return@setOnClickListener
+                            // 冷却中换题也不行，否则可以靠换题绕过等待
+                            if (lockState.isInCooldown) return@setOnClickListener
                             lockState.recordChallengeRefresh()
                             nextQuestion(context, lockState, session)
                         }
@@ -2427,7 +2464,7 @@ object LockOverlayManager {
     }
 
     private fun onKeyInput(session: ChallengeSession, key: String) {
-        if (session.switching) return
+        if (session.switching || session.cooling) return
         if (session.input.length >= 24) return
         session.input += key
         refreshAnswerText(session)
@@ -2461,7 +2498,7 @@ object LockOverlayManager {
         lockState: LockState,
         session: ChallengeSession
     ) {
-        if (session.switching) return
+        if (session.switching || session.cooling || lockState.isInCooldown) return
         if (session.input.isBlank()) return
 
         val correct = generator(context).isAnswerCorrect(session.input, session.question.answer)
@@ -2496,12 +2533,7 @@ object LockOverlayManager {
                     append("\n解析：${session.question.explanation}")
                 }
             }
-            showFeedback(session, msg, isError = true)
-            session.switching = true
-            uiHandler.postDelayed({
-                session.switching = false
-                nextQuestion(context, lockState, session)
-            }, 2800L)
+            onWrong(context, lockState, session, msg)
         }
     }
 
