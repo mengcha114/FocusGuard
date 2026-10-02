@@ -340,8 +340,9 @@ export const Themes: React.FC = () => {
   const local = frame - idx * per;
   const pop = spring({ frame: local, fps: 30, config: { damping: 12 } });
   const st = styles[idx];
-  const shotName = `lock_${st.id}`;
-  const src = shot(shotName);
+  // 第一拍优先展示真机「深度美化主页」（自定义背景 + 外观），之后按风格快切锁机页
+  const styled = idx === 0 ? shot("home_styled") : null;
+  const src = styled ?? shot(`lock_${st.id}`);
   return (
     <AbsoluteFill>
       <Backdrop p={st.p} intensity={1.3} />

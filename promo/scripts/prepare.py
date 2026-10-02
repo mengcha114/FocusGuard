@@ -20,29 +20,50 @@ SHOTS_OUT = PUBLIC / "shots"
 ASSETS = ROOT / "assets"
 MANIFEST = ROOT / "src" / "manifest.json"
 
+REAL = ASSETS / "real"  # 用户提供的真机截图，优先级最高
+
 SHOT_NAMES = [
-    "home", "chat", "timer", "settings", "settings_theme", "lock", "strength4", "challenge",
+    "home", "home_styled", "chat", "timer", "settings", "settings_theme", "lock", "strength4", "challenge",
     "lock_ink", "lock_ocean", "lock_sakura", "lock_aurora", "lock_sunset", "lock_light",
 ]
 
 
 def collect_shots(src_dir: str) -> list:
+    """
+    每个镜头的截图来源优先级：真机截图（assets/real）> 模拟器截图 > 无（网页还原界面）。
+    统一转成 PNG 存入 public/shots/<name>.png。
+    """
+    from PIL import Image
+
     SHOTS_OUT.mkdir(parents=True, exist_ok=True)
-    found = []
-    if not src_dir:
-        return found
-    src = Path(src_dir)
+    found, real_used = [], []
+    src = Path(src_dir) if src_dir else None
     for name in SHOT_NAMES:
-        f = src / f"{name}.png"
-        if f.exists() and f.stat().st_size > 10_000:
-            shutil.copy(f, SHOTS_OUT / f.name)
-            found.append(name)
+        picked = None
+        for d in [REAL, src]:
+            if d is None:
+                continue
+            for ext in ("png", "jpg", "jpeg", "webp"):
+                f = d / f"{name}.{ext}"
+                if f.exists() and f.stat().st_size > 10_000:
+                    picked = f
+                    break
+            if picked:
+                break
+        if not picked:
+            continue
+        Image.open(picked).convert("RGB").save(SHOTS_OUT / f"{name}.png")
+        found.append(name)
+        if picked.parent == REAL:
+            real_used.append(name)
+    if real_used:
+        print(f"[prepare] 使用真机截图：{', '.join(real_used)}")
     return found
 
 
 def find_music():
     for ext in ("mp3", "wav", "m4a", "flac", "ogg"):
-        hits = sorted(ASSETS.glob(f"*.{ext}"))
+        hits = sorted(ASSETS.glob(f"*.{ext}"))  # 只看 assets/ 顶层，不进 real/
         if hits:
             return hits[0]
     return None
