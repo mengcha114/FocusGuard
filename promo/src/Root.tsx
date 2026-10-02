@@ -1,14 +1,17 @@
 import React from "react";
 import { AbsoluteFill, Audio, Composition, interpolate, useVideoConfig } from "remotion";
-import { TransitionSeries, linearTiming } from "@remotion/transitions";
+import { TransitionSeries, springTiming } from "@remotion/transitions";
 import { fade } from "@remotion/transitions/fade";
 import { slide } from "@remotion/transitions/slide";
+import { wipe } from "@remotion/transitions/wipe";
+import { flip } from "@remotion/transitions/flip";
+import { Grade } from "./ui/fx";
 import { FPS, H, W, ink } from "./theme";
 import { musicSrc, snap } from "./data";
 import { Brand, Challenge, Detect, Duo, Lock, Opening, Outro, Pain, Strength, Themes } from "./scenes/Scenes";
 
 const TOTAL_SEC = 60;
-const T = 12; // 转场帧数
+const T = 14; // 转场帧数
 
 /**
  * 镜头切点（秒）。每个切点吸附到最近的音乐节拍（±0.35s 内），
@@ -32,14 +35,31 @@ const Promo: React.FC = () => {
             </TransitionSeries.Sequence>,
           ];
           if (i < SCENES.length - 1) {
-            const presentation = i % 3 === 1 ? slide({ direction: "from-bottom" }) : fade();
+            // 按镜头情绪挑选转场：开场/品牌用淡入，功能段用滑入/擦除/翻转，节奏有变化但不杂乱
+            const presentations = [
+              fade(),                                  // 开场 → 痛点
+              fade(),                                  // 痛点 → 品牌（卡片被吸入后光爆）
+              slide({ direction: "from-bottom" }),     // 品牌 → AI 识别
+              wipe({ direction: "from-top-left" }),    // 识别 → 锁机
+              slide({ direction: "from-right" }),      // 锁机 → 答题
+              flip({ direction: "from-left" }),        // 答题 → 强度 4
+              wipe({ direction: "from-bottom" }),      // 强度 4 → 主题
+              slide({ direction: "from-bottom" }),     // 主题 → 双机
+              fade(),                                  // 双机 → 收尾
+            ];
             items.push(
-              <TransitionSeries.Transition key={`t${i}`} presentation={presentation} timing={linearTiming({ durationInFrames: T })} />
+              <TransitionSeries.Transition
+                key={`t${i}`}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                presentation={presentations[i] as any}
+                timing={springTiming({ config: { damping: 200 }, durationInFrames: T })}
+              />
             );
           }
           return items;
         })}
       </TransitionSeries>
+      <Grade />
       {musicSrc && (
         <Audio
           src={musicSrc}
