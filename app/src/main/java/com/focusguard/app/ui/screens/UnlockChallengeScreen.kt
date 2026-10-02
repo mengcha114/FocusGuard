@@ -103,7 +103,7 @@ fun UnlockChallengeScreen(
         while (true) {
             cooldownSec = ((lockState.cooldownRemainingMs + 999) / 1000).toInt()
             if (cooldownSec <= 0) break
-            feedbackMessage = "答错次数已用完（${com.focusguard.app.data.LockState.FREE_WRONG_ANSWERS} 次），请等待 %d:%02d 后继续答题"
+            feedbackMessage = "连续答错（${com.focusguard.app.data.LockState.FREE_WRONG_ANSWERS} 次），请等待 %d:%02d 后继续答题"
                 .format(cooldownSec / 60, cooldownSec % 60)
             isError = true
             kotlinx.coroutines.delay(1000L)
@@ -126,6 +126,8 @@ fun UnlockChallengeScreen(
         val question = currentQuestion
         val correct = generator.isAnswerCorrect(userAnswer, question.answer)
         if (correct) {
+            lockState.recordCorrectAnswer()
+            freeWrongLeft = lockState.freeWrongLeft
             currentCorrectCount += 1
             if (currentCorrectCount >= targetCorrectCount) {
                 onUnlocked()

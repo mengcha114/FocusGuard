@@ -1,6 +1,7 @@
 package com.focusguard.app.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.School
@@ -39,14 +40,21 @@ fun GradePickerDialog(mandatory: Boolean, onDone: () -> Unit, onDismiss: () -> U
         }
     }
 
-    val needsStream = (selectedGrade?.level ?: 0) >= 3
+    val needsStream = (selectedGrade?.level ?: 0) >= GradeStore.Grade.SENIOR_2.level
 
     AlertDialog(
         onDismissRequest = { if (!mandatory) onDismiss() },
         icon = { Icon(Icons.Default.School, null, tint = MaterialTheme.colorScheme.primary) },
         title = { Text(if (store.isChosen) "调高答题学段与选科" else "选择你的答题学段") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 8 个年级 + 选科超出屏幕：内容区限高可滚动，按钮始终可见（含横屏）
+            val maxH = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.55f).dp
+            Column(
+                modifier = Modifier
+                    .heightIn(max = maxH)
+                    .verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Text(
                     "解锁、暂停与修改设置时需答题。以高思维量数学题为主，辅以选科真题。",
                     fontSize = 14.sp,
@@ -122,7 +130,7 @@ fun GradeSettingCard() {
 
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.weight(1f)) {
-            val streamSuffix = if ((grade?.level ?: 0) >= 3) " (${stream.label.split(' ')[0]})" else ""
+            val streamSuffix = if ((grade?.level ?: 0) >= GradeStore.Grade.SENIOR_2.level) " (${stream.label.split(' ')[0]})" else ""
             Text((grade?.label ?: "未选择") + streamSuffix, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             Text(
                 when {

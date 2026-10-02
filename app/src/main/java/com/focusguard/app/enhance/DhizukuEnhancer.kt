@@ -445,6 +445,23 @@ object DhizukuEnhancer {
         }
     }
 
+    /** 施加 / 撤销用户限制（如禁止改时间、禁止安全模式）。 */
+    fun setUserRestriction(context: Context, key: String, on: Boolean): Boolean = try {
+        if (!ensureReady(context)) false else {
+            val dpm = wrappedDpm!!; val comp = ownerComponent!!
+            if (on) dpm.addUserRestriction(comp, key) else dpm.clearUserRestriction(comp, key)
+            true
+        }
+    } catch (e: Throwable) { Log.w(TAG, "用户限制 $key=$on 失败：${e.message}"); false }
+
+    /** 冻结 / 解冻应用（setPackagesSuspended）。返回是否全部成功。 */
+    fun setPackagesSuspended(context: Context, pkgs: Collection<String>, on: Boolean): Boolean = try {
+        if (!ensureReady(context) || pkgs.isEmpty()) false else {
+            val failed = wrappedDpm!!.setPackagesSuspended(ownerComponent!!, pkgs.toTypedArray(), on)
+            failed.isEmpty()
+        }
+    } catch (e: Throwable) { Log.w(TAG, "冻结应用失败：${e.message}"); false }
+
     /** 本应用是否已被允许进入 Lock Task 模式。 */
     fun isLockTaskPermitted(packageName: String): Boolean {
         val dpm = wrappedDpm ?: return false

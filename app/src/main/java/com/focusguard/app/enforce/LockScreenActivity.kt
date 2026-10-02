@@ -654,7 +654,7 @@ class LockScreenActivity : ComponentActivity() {
             // 有界重试，期间 Activity 始终是可见防线，不先切旧悬浮窗页面。
             val preferDhizuku = com.focusguard.app.enhance.DhizukuEnhancer
                 .shouldPreferActivity(applicationContext)
-            val maxPrepareAttempts = if (preferDhizuku) 8 else 1
+            val maxPrepareAttempts = if (preferDhizuku) 30 else 1
             var ready = false
             for (attempt in 1..maxPrepareAttempts) {
                 if (!isLockTaskRequestCurrent(generation)) {
@@ -682,6 +682,11 @@ class LockScreenActivity : ComponentActivity() {
                 runOnUiThread {
                     lockTaskRequested = false
                     Log.w(TAG, "Dhizuku 不可用，悬浮窗常驻接管锁机")
+                    // 曾经成功过的设备（多为刚开机 Dhizuku 未就绪）：交给守护服务持续重试，
+                    // 就绪后自动升级回系统级，而不是整轮锁机停留在普通模式
+                    if (com.focusguard.app.enhance.DhizukuEnhancer.shouldPreferActivity(applicationContext)) {
+                        com.focusguard.app.enhance.DhizukuUpgrade.markPending()
+                    }
                     if (LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing) {
                         try {
                             LockOverlayManager.show(
@@ -1153,7 +1158,7 @@ private fun LockScreenContent(
                                 lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
                                 else -> "专注锁定中"
                             },
-                            subBadge = "🛡️ 系统级守护",
+                            subBadge = if (com.focusguard.app.enhance.DhizukuUpgrade.pending) "⏳ 正在恢复系统级守护…" else "🛡️ 系统级守护",
                             accent = accent,
                             palette = palette,
                             locked = !isRelaxed
@@ -1325,7 +1330,7 @@ private fun LockScreenContent(
                             lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
                             else -> "专注锁定中"
                         },
-                        subBadge = "🛡️ 系统级守护",
+                        subBadge = if (com.focusguard.app.enhance.DhizukuUpgrade.pending) "⏳ 正在恢复系统级守护…" else "🛡️ 系统级守护",
                         accent = accent,
                         palette = palette,
                         locked = !isRelaxed

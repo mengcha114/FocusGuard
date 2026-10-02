@@ -121,6 +121,9 @@ class LockGuardService : Service() {
     /** 卸载阻止开关状态（与 Dhizuku setUninstallBlocked 同步）。 */
     private var uninstallBlocked = false
 
+    /** 锁机加固（用户限制 / 冻结娱乐应用）是否已施加。 */
+    private var policiesApplied = false
+
     /** 媒体键抢占开关状态（与 AudioManager 注册同步）。 */
     private var mediaButtonRegistered = false
 
@@ -189,6 +192,7 @@ class LockGuardService : Service() {
         Thread {
             try {
                 com.focusguard.app.enhance.ShizukuEnhancer.selfHeal(applicationContext)
+                com.focusguard.app.enhance.LockPolicies.cleanupResidue(applicationContext, LockState(applicationContext).isLocked)
             } catch (e: Throwable) {
                 Log.w(TAG, "Shizuku 自愈失败（可忽略）：${e.message}")
             }
@@ -453,6 +457,23 @@ class LockGuardService : Service() {
         // 整段锁机（含暂停）都保持，否则暂停期间去设置里清数据即可绕过。
         val blockingNow = lockState.isLocked && lockState.shouldBlockNow
         val lockedNow = lockState.isLocked
+        // 锁机开始 / 结束：施加或撤销系统级加固（后台线程，避免巡检中做 Binder 初始化）
+        if (lockedNow != policiesApplied) {
+            policiesApplied = lockedNow
+            val app = applicationContext
+            Thread {
+                if (lockedNow) com.focusguard.app.enhance.LockPolicies.onLockStart(app)
+                else com.focusguard.app.enhance.LockPolicies.onLockEnd(app)
+            }.start()
+        }
+        // 锁机中（非暂停）：Shizuku 写回无障碍与自动时间（低频，每 ~10 秒）
+        if (blockingNow && tickCount % 33 == 0 && com.focusguard.app.enhance.ShizukuEnhancer.isReady()) {
+            val app = applicationContext
+            Thread {
+                com.focusguard.app.enhance.ShizukuEnhancer.ensureAccessibility(app)
+                com.focusguard.app.enhance.ShizukuEnhancer.ensureAutoTime()
+            }.start()
+        }
         if (lockedNow != uninstallBlocked) {
             // 只读缓存门槛：未就绪（无 Dhizuku）直接跳过，避免后台线程
             // 触发 HiddenApiBypass/Dhizuku.init Binder 初始化（死锁/ANR 隐患）
@@ -590,6 +611,14 @@ class LockGuardService : Service() {
                 return
             }
 
+            // ── 重启后降级：后台持续探测 Dhizuku，就绪即升级回系统级 ──
+            if (com.focusguard.app.enhance.DhizukuUpgrade.pending) {
+                com.focusguard.app.enhance.DhizukuUpgrade.tick(applicationContext) {
+                    Log.d(TAG, "Dhizuku 已就绪，升级回系统级锁机")
+                    LockScreenActivity.show(applicationContext, forceActivity = true)
+                }
+            }
+
             // ── 无 Dhizuku：全屏悬浮窗常驻（主防线） ──────────
             // 悬浮窗不属于任何 Task：上滑手势、最近任务、清后台都动不了它，
             // z-order 也高于普通 Activity 与小窗。只要权限在手就让它一直挂着，
@@ -614,6 +643,9 @@ class LockGuardService : Service() {
             LockScreenActivity.show(applicationContext)
             return
         }
+
+        // 锁机结束 → 不再需要升级
+        if (!lockState.isLocked) com.focusguard.app.enhance.DhizukuUpgrade.clear()
 
         // 锁机结束或暂停 → 撤销覆盖层
         if (LockOverlayManager.isShowing) {

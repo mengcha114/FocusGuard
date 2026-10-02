@@ -201,7 +201,7 @@ object LockOverlayManager {
                     challengeProgressText?.text = "冷却 %d:%02d".format(sec / 60, sec % 60)
                     showFeedback(
                         session,
-                        "答错次数已用完（${LockState.FREE_WRONG_ANSWERS} 次），请等待 %d:%02d 后继续答题".format(sec / 60, sec % 60),
+                        "连续答错（${LockState.FREE_WRONG_ANSWERS} 次），请等待 %d:%02d 后继续答题".format(sec / 60, sec % 60),
                         isError = true
                     )
                     uiHandler.postDelayed(this, 1000L)
@@ -2531,6 +2531,7 @@ object LockOverlayManager {
 
         val correct = generator(context).isAnswerCorrect(session.input, session.question.answer)
         if (correct) {
+            lockState.recordCorrectAnswer()
             session.correctCount += 1
             challengeProgressText?.text = "${session.correctCount} / ${session.requiredCorrect}"
             if (session.correctCount >= session.requiredCorrect) {

@@ -331,11 +331,6 @@ private fun AppEditSheet(
 
     // 防篡改答题验证（首次免费，之后每次保存规则都要答题）
     var showVerify by remember { mutableStateOf(false) }
-    var verifyQuestion by remember {
-        mutableStateOf<com.focusguard.app.challenge.ChallengeQuestion?>(null)
-    }
-    var verifyAnswer by remember { mutableStateOf("") }
-    var verifyError by remember { mutableStateOf<String?>(null) }
     var pendingRule by remember { mutableStateOf<AppUsageRule?>(null) }
 
     ModalBottomSheet(
@@ -459,10 +454,6 @@ private fun AppEditSheet(
                                 val settings = com.focusguard.app.data.Settings(context)
                                 if (settings.settingsEditCount > 0) {
                                     pendingRule = rule
-                                    verifyQuestion =
-                                        com.focusguard.app.challenge.ChallengeGenerator(context).generate(2)
-                                    verifyAnswer = ""
-                                    verifyError = null
                                     showVerify = true
                                 } else {
                                     settings.settingsEditCount = settings.settingsEditCount + 1
@@ -483,61 +474,19 @@ private fun AppEditSheet(
             }
         }
 
-        // ── 修改规则答题验证对话框 ────────────────────────
+        // ── 修改规则答题验证对话框（答错即换题、错 2 次冷却 5 分钟、换题 5 次） ──
         if (showVerify) {
-            AlertDialog(
-                onDismissRequest = { showVerify = false },
-                title = { Text("修改规则需先答题") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = "为防止限制被随意篡改，请先回答一道题：",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                        )
-                        Text(
-                            text = verifyQuestion?.question ?: "",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        OutlinedTextField(
-                            value = verifyAnswer,
-                            onValueChange = { verifyAnswer = it; verifyError = null },
-                            label = { Text("你的答案") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        verifyError?.let {
-                            Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                        }
-                    }
+            com.focusguard.app.ui.components.VerifyDialog(
+                title = "修改规则需先答题",
+                description = "为防止限制被随意篡改，请先答对一道题。",
+                confirmText = "验证并保存",
+                onPassed = {
+                    com.focusguard.app.data.Settings(context).settingsEditCount =
+                        com.focusguard.app.data.Settings(context).settingsEditCount + 1
+                    showVerify = false
+                    onSaved(selectedCategory, pendingRule)
                 },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val q = verifyQuestion
-                            val gen = com.focusguard.app.challenge.ChallengeGenerator(context)
-                            if (q != null && gen.isAnswerCorrect(verifyAnswer, q.answer)) {
-                                com.focusguard.app.data.Settings(context).settingsEditCount =
-                                    com.focusguard.app.data.Settings(context).settingsEditCount + 1
-                                showVerify = false
-                                verifyAnswer = ""
-                                onSaved(selectedCategory, pendingRule)
-                            } else {
-                                verifyError = "回答错误，请重试"
-                            }
-                        }
-                    ) { Text("验证并保存") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showVerify = false }) {
-                        Text("取消", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(12.dp)
+                onCancel = { showVerify = false }
             )
         }
     }

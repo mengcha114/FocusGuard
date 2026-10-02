@@ -53,8 +53,8 @@ class LockState internal constructor(
         private const val KEY_WRONG_COUNT = "challenge_wrong_count"
         private const val KEY_COOLDOWN_BASE = "challenge_cooldown_base"
 
-        /** 每轮锁机可免费答错的次数；用完后每答错一次需等待 [WRONG_COOLDOWN_MS]。 */
-        const val FREE_WRONG_ANSWERS = 5
+        /** 连续答错多少次进入冷却（与 AttemptGuard.MAX_WRONG 一致）。 */
+        const val FREE_WRONG_ANSWERS = 2
         const val WRONG_COOLDOWN_MS = 5 * 60_000L
         private const val MAX_CHALLENGE_REFRESHES = 5
 
@@ -362,7 +362,11 @@ class LockState internal constructor(
                 prefs.edit().putLong(KEY_COOLDOWN_BASE, clock.elapsed()).apply()
                 return WRONG_COOLDOWN_MS
             }
-            return left.coerceAtLeast(0L)
+            if (left <= 0L) {
+                prefs.edit().putLong(KEY_COOLDOWN_BASE, 0L).putInt(KEY_WRONG_COUNT, 0).commit()
+                return 0L
+            }
+            return left
         }
 
     val isInCooldown: Boolean
@@ -373,12 +377,19 @@ class LockState internal constructor(
      * @return 是否因此进入冷却
      */
     fun recordWrongAnswer(): Boolean {
+        if (isInCooldown) return true
         val n = wrongAnswerCount + 1
         val editor = prefs.edit().putInt(KEY_WRONG_COUNT, n)
-        val cooldown = n > FREE_WRONG_ANSWERS
+        // 连续答错 FREE_WRONG_ANSWERS 次（第 2 次）即进入冷却
+        val cooldown = n >= FREE_WRONG_ANSWERS
         if (cooldown) editor.putLong(KEY_COOLDOWN_BASE, clock.elapsed())
         editor.commit()
         return cooldown
+    }
+
+    /** 答对一题：连续错误计数清零。 */
+    fun recordCorrectAnswer() {
+        prefs.edit().putInt(KEY_WRONG_COUNT, 0).commit()
     }
 
     /** 记录一次换题。返回是否已达上限（≥5 次）。 */

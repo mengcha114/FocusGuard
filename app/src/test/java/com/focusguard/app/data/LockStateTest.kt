@@ -229,20 +229,26 @@ class LockStateTest {
     // ── 答错冷却 ──
 
     @Test
-    fun cooldownStartsAfterFreeWrongAnswersUsedUp() {
+    fun cooldownStartsAfterTwoConsecutiveWrongAnswers() {
         state.startLock(60, "PLAIN", 1)
-        repeat(LockState.FREE_WRONG_ANSWERS) { assertFalse(state.recordWrongAnswer()) }
-        assertFalse(state.isInCooldown)
-        assertEquals(0, state.freeWrongLeft)
+        assertFalse(state.recordWrongAnswer())
+        assertEquals(1, state.freeWrongLeft)
         assertTrue(state.recordWrongAnswer())
         assertTrue(state.isInCooldown)
         clock.advance(4 * min)
         assertTrue(state.isInCooldown)
         clock.advance(min + 1000)
         assertFalse(state.isInCooldown)
-        // 冷却结束后再答错，再次进入 5 分钟冷却
-        assertTrue(state.recordWrongAnswer())
-        assertTrue(state.isInCooldown)
+        assertEquals(LockState.FREE_WRONG_ANSWERS, state.freeWrongLeft)
+    }
+
+    @Test
+    fun correctAnswerResetsWrongCount() {
+        state.startLock(60, "PLAIN", 1)
+        state.recordWrongAnswer()
+        state.recordCorrectAnswer()
+        assertFalse(state.recordWrongAnswer())
+        assertFalse(state.isInCooldown)
     }
 
     @Test

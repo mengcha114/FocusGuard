@@ -88,11 +88,6 @@ class MainActivity : ComponentActivity() {
 
     /** 停止守护前的答题验证状态（防误停/防被监管对象随意停止）。 */
     private var showStopVerify by mutableStateOf(false)
-    private var stopVerifyQuestion by mutableStateOf(
-        com.focusguard.app.challenge.ChallengeQuestion()
-    )
-    private var stopVerifyAnswer by mutableStateOf("")
-    private var stopVerifyError by mutableStateOf<String?>(null)
 
     /** 待办提醒通知 / 第三方分享进来的「打开备忘录」请求。 */
     private var pendingMemoOpen by mutableStateOf(false)
@@ -425,58 +420,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // ── 停止守护答题验证对话框 ────────────────────
+            // ── 停止守护答题验证对话框（答错即换题、错 2 次冷却 5 分钟、换题 5 次） ──
             if (showStopVerify) {
-                AlertDialog(
-                    onDismissRequest = { showStopVerify = false },
-                    title = { Text("停止守护需先答题") },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(
-                                text = "为防止守护被随意停止，请先回答一道题：",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                            )
-                            Text(
-                                text = stopVerifyQuestion.question,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            OutlinedTextField(
-                                value = stopVerifyAnswer,
-                                onValueChange = { stopVerifyAnswer = it; stopVerifyError = null },
-                                label = { Text("你的答案") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            stopVerifyError?.let {
-                                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                            }
-                        }
+                com.focusguard.app.ui.components.VerifyDialog(
+                    title = "停止守护需先答题",
+                    description = "为防止守护被随意停止，请先答对一道题。",
+                    confirmText = "验证并停止",
+                    onPassed = {
+                        showStopVerify = false
+                        stopGuard()
                     },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                if (com.focusguard.app.challenge.ChallengeGenerator(this@MainActivity)
-                                        .isAnswerCorrect(stopVerifyAnswer, stopVerifyQuestion.answer)
-                                ) {
-                                    showStopVerify = false
-                                    stopGuard()
-                                } else {
-                                    stopVerifyError = "回答错误，请重试"
-                                }
-                            }
-                        ) { Text("验证并停止") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showStopVerify = false }) {
-                            Text("取消", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
-                        }
-                    },
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(12.dp)
+                    onCancel = { showStopVerify = false }
                 )
             }
         }
@@ -735,9 +689,6 @@ class MainActivity : ComponentActivity() {
      * 答对后真正停止。
      */
     private fun requestStopGuard() {
-        stopVerifyQuestion = com.focusguard.app.challenge.ChallengeGenerator(this).generate(2)
-        stopVerifyAnswer = ""
-        stopVerifyError = null
         showStopVerify = true
     }
 
