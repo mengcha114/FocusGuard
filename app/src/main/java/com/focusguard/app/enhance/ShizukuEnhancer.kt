@@ -91,18 +91,20 @@ object ShizukuEnhancer {
      * 执行命令并读取标准输出（最多等待 [timeoutMs]）。失败返回 null。
      * 只在后台线程调用。
      */
-    fun runForOutput(vararg cmd: String, timeoutMs: Long = 3_000L): String? = try {
-        val p = newProcess(arrayOf(*cmd)) ?: return null
-        val out = StringBuilder()
-        val reader = Thread {
-            runCatching { out.append(p.inputStream.bufferedReader().readText()) }
-        }.apply { start() }
-        reader.join(timeoutMs)
-        runCatching { p.destroy() }
-        out.toString()
-    } catch (e: Throwable) {
-        Log.w(TAG, "Shizuku 读取输出失败：${e.message}")
-        null
+    fun runForOutput(vararg cmd: String, timeoutMs: Long = 3_000L): String? {
+        return try {
+            val p = newProcess(arrayOf(*cmd)) ?: return null
+            val out = StringBuilder()
+            val reader = Thread {
+                runCatching { out.append(p.inputStream.bufferedReader().readText()) }
+            }.apply { start() }
+            reader.join(timeoutMs)
+            runCatching { p.destroy() }
+            out.toString()
+        } catch (e: Throwable) {
+            Log.w(TAG, "Shizuku 读取输出失败：${e.message}")
+            null
+        }
     }
 
     /**
