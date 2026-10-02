@@ -265,6 +265,36 @@ fun UnlockChallengeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                // 如果是选择题，上方直接呈现 A B C D 大按键
+                if (currentQuestion.options.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("A", "B", "C", "D").forEach { optKey ->
+                            Button(
+                                onClick = {
+                                    if (!switching && !cooling) {
+                                        userAnswer = optKey
+                                        submit()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (userAnswer == optKey) palette.accent else palette.card,
+                                    contentColor = if (userAnswer == optKey) palette.bg else palette.text
+                                )
+                            ) {
+                                Text(optKey, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
+
                 val numRows = listOf(
                     listOf("1", "2", "3"),
                     listOf("4", "5", "6"),

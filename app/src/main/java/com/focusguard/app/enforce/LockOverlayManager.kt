@@ -2282,6 +2282,34 @@ object LockOverlayManager {
         val box = challengeKeyboardBox ?: return
         box.removeAllViews()
 
+        // 若当前题目包含单选选项，在键盘顶部直接常驻 [ A ] [ B ] [ C ] [ D ] 四个快捷大按钮！
+        if (session.question.options.isNotEmpty()) {
+            box.addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    listOf("A", "B", "C", "D").forEach { optKey ->
+                        addView(
+                            buildKeyButton(context, optKey) {
+                                if (!session.switching && !session.cooling) {
+                                    session.input = optKey
+                                    refreshAnswerText(session)
+                                    // 点击选项后自动触发提交，带来极致快捷体验
+                                    onSubmitAnswer(context, lockState, session)
+                                }
+                            }.apply {
+                                setBackgroundColor(android.graphics.Color.parseColor(tint(p.accent, 0x33)))
+                            },
+                            LinearLayout.LayoutParams(0, dp(context, 52), 1f).apply {
+                                marginStart = dp(context, 4); marginEnd = dp(context, 4)
+                                topMargin = dp(context, 2); bottomMargin = dp(context, 8)
+                            }
+                        )
+                    }
+                },
+                matchWrap()
+            )
+        }
+
         val rows: List<List<String>> = if (challengeLetterPage) {
             listOf(
                 listOf("A", "B", "C", "D", "E", "F", "G"),

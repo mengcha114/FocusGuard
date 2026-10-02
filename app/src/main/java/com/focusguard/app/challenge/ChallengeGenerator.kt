@@ -12,7 +12,11 @@ data class ChallengeQuestion(
     /** 题型标识（统计 / 去重用）。 */
     val kind: String = "",
     /** 建议作答时限（秒）。 */
-    val timeLimitSec: Int = 90
+    val timeLimitSec: Int = 90,
+    /** 选择题选项（为空表示填空题）。 */
+    val options: List<String> = emptyList(),
+    /** 题目学科（例如：物理、化学、历史、数学等）。 */
+    val subject: String = ""
 )
 
 /**
@@ -107,10 +111,47 @@ class ChallengeGenerator(context: Context? = null) {
     @Suppress("UNUSED_PARAMETER")
     fun generate(difficulty: Int = 2, numericOnly: Boolean = false, grade: GradeStore.Grade? = null): ChallengeQuestion {
         val level = difficulty.coerceIn(1, 3)
-        val g = (grade ?: gradeStore?.effective ?: GradeStore.Grade.PRIMARY).level
-        val pool = kinds.filter { it.grade <= g }
-        val recentKinds = loadKinds()
+        val effectiveGrade = grade ?: gradeStore?.effective ?: GradeStore.Grade.PRIMARY
+        val stream = gradeStore?.stream ?: GradeStore.Stream.ALL
         val recentFp = loadFp()
+
+        // 1. 对于初中、高中、大学，优先从权威真题库中按年级与选科出题！
+        // 彻底杜绝高中出小学题。
+        if (effectiveGrade.level >= 2 && !numericOnly) {
+            val bankItems = QuestionBank.find(effectiveGrade, stream).shuffled(rnd)
+            for (item in bankItems) {
+                val fp = "bank|${item.subject}|${item.question}"
+                if (fp !in recentFp) {
+                    remember(item.subject, fp)
+                    val formattedQ = buildString {
+                        append("【${item.subject}】")
+                        append(item.question)
+                        if (item.options.isNotEmpty()) {
+                            append("
+
+")
+                            append(item.options.joinToString("
+"))
+                        }
+                    }
+                    return ChallengeQuestion(
+                        question = formattedQ,
+                        answer = item.answer,
+                        explanation = item.explanation,
+                        kind = item.subject,
+                        timeLimitSec = if (effectiveGrade.level >= 3) 120 else 90,
+                        options = item.options,
+                        subject = item.subject
+                    )
+                }
+            }
+        }
+
+        // 2. 本地计算题型池：必须与年级精准匹配，高中不再抽小学基础算术！
+        // 高中只抽高等代数/函数/导数/几何/数列/排列组合等高中题型。
+        val g = effectiveGrade.level
+        val pool = kinds.filter { it.grade == g }.ifEmpty { kinds.filter { it.grade <= g } }
+        val recentKinds = loadKinds()
 
         repeat(40) {
             val kind = pick(pool, recentKinds, g)
@@ -121,8 +162,7 @@ class ChallengeGenerator(context: Context? = null) {
                 return q.copy(kind = kind.id)
             }
         }
-        // 极端情况（40 次都撞题）：直接出一道大数加法，参数空间足够大
-        return addition(level).copy(kind = "add")
+        return pool.random(rnd).make(level)
     }
 
     /** 兼容旧调用点。 */
