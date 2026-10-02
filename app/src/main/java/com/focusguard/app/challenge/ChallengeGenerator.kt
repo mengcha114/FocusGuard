@@ -109,20 +109,20 @@ class ChallengeGenerator(context: Context? = null) {
      * @param grade 指定年级；为空时读取 [GradeStore]（无 Context 时按小学）
      */
     @Suppress("UNUSED_PARAMETER")
-    fun generate(difficulty: Int = 2, numericOnly: Boolean = false, grade: GradeStore.Grade? = null): ChallengeQuestion {
+    fun generate(difficulty: Int = 2, numericOnly: Boolean = false, grade: GradeStore.Grade? = null, excludeTopic: String? = null): ChallengeQuestion {
         val level = difficulty.coerceIn(1, 3)
         val effectiveGrade = grade ?: gradeStore?.effective ?: GradeStore.Grade.PRIMARY
         val stream = gradeStore?.stream ?: GradeStore.Stream.ALL
         val recentFp = loadFp()
 
-        // 1. 对于初中、高中、大学，优先从权威真题库中按年级与选科出题！
-        // 彻底杜绝高中出小学题。
-        if (effectiveGrade.level >= 2 && !numericOnly) {
-            val bankItems = QuestionBank.find(effectiveGrade, stream).shuffled(kotlin.random.Random(rnd.nextLong()))
+        // 1. 优先从高难度真题库中抽取符合具体学段与选科的题目
+        // 且支持 excludeTopic 考点互斥，保证“换一题”必然换到不同知识点！
+        if (!numericOnly) {
+            val bankItems = QuestionBank.find(effectiveGrade, stream, excludeTopic).shuffled(kotlin.random.Random(rnd.nextLong()))
             for (item in bankItems) {
                 val fp = "bank|${item.subject}|${item.question}"
                 if (fp !in recentFp) {
-                    remember(item.subject, fp)
+                    remember(item.topic, fp)
                     val formattedQ = buildString {
                         append("【${item.subject}】")
                         append(item.question)
@@ -135,8 +135,8 @@ class ChallengeGenerator(context: Context? = null) {
                         question = formattedQ,
                         answer = item.answer,
                         explanation = item.explanation,
-                        kind = item.subject,
-                        timeLimitSec = if (effectiveGrade.level >= 3) 120 else 90,
+                        kind = item.topic,
+                        timeLimitSec = if (effectiveGrade.level >= 5) 150 else 100,
                         options = item.options,
                         subject = item.subject
                     )
@@ -144,9 +144,13 @@ class ChallengeGenerator(context: Context? = null) {
             }
         }
 
-        // 2. 本地计算题型池：必须与年级精准匹配，高中不再抽小学基础算术！
-        // 高中只抽高等代数/函数/导数/几何/数列/排列组合等高中题型。
-        val g = effectiveGrade.level
+        // 2. 本地计算题型池：与学段严格对应，初中以上绝不出小学题！
+        val g = when {
+            effectiveGrade.level >= 8 -> 4
+            effectiveGrade.level >= 5 -> 3
+            effectiveGrade.level >= 2 -> 2
+            else -> 1
+        }
         val pool = kinds.filter { it.grade == g }.ifEmpty { kinds.filter { it.grade <= g } }
         val recentKinds = loadKinds()
 

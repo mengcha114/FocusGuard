@@ -1106,202 +1106,175 @@ private fun LockScreenContent(
         ) {
             val landscape = maxWidth > maxHeight
             if (landscape) {
-                // ── 横屏沉浸式布局：左核心计时 / 右操作区（DESIGN.md §3.6） ──
+                // ── 横屏沉浸式布局（双栏黄金比例排版 + 呼吸光影） ──
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(start = 28.dp, end = 28.dp, top = 20.dp, bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp)
+                        .padding(horizontal = 32.dp, vertical = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // 左侧核心：优雅倒计时大环 + 状态胶囊 + 时钟日期
                     Column(
                         modifier = Modifier
-                            .weight(0.55f)
+                            .weight(0.50f)
                             .fillMaxHeight(),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-            // ── 顶栏：时钟 + 日期（编排第一段） ─────────────
-            androidx.compose.foundation.layout.Box(
-                modifier = Modifier.graphicsLayer { alpha = stageTop.value }
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    val timeFormat = remember {
-                        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-                    }
-                    val dateFormat = remember {
-                        java.text.SimpleDateFormat("M月d日 EEEE", java.util.Locale.getDefault())
-                    }
-                    if (appearance.showClock) {
-                    Text(
-                        text = timeFormat.format(java.util.Date(nowMillis)),
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Light,
-                        letterSpacing = 3.sp,
-                        color = palette.text
-                    )
-                    Text(
-                        text = dateFormat.format(java.util.Date(nowMillis)),
-                        fontSize = 13.sp,
-                        letterSpacing = 1.sp,
-                        color = palette.haze
-                    )
-                    }
+                        if (appearance.showClock) {
+                            val timeFormat = remember {
+                                java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                            }
+                            val dateFormat = remember {
+                                java.text.SimpleDateFormat("M月d日 EEEE", java.util.Locale.getDefault())
+                            }
+                            Text(
+                                text = timeFormat.format(java.util.Date(nowMillis)),
+                                fontSize = 38.sp,
+                                fontWeight = FontWeight.Light,
+                                letterSpacing = 2.sp,
+                                color = palette.text
+                            )
+                            Text(
+                                text = dateFormat.format(java.util.Date(nowMillis)),
+                                fontSize = 13.sp,
+                                color = palette.haze
+                            )
+                            Spacer(Modifier.height(14.dp))
+                        }
 
-                    Spacer(Modifier.height(20.dp))
+                        // 状态胶囊
+                        StatusPill(
+                            text = when {
+                                isPausing -> "暂停中 · 可自由使用"
+                                isPomodoro && isWorkPhase -> "番茄钟 · 专注阶段"
+                                isPomodoro -> "番茄钟 · 休息阶段"
+                                lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
+                                else -> "专注锁定中"
+                            },
+                            subBadge = "🛡️ 系统级守护",
+                            accent = accent,
+                            palette = palette,
+                            locked = !isRelaxed
+                        )
 
-                    // ── 状态胶囊（系统级锁机细节标识） ─────────────────────────────────
-                    StatusPill(
-                        text = when {
-                            isPausing -> "暂停中 · 可自由使用"
-                            isPomodoro && isWorkPhase -> "番茄钟 · 专注阶段"
-                            isPomodoro -> "番茄钟 · 休息阶段"
-                            lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
-                            else -> "专注锁定中"
-                        },
-                        subBadge = "🛡️ 系统级守护",
-                        accent = accent,
-                        palette = palette,
-                        locked = !isRelaxed
-                    )
-                }
-            }
-                        Spacer(Modifier.height(18.dp))
-            // ── 核心：环形进度 + 倒计时（编排第二段，scale 落下） ──
-            androidx.compose.foundation.layout.Box(
-                modifier = Modifier.graphicsLayer {
-                    alpha = stageCore.value
-                    val s = 0.92f + 0.08f * stageCore.value
-                    scaleX = s
-                    scaleY = s
-                }
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CountdownRing(
-                        progress = progress,
-                        seconds = shownSeconds,
-                        label = if (isPausing) "暂停剩余" else "锁定剩余",
-                        accent = accent,
-                        palette = palette
-                    )
+                        Spacer(Modifier.height(16.dp))
 
-                    if (isPomodoro) {
-                        Spacer(Modifier.height(14.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            MiniStat("剩余轮次", "${lockState.pomodoroRoundsLeft}", accent, palette)
-                            MiniStat("今日完成", "${lockState.pomodoroCompletedToday}", accent, palette)
+                        // 倒计时核心环（带尺寸自适应）
+                        CountdownRing(
+                            progress = progress,
+                            seconds = shownSeconds,
+                            label = if (isPausing) "暂停剩余" else "锁定剩余",
+                            accent = accent,
+                            palette = palette
+                        )
+
+                        if (isPomodoro) {
+                            Spacer(Modifier.height(12.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                MiniStat("剩余轮次", "${lockState.pomodoroRoundsLeft}", accent, palette)
+                                MiniStat("今日完成", "${lockState.pomodoroCompletedToday}", accent, palette)
+                            }
                         }
                     }
-                }
-            }
-                    }
+
+                    // 右侧操作：精致卡片流（箴言 + 备忘录 + 解锁与暂停按钮）
                     Column(
                         modifier = Modifier
-                            .weight(0.45f)
+                            .weight(0.50f)
                             .fillMaxHeight()
                             .verticalScroll(rememberScrollState()),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-            // ── 底部内容（编排第三段：上移淡入） ──────────────
-            val bottomRise = (1f - stageBottom.value) *
-                with(androidx.compose.ui.platform.LocalDensity.current) { 24.dp.toPx() }
-            androidx.compose.foundation.layout.Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        alpha = stageBottom.value
-                        translationY = bottomRise
-                    }
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    // ── 励志语录卡（外观设置可关闭） ────────────────────────
-                    if (appearance.showMotto) Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .inkCard()
-                            .padding(horizontal = 20.dp, vertical = 16.dp)
-                    ) {
-                        Column {
-                            Text(
-                                text = "今日箴言",
-                                fontSize = 10.sp,
-                                letterSpacing = 2.sp,
-                                color = palette.haze,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = motto,
-                                fontSize = 14.sp,
-                                lineHeight = 22.sp,
-                                color = palette.text.copy(alpha = 0.92f)
-                            )
+                        // 励志语录
+                        if (appearance.showMotto) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .inkCard()
+                                    .padding(horizontal = 20.dp, vertical = 14.dp)
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "今日箴言",
+                                        fontSize = 11.sp,
+                                        letterSpacing = 2.sp,
+                                        color = palette.haze,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        text = motto,
+                                        fontSize = 14.sp,
+                                        lineHeight = 22.sp,
+                                        color = palette.text.copy(alpha = 0.95f)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(14.dp))
                         }
-                    }
 
-            Spacer(Modifier.height(16.dp))
+                        // 待办清单
+                        LockMemoCard(accent = accent, palette = palette)
 
-            // ── 待办清单（锁机时也能看到自己该做什么） ──────
-            LockMemoCard(accent = accent, palette = palette)
+                        Spacer(Modifier.height(16.dp))
 
-            Spacer(Modifier.height(20.dp))
+                        // 解锁卡片区
+                        if (!isPausing) {
+                            UnlockCard(palette = palette) {
+                                when (lockState.unlockStrength) {
+                                    4 -> LockedForeverHint(palette)
+                                    3 -> FriendUnlockSection(
+                                        cipher = lockState.friendCipher,
+                                        shift = lockState.friendShift,
+                                        palette = palette,
+                                        onVerified = onUnlocked
+                                    )
+                                    2 -> UnlockButtonWithHint(
+                                        hint = "需连续答对 5 道题目才能解锁",
+                                        buttonText = "开始挑战 · 5 题",
+                                        accent = accent,
+                                        palette = palette,
+                                        onClick = { onStartChallenge(5) }
+                                    )
+                                    else -> UnlockButtonWithHint(
+                                        hint = "答对 1 道题目即可提前解锁",
+                                        buttonText = "答题解锁",
+                                        accent = accent,
+                                        palette = palette,
+                                        onClick = { onStartChallenge(1) }
+                                    )
+                                }
+                            }
 
-            // ── 解锁区（暂停中隐藏，避免重复操作） ────────
-            if (!isPausing) {
-                UnlockCard(palette = palette) {
-                    when (lockState.unlockStrength) {
-                        4 -> LockedForeverHint(palette)
-                        3 -> FriendUnlockSection(
-                            cipher = lockState.friendCipher,
-                            shift = lockState.friendShift,
-                            palette = palette,
-                            onVerified = onUnlocked
-                        )
-                        2 -> UnlockButtonWithHint(
-                            hint = "需连续答对 5 道高难度题才能解锁",
-                            buttonText = "开始挑战 · 5 题",
-                            accent = accent,
-                            palette = palette,
-                            onClick = { onStartChallenge(5) }
-                        )
-                        else -> UnlockButtonWithHint(
-                            hint = "答对 1 道计算题即可解锁",
-                            buttonText = "答题解锁",
-                            accent = accent,
-                            palette = palette,
-                            onClick = { onStartChallenge(1) }
-                        )
-                    }
-                }
-
-                // ── 暂停申请 ──────────────────────────────
-                if (lockState.pauseEnabled) {
-                    Spacer(Modifier.height(14.dp))
-                    if (lockState.canPause) {
-                        TextButton(
-                            onClick = { onStartChallenge(-1) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "答题申请暂停（剩 $pauseLeft 次 · 每次 ${lockState.pauseMinutes} 分钟）",
-                                color = palette.haze,
-                                fontSize = 12.sp
-                            )
+                            // 暂停申请
+                            if (lockState.pauseEnabled) {
+                                Spacer(Modifier.height(10.dp))
+                                if (lockState.canPause) {
+                                    TextButton(
+                                        onClick = { onStartChallenge(-1) },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "答题申请暂停（剩 $pauseLeft 次 · 每次 ${lockState.pauseMinutes} 分钟）",
+                                            color = palette.haze,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = "暂停次数已用完（共 ${lockState.pauseQuota} 次）",
+                                        fontSize = 11.sp,
+                                        color = palette.faint
+                                    )
+                                }
+                            }
                         }
-                    } else {
-                        Text(
-                            text = "暂停次数已用完（共 ${lockState.pauseQuota} 次）",
-                            fontSize = 11.sp,
-                            color = palette.faint
-                        )
-                    }
-                }
-            }
-            }
-            }
-                        Spacer(Modifier.height(10.dp))
                     }
                 }
             } else {
