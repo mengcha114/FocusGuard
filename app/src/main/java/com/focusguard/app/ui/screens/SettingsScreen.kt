@@ -57,7 +57,7 @@ fun SettingsScreen(
 
     // 降低限制方向修改的答题验证（增强限制无需答题）
     var showVerifyDialog by remember { mutableStateOf(false) }
-    val challengeGenerator = remember { com.focusguard.app.challenge.ChallengeGenerator() }
+    val challengeGenerator = remember { com.focusguard.app.challenge.ChallengeGenerator(context) }
     var verifyQuestion by remember {
         mutableStateOf(challengeGenerator.generate(2))
     }
@@ -396,6 +396,10 @@ fun SettingsScreen(
 
         // ═══════ 分组二：执法与锁机 ═══════
         SettingsGroupHeader("执法与锁机")
+
+        SettingsSection(title = "答题年级", icon = Icons.Default.School) {
+            com.focusguard.app.ui.components.GradeSettingCard()
+        }
 
         // ── 执法模式 ──────────────────────────────────────────────
         SettingsSection(title = "执法模式", icon = Icons.Default.Gavel) {

@@ -112,9 +112,11 @@ object LockOverlayManager {
     /** 答题通过回调：参数为 forPause（true=换取暂停，false=解锁）。 */
     private var challengePassedCallback: ((Boolean) -> Unit)? = null
 
-    private val challengeGenerator by lazy {
-        com.focusguard.app.challenge.ChallengeGenerator()
-    }
+    private var generatorRef: com.focusguard.app.challenge.ChallengeGenerator? = null
+
+    /** 题目生成器：读取用户年级与去重记录，需要 Context。 */
+    private fun generator(context: Context): com.focusguard.app.challenge.ChallengeGenerator =
+        generatorRef ?: com.focusguard.app.challenge.ChallengeGenerator(context.applicationContext).also { generatorRef = it }
 
     // 锁机界面的时钟视图（每秒刷新）
     private var wallClockText: TextView? = null
@@ -158,8 +160,36 @@ object LockOverlayManager {
         var feedback: String = "",
         var feedbackIsError: Boolean = false,
         /** 反馈展示中（正在等待自动换题），此期间禁用输入。 */
-        var switching: Boolean = false
+        var switching: Boolean = false,
+        /** 本题开始时刻（单调时钟），用于作答时限。 */
+        var startedAt: Long = android.os.SystemClock.elapsedRealtime()
     )
+
+    /** 作答时限计时（每秒刷新进度行，超时算错并换题）。 */
+    private var questionTimer: Runnable? = null
+
+    private fun startQuestionTimer(context: Context, lockState: LockState, session: ChallengeSession) {
+        questionTimer?.let { uiHandler.removeCallbacks(it) }
+        val tick = object : Runnable {
+            override fun run() {
+                if (challengeSession !== session) return
+                val limit = session.question.timeLimitSec.coerceAtLeast(30)
+                val left = limit - ((android.os.SystemClock.elapsedRealtime() - session.startedAt) / 1000).toInt()
+                challengeProgressText?.text = "${session.correctCount} / ${session.requiredCorrect} · ${left.coerceAtLeast(0)}s"
+                if (left <= 0 && !session.switching) {
+                    showFeedback(session, "超时，算作答错。正确答案：${session.question.answer}", isError = true)
+                    session.switching = true
+                    uiHandler.postDelayed({
+                        session.switching = false
+                        nextQuestion(context, lockState, session)
+                    }, 2200L)
+                }
+                uiHandler.postDelayed(this, 1000L)
+            }
+        }
+        questionTimer = tick
+        uiHandler.post(tick)
+    }
 
     /** 是否具备悬浮窗权限——决定锁机走"悬浮窗主体"还是"Activity 兜底"。 */
     fun canShow(context: Context): Boolean = Settings.canDrawOverlays(context)
@@ -1416,7 +1446,7 @@ object LockOverlayManager {
         if (challengeSession == null) {
             challengeSession = ChallengeSession(
                 // numericOnly：自绘键盘无法输入中文，排除星期推算题
-                question = challengeGenerator.generate(
+                question = generator(context).generate(
                     difficulty = if (requiredCorrect >= 3) 3 else 2,
                     numericOnly = true
                 ),
@@ -1587,6 +1617,8 @@ object LockOverlayManager {
     }
 
     private fun clearChallengeViewRefs() {
+        questionTimer?.let { uiHandler.removeCallbacks(it) }
+        questionTimer = null
         challengeAnswerText = null
         challengeFeedbackText = null
         challengeProgressText = null
@@ -1664,6 +1696,7 @@ object LockOverlayManager {
                         setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.success)))
                         typeface = Typeface.DEFAULT_BOLD
                         challengeProgressText = this
+                        startQuestionTimer(context, lockState, session)
                     },
                     LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -2431,7 +2464,7 @@ object LockOverlayManager {
         if (session.switching) return
         if (session.input.isBlank()) return
 
-        val correct = challengeGenerator.isAnswerCorrect(session.input, session.question.answer)
+        val correct = generator(context).isAnswerCorrect(session.input, session.question.answer)
         if (correct) {
             session.correctCount += 1
             challengeProgressText?.text = "${session.correctCount} / ${session.requiredCorrect}"
@@ -2494,13 +2527,14 @@ object LockOverlayManager {
         lockState: LockState,
         session: ChallengeSession
     ) {
-        session.question = challengeGenerator.generate(
+        session.question = generator(context).generate(
             difficulty = if (session.requiredCorrect >= 3) 3 else 2,
             numericOnly = true
         )
         session.input = ""
         session.feedback = ""
         session.feedbackIsError = false
+        session.startedAt = android.os.SystemClock.elapsedRealtime()
         challengeQuestionText?.text = session.question.question
         challengeFeedbackText?.visibility = View.GONE
         refreshAnswerText(session)

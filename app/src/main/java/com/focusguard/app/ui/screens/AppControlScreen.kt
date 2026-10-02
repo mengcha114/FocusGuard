@@ -460,7 +460,7 @@ private fun AppEditSheet(
                                 if (settings.settingsEditCount > 0) {
                                     pendingRule = rule
                                     verifyQuestion =
-                                        com.focusguard.app.challenge.ChallengeGenerator().generate(2)
+                                        com.focusguard.app.challenge.ChallengeGenerator(context).generate(2)
                                     verifyAnswer = ""
                                     verifyError = null
                                     showVerify = true
@@ -518,7 +518,7 @@ private fun AppEditSheet(
                     Button(
                         onClick = {
                             val q = verifyQuestion
-                            val gen = com.focusguard.app.challenge.ChallengeGenerator()
+                            val gen = com.focusguard.app.challenge.ChallengeGenerator(context)
                             if (q != null && gen.isAnswerCorrect(verifyAnswer, q.answer)) {
                                 com.focusguard.app.data.Settings(context).settingsEditCount =
                                     com.focusguard.app.data.Settings(context).settingsEditCount + 1

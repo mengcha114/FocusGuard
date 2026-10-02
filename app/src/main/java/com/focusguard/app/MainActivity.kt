@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
     /** 停止守护前的答题验证状态（防误停/防被监管对象随意停止）。 */
     private var showStopVerify by mutableStateOf(false)
     private var stopVerifyQuestion by mutableStateOf(
-        com.focusguard.app.challenge.ChallengeGenerator().generate(2)
+        com.focusguard.app.challenge.ChallengeQuestion()
     )
     private var stopVerifyAnswer by mutableStateOf("")
     private var stopVerifyError by mutableStateOf<String?>(null)
@@ -212,6 +212,17 @@ class MainActivity : ComponentActivity() {
                                 android.os.Process.killProcess(android.os.Process.myPid())
                             }) { Text("不同意，退出", color = MaterialTheme.colorScheme.error) }
                         }
+                    )
+                }
+
+                // 首次进入（或旧版本升级后）必须选择答题年级；选择后只能调高
+                var needGrade by remember {
+                    mutableStateOf(!com.focusguard.app.data.GradeStore(this@MainActivity).isChosen)
+                }
+                if (needGrade && !showDisclaimer && !showPermissionSetup) {
+                    com.focusguard.app.ui.components.GradePickerDialog(
+                        mandatory = true,
+                        onDone = { needGrade = false }
                     )
                 }
 
@@ -448,7 +459,7 @@ class MainActivity : ComponentActivity() {
                     confirmButton = {
                         Button(
                             onClick = {
-                                if (com.focusguard.app.challenge.ChallengeGenerator()
+                                if (com.focusguard.app.challenge.ChallengeGenerator(this@MainActivity)
                                         .isAnswerCorrect(stopVerifyAnswer, stopVerifyQuestion.answer)
                                 ) {
                                     showStopVerify = false
@@ -724,7 +735,7 @@ class MainActivity : ComponentActivity() {
      * 答对后真正停止。
      */
     private fun requestStopGuard() {
-        stopVerifyQuestion = com.focusguard.app.challenge.ChallengeGenerator().generate(2)
+        stopVerifyQuestion = com.focusguard.app.challenge.ChallengeGenerator(this).generate(2)
         stopVerifyAnswer = ""
         stopVerifyError = null
         showStopVerify = true

@@ -40,7 +40,7 @@ fun UnlockChallengeScreen(
     requiredCorrect: Int = 2
 ) {
     val context = LocalContext.current
-    val generator = remember { ChallengeGenerator() }
+    val generator = remember { ChallengeGenerator(context) }
     val scope = rememberCoroutineScope()
     // 答题页为沉浸深色界面，跟随主题但浅色回退深色·墨（见 DESIGN.md §3.2）
     val palette = remember(context) {
@@ -64,11 +64,31 @@ fun UnlockChallengeScreen(
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var switching by remember { mutableStateOf(false) }
+    val gradeLabel = remember { com.focusguard.app.data.GradeStore(context).effective.label }
+    // 作答时限：每题独立计时，超时算错并换题
+    var secondsLeft by remember { mutableIntStateOf(currentQuestion.timeLimitSec) }
 
     fun nextQuestion() {
         userAnswer = ""
         feedbackMessage = null
         currentQuestion = generator.generate(difficulty)
+        secondsLeft = currentQuestion.timeLimitSec
+    }
+
+    LaunchedEffect(currentQuestion) {
+        secondsLeft = currentQuestion.timeLimitSec
+        while (secondsLeft > 0) {
+            kotlinx.coroutines.delay(1000L)
+            if (!switching) secondsLeft--
+        }
+        if (!switching) {
+            feedbackMessage = "超时，算作答错。正确答案：${currentQuestion.answer}"
+            isError = true
+            switching = true
+            kotlinx.coroutines.delay(2200L)
+            nextQuestion()
+            switching = false
+        }
     }
 
     fun submit() {
@@ -179,12 +199,10 @@ fun UnlockChallengeScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = when (difficulty) {
-                                3 -> "难度：困难"
-                                else -> "难度：中等"
-                            },
-                            fontSize = 11.sp,
-                            color = palette.faint
+                            text = "$gradeLabel · ${if (difficulty >= 3) "困难" else "中等"} · ${secondsLeft}s",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (secondsLeft <= 15) palette.error else palette.haze
                         )
                     }
                     Spacer(Modifier.height(10.dp))
