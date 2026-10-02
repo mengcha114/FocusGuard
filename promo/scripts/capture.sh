@@ -23,6 +23,9 @@ adb shell input keyevent 82 || true
 adb shell settings put global window_animation_scale 0
 adb shell settings put global transition_animation_scale 0
 adb shell settings put global animator_duration_scale 0
+# 关闭「Viewing full screen / To exit, swipe down from the top / Got it」沉浸模式提示
+# （锁机页隐藏系统栏时系统会弹一次，截图里不能出现）
+adb shell settings put secure immersive_mode_confirmations confirmed || true
 # 演示用 24 小时制、整齐的状态栏
 adb shell settings put system time_12_24 24 || true
 adb shell settings put global sysui_demo_allowed 1 || true
@@ -178,8 +181,24 @@ EOF
   push_pref focus_guard_lock_state "$TMP/lock.xml"
 }
 
+# 兜底：若沉浸模式提示仍出现，按界面树找到「Got it / 知道了」按钮并点掉
+dismiss_hints() {
+  adb shell uiautomator dump /data/local/tmp/ui.xml >/dev/null 2>&1 || return 0
+  local xml
+  xml=$(adb exec-out cat /data/local/tmp/ui.xml 2>/dev/null) || return 0
+  local b
+  b=$(printf '%s' "$xml" | grep -oE 'text="(Got it|知道了|好)"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | head -1)
+  if [ -n "$b" ]; then
+    read -r x1 y1 x2 y2 < <(echo "$b" | sed 's/\]\[/ /' | tr -d '[]' | tr ',' ' ')
+    log "检测到系统提示，点击关闭"
+    adb shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
+    sleep 1.5
+  fi
+}
+
 shot() { # $1=文件名
   sleep "${2:-3}"
+  dismiss_hints
   if adb exec-out screencap -p > "$OUT/$1.png" && [ -s "$OUT/$1.png" ]; then
     log "截图 $1 ✓"
   else

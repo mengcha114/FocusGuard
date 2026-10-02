@@ -124,7 +124,7 @@ export const Brand: React.FC = () => {
         </div>
         <div
           style={{
-            fontFamily: FONT_SANS, fontWeight: 600, fontSize: 54, color: ink.accent, letterSpacing: 18,
+            fontFamily: FONT_SANS, fontWeight: 600, fontSize: 54, color: ink.accent,
             opacity: interpolate(frame, [32, 50], [0, 1], clamp),
             letterSpacing: interpolate(frame, [32, 80], [40, 18], { ...clamp, easing: easeOut }),
           }}
