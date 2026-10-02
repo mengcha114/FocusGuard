@@ -118,7 +118,7 @@ class ChallengeGenerator(context: Context? = null) {
         // 1. 对于初中、高中、大学，优先从权威真题库中按年级与选科出题！
         // 彻底杜绝高中出小学题。
         if (effectiveGrade.level >= 2 && !numericOnly) {
-            val bankItems = QuestionBank.find(effectiveGrade, stream).shuffled(rnd)
+            val bankItems = QuestionBank.find(effectiveGrade, stream).shuffled(kotlin.random.Random(rnd.nextLong()))
             for (item in bankItems) {
                 val fp = "bank|${item.subject}|${item.question}"
                 if (fp !in recentFp) {
@@ -127,11 +127,8 @@ class ChallengeGenerator(context: Context? = null) {
                         append("【${item.subject}】")
                         append(item.question)
                         if (item.options.isNotEmpty()) {
-                            append("
-
-")
-                            append(item.options.joinToString("
-"))
+                            append("\n\n")
+                            append(item.options.joinToString("\n"))
                         }
                     }
                     return ChallengeQuestion(
@@ -162,7 +159,7 @@ class ChallengeGenerator(context: Context? = null) {
                 return q.copy(kind = kind.id)
             }
         }
-        return pool.random(rnd).make(level)
+        return pool.random(kotlin.random.Random(rnd.nextLong())).make(level)
     }
 
     /** 兼容旧调用点。 */
