@@ -127,6 +127,10 @@ jobs:
           grep -q "width=1080" out/probe.txt && grep -q "height=1920" out/probe.txt
           # 每 6 秒抽一帧拼成 5×2 预览图
           ffmpeg -v error -y -i out/promo.mp4 -vf "fps=1/6,scale=324:576,tile=5x2" -frames:v 1 out/contact.png
+          # 真实截图总览（检查有无系统提示等多余元素）
+          if ls ../promo-shots/*.png >/dev/null 2>&1; then
+            ffmpeg -v error -y -pattern_type glob -i '../promo-shots/*.png' -vf "scale=270:600,tile=7x2" -frames:v 1 out/shots-sheet.png || true
+          fi
           ls -la out
 
       - name: 上传视频
@@ -136,5 +140,6 @@ jobs:
           path: |
             promo/out/promo.mp4
             promo/out/contact.png
+            promo/out/shots-sheet.png
             promo/out/probe.txt
           retention-days: 30
