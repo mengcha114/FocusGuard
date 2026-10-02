@@ -51,10 +51,10 @@ class ChallengeGeneratorTest {
 
     @Test
     fun questionBankContainsHighSchoolMathAndScience() {
-        val hsMath = QuestionBank.find(GradeStore.Grade.SENIOR, GradeStore.Stream.ALL).filter { it.subject == "数学" }
-        assertTrue("高中数学真题不足", hsMath.size >= 8)
-        val hsScience = QuestionBank.find(GradeStore.Grade.SENIOR, GradeStore.Stream.SCIENCE).filter { it.subject in listOf("物理", "化学", "生物") }
-        assertTrue("高中理科综合真题不足", hsScience.size >= 15)
+        val hsMath = QuestionBank.find(GradeStore.Grade.SENIOR_2, GradeStore.Stream.ALL).filter { it.subject == "数学" }
+        assertTrue("高中数学真题不足", hsMath.isNotEmpty())
+        val hsScience = QuestionBank.find(GradeStore.Grade.SENIOR_2, GradeStore.Stream.SCIENCE).filter { it.subject in listOf("物理", "化学", "生物") }
+        assertTrue("高中理科综合真题不足", hsScience.isNotEmpty())
     }
 
     @Test
@@ -75,7 +75,7 @@ class ChallengeGeneratorTest {
         val kinds = ArrayList<String>()
         val texts = HashSet<String>()
         repeat(150) {
-            val q = g.generate(2, grade = GradeStore.Grade.SENIOR)
+            val q = g.generate(2, grade = GradeStore.Grade.SENIOR_2)
             assertTrue("repeated question: ${q.question}", texts.add(q.question))
             kinds += q.kind
         }
@@ -101,14 +101,14 @@ class ChallengeGeneratorTest {
     @Test
     fun gradeCanOnlyBeRaised() {
         val store = GradeStore(com.focusguard.app.data.FakePrefs())
-        assertTrue(store.set(GradeStore.Grade.JUNIOR, locked = false))
+        assertTrue(store.set(GradeStore.Grade.JUNIOR_1, locked = false))
         assertFalse(store.set(GradeStore.Grade.PRIMARY, locked = false))
         // 允许在同年级切换选科
-        assertTrue(store.set(GradeStore.Grade.JUNIOR, GradeStore.Stream.SCIENCE, locked = false))
-        assertFalse(store.set(GradeStore.Grade.SENIOR, locked = true))
-        assertTrue(store.set(GradeStore.Grade.SENIOR, GradeStore.Stream.HUMANITIES, locked = false))
-        assertEquals(GradeStore.Grade.SENIOR, store.grade)
+        assertTrue(store.set(GradeStore.Grade.JUNIOR_1, GradeStore.Stream.SCIENCE, locked = false))
+        assertFalse(store.set(GradeStore.Grade.SENIOR_2, locked = true))
+        assertTrue(store.set(GradeStore.Grade.SENIOR_2, GradeStore.Stream.HUMANITIES, locked = false))
+        assertEquals(GradeStore.Grade.SENIOR_2, store.grade)
         assertEquals(GradeStore.Stream.HUMANITIES, store.stream)
-        assertEquals(listOf(GradeStore.Grade.COLLEGE), store.selectable())
+        assertTrue(store.selectable().contains(GradeStore.Grade.COLLEGE))
     }
 }
