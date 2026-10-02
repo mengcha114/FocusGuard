@@ -14,6 +14,7 @@ class Settings(context: Context) {
         private const val KEY_MODEL_NAME = "model_name"
         private const val KEY_AI_CUSTOM_PROMPT = "ai_custom_prompt"
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_CUSTOM_ACCENT = "custom_accent"
         private const val KEY_API_FORMAT = "api_format"
         
         // Detection settings
@@ -222,11 +223,20 @@ gacha
         set(value) = prefs.edit().putString(KEY_AI_CUSTOM_PROMPT, value).apply()
 
     /**
-     * UI 主题：0=跟随系统 1=深色·简 2=深色·苔 3=浅色·纸。
+     * UI 主题，编码见 [com.focusguard.app.ui.theme.ThemeModes]
+     * （旧值 0..3 兼容，新值 = 100 + 风格×10 + 外观）。
      */
     var themeMode: Int
         get() = prefs.getInt(KEY_THEME_MODE, 0)
-        set(value) = prefs.edit().putInt(KEY_THEME_MODE, value.coerceIn(0, 3)).apply()
+        set(value) = prefs.edit().putInt(KEY_THEME_MODE, value.coerceIn(0, 199)).apply()
+
+    /** 自定义强调色（ARGB），0 = 使用风格自带强调色。 */
+    var customAccent: Int
+        get() = prefs.getInt(KEY_CUSTOM_ACCENT, 0)
+        set(value) = prefs.edit().putInt(KEY_CUSTOM_ACCENT, value).apply()
+
+
+
 
     /**
      * API 协议格式：openai（默认，兼容 Kimi/GLM/Qwen/DeepSeek 等）、

@@ -749,18 +749,9 @@ class MonitorService : Service() {
             if (settings.enforcementMode == Settings.EnforcementMode.APP_BLOCK) {
                 return performed
             }
-            lockState.startLock(settings.lockMinutesOnViolation, "AI")
-            // 应用设置里配置的 AI 执法解锁强度
-            lockState.unlockStrength = settings.aiLockStrength
-            // 强度 3（朋友辅助）需要生成密文
-            if (settings.aiLockStrength == 3) {
-                try {
-                    lockState.setupFriendChallenge()
-                } catch (e: Exception) {
-                    Log.w(TAG, "生成朋友辅助密文失败，退回答题解锁：${e.message}")
-                    lockState.unlockStrength = 1
-                }
-            }
+            // 应用设置里配置的 AI 执法解锁强度；已在锁机时只加码不覆盖
+            // （强度 3 的朋友密文由 startLock 内部生成）
+            lockState.startLock(settings.lockMinutesOnViolation, "AI", settings.aiLockStrength)
         }
         return performed
     }

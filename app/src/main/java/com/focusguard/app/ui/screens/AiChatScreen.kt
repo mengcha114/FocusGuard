@@ -115,7 +115,6 @@ fun AiChatScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(12.dp))
@@ -145,7 +144,7 @@ fun AiChatScreen() {
                     chatHistory.clear()
                     messages = loadAiReminders()
                 }) {
-                    Text("清空", color = Color(0xFFF44336), fontSize = 12.sp)
+                    Text("清空", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
             }
             // Tab 切换（TabRow：空间充足，图标与文字互不遮挡）
@@ -242,15 +241,21 @@ fun AiChatScreen() {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 10.dp),
+                    .padding(bottom = 12.dp, top = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },
-                    placeholder = { Text("问 AI 点什么…") },
+                    placeholder = { Text("问 AI 点什么…", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    ),
                     maxLines = 3,
                     enabled = !sending
                 )
@@ -267,11 +272,6 @@ fun AiChatScreen() {
                         sending = true
                         scope.launch {
                             try {
-                                // 占位 AI 消息（打字动画期间显示跳动点）。
-                                // 关键：占位必须**同步入库存**——流式 onDelta 的
-                                // updateLastMessage 靠"最后一条 ai 消息"定位本条回复，
-                                // 占位不入库会导致：store 无 ai 消息时增量被静默丢弃
-                                //（中途退出 = 本轮回复丢失），或误覆盖上一轮回复。
                                 val placeholder = ChatMsg("ai", "…", now)
                                 messages = messages + placeholder
                                 chatHistory.addMessage("ai", "…", now)
@@ -435,30 +435,33 @@ fun AiChatScreen() {
 @Composable
 private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
     val isUser = msg.role == "user"
+    val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth(if (isUser) 0.8f else 0.92f),
+            modifier = Modifier.fillMaxWidth(if (isUser) 0.82f else 0.92f),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
             Surface(
                 shape = RoundedCornerShape(
-                    topStart = 16.dp,
-                    topEnd = 16.dp,
-                    bottomStart = if (isUser) 16.dp else 4.dp,
-                    bottomEnd = if (isUser) 4.dp else 16.dp
+                    topStart = 18.dp,
+                    topEnd = 18.dp,
+                    bottomStart = if (isUser) 18.dp else 4.dp,
+                    bottomEnd = if (isUser) 4.dp else 18.dp
                 ),
-                color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                color = if (isUser) scheme.primary else scheme.surfaceVariant,
+                contentColor = if (isUser) scheme.onPrimary else scheme.onSurface,
+                border = if (isUser) null else androidx.compose.foundation.BorderStroke(1.dp, scheme.outline.copy(alpha = 0.35f))
             ) {
                 Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     if (isUser) {
                         Text(
                             text = msg.text,
                             fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            color = MaterialTheme.colorScheme.onBackground
+                            lineHeight = 21.sp,
+                            color = scheme.onPrimary
                         )
                     } else if (msg.text == "…") {
                         // 打字跳动动画（思考中）
@@ -472,7 +475,7 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                         Text(
                             text = "•".repeat(dotCount),
                             fontSize = 20.sp,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                            color = scheme.onSurface.copy(alpha = 0.8f)
                         )
                     } else {
                         Column {
@@ -493,14 +496,14 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                                             Icons.Default.ExpandMore
                                         },
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
+                                        tint = scheme.onSurface.copy(alpha = 0.6f),
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(Modifier.width(4.dp))
                                     Text(
                                         text = if (expanded) "收起思考" else "💭 查看思考过程",
                                         fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
+                                        color = scheme.onSurface.copy(alpha = 0.75f)
                                     )
                                 }
                                 if (expanded) {
@@ -508,7 +511,7 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                                         text = msg.thinking,
                                         fontSize = 12.sp,
                                         lineHeight = 18.sp,
-                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                        color = scheme.onSurface.copy(alpha = 0.75f),
                                         modifier = Modifier
                                             .padding(horizontal = 8.dp, vertical = 6.dp)
                                     )
@@ -520,9 +523,9 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                                 markdown = msg.text,
                                 modifier = Modifier,
                                 style = LocalTextStyle.current.copy(
-                                    color = MaterialTheme.colorScheme.onBackground,
+                                    color = scheme.onSurface,
                                     fontSize = 14.sp,
-                                    lineHeight = 20.sp
+                                    lineHeight = 21.sp
                                 )
                             )
                         }

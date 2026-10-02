@@ -11,8 +11,8 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 85
-        versionName = "3.6.0"
+        versionCode = 100
+        versionName = "3.10.0"
     }
 
     // 固定签名：CI 从 GitHub Secrets 恢复同一 PKCS12，密钥不进入公开仓库；
@@ -60,6 +60,12 @@ android {
 
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"
+    }
+
+    testOptions {
+        // LockState 依赖 android.util / SharedPreferences 接口；测试中用假实现，
+        // 未覆盖的 android.* 调用返回默认值而不是抛异常
+        unitTests.isReturnDefaultValues = true
     }
 
     packaging {
@@ -119,4 +125,7 @@ dependencies {
 
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // 单元测试（JVM，本地逻辑：锁机计时 / 篡改 / 番茄钟）
+    testImplementation("junit:junit:4.13.2")
 }

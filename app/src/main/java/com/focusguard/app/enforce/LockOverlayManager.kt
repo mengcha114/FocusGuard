@@ -552,12 +552,84 @@ object LockOverlayManager {
         com.focusguard.app.ui.theme.FocusColors.hex(c).substring(1)
     )
 
-    /** 墨色纯色背景（令牌 bg），与锁机页 Compose 同源。 */
-    private fun buildBackground(context: Context): GradientDrawable = GradientDrawable().apply {
-        setColor(com.focusguard.app.ui.theme.FocusColors.hex(palette(context).bg).let {
-            android.graphics.Color.parseColor(it)
-        })
+    /**
+     * 悬浮窗背景：与 Compose 锁机页同源（[com.focusguard.app.ui.theme.AppearanceState]）。
+     * 自定义图片 → 居中裁切 + 主题色遮罩；其余 → 主题渐变 + 角落光晕。
+     */
+    private fun buildBackground(context: Context): android.graphics.drawable.Drawable {
+        val p = palette(context)
+        val a = com.focusguard.app.ui.theme.AppearanceState.get(context)
+        val bg = android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.bg))
+        val surface = android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.surface))
+        val base: android.graphics.drawable.Drawable =
+            if (a.background == com.focusguard.app.ui.theme.Appearance.BG_SOLID) {
+                GradientDrawable().apply { setColor(bg) }
+            } else {
+                GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(surface, bg, bg))
+            }
+        val layers = mutableListOf(base)
+        if (a.background == com.focusguard.app.ui.theme.Appearance.BG_IMAGE) {
+            com.focusguard.app.ui.theme.AppearanceState.imageFile(context, a)?.let { f ->
+                runCatching { android.graphics.BitmapFactory.decodeFile(f.absolutePath) }.getOrNull()?.let { bmp ->
+                    layers += CenterCropDrawable(bmp)
+                    layers += GradientDrawable().apply {
+                        setColor(android.graphics.Color.parseColor(tint(p.bg, (a.imageDim.coerceIn(0, 90) * 255 / 100))))
+                    }
+                }
+            }
+        }
+        if (a.glow) {
+            val alpha = (0x66 * a.glowIntensity.coerceIn(10, 100) / 100)
+            layers += GradientDrawable().apply {
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = context.resources.displayMetrics.widthPixels * 0.85f
+                setGradientCenter(0.85f, 0.08f)
+                colors = intArrayOf(
+                    android.graphics.Color.parseColor(tint(p.accent, alpha)),
+                    android.graphics.Color.TRANSPARENT
+                )
+            }
+            layers += GradientDrawable().apply {
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = context.resources.displayMetrics.widthPixels * 0.8f
+                setGradientCenter(0.1f, 0.8f)
+                colors = intArrayOf(
+                    android.graphics.Color.parseColor(tint(p.glow, alpha * 4 / 5)),
+                    android.graphics.Color.TRANSPARENT
+                )
+            }
+        }
+        return android.graphics.drawable.LayerDrawable(layers.toTypedArray())
     }
+
+    /** 居中裁切的位图 Drawable（悬浮窗自定义背景图用）。 */
+    private class CenterCropDrawable(private val bmp: android.graphics.Bitmap) : android.graphics.drawable.Drawable() {
+        private val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+        private val matrix = android.graphics.Matrix()
+        override fun draw(canvas: android.graphics.Canvas) {
+            val b = bounds
+            if (b.isEmpty) return
+            val scale = maxOf(b.width() / bmp.width.toFloat(), b.height() / bmp.height.toFloat())
+            matrix.setScale(scale, scale)
+            matrix.postTranslate(
+                b.left + (b.width() - bmp.width * scale) / 2f,
+                b.top + (b.height() - bmp.height * scale) / 2f
+            )
+            canvas.drawBitmap(bmp, matrix, paint)
+        }
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+        override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = android.graphics.PixelFormat.OPAQUE
+    }
+
+    /** 倒计时字体：与 Compose 锁机页一致（衬线 / 无衬线 / 等宽）。 */
+    private fun lockTypeface(context: Context): Typeface =
+        when (com.focusguard.app.ui.theme.AppearanceState.get(context).lockFont) {
+            com.focusguard.app.ui.theme.Appearance.FONT_SANS -> Typeface.create("sans-serif", Typeface.BOLD)
+            com.focusguard.app.ui.theme.Appearance.FONT_MONO -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            else -> Typeface.create("serif", Typeface.BOLD)
+        }
 
     private fun buildContent(
         context: Context,
@@ -614,35 +686,61 @@ object LockOverlayManager {
 
         val wallDate = TextView(context).apply {
             text = ""
-            textSize = 13f
-            setTextColor(Color.parseColor(tint(p.haze, 0x8F)))
+            textSize = 14f
+            setTextColor(Color.parseColor(tint(p.text, 0xD0)))
             gravity = Gravity.CENTER
-            letterSpacing = 0.06f
-            setPadding(0, dp(context, 2), 0, 0)
+            letterSpacing = 0.04f
+            setPadding(0, dp(context, 4), 0, 0)
         }
         wallDateText = wallDate
         container.addView(wallDate, matchWrap())
+
+        // ── 细节区分标识：悬浮窗专属模式胶囊 ─────────────────
+        val overlayBadge = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = dp(context, 16).toFloat()
+                setColor(Color.parseColor(tint(p.accent, 0x22)))
+                setStroke(dp(context, 1), Color.parseColor(tint(p.accent, 0x66)))
+            }
+            setPadding(dp(context, 14), dp(context, 6), dp(context, 14), dp(context, 6))
+            addView(TextView(context).apply {
+                text = "🔒 普通模式守护"
+                textSize = 11f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+                letterSpacing = 0.05f
+            })
+        }
+        container.addView(
+            overlayBadge,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(context, 10) }
+        )
 
         // ── 中部：锁定状态卡（细边框卡片 + 锁标 + 倒计时） ──────
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             background = GradientDrawable().apply {
-                cornerRadius = dp(context, 12).toFloat()
-                setColor(android.graphics.Color.parseColor(tint(p.card, 0xA6)))
-                setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
+                cornerRadius = dp(context, 20).toFloat()
+                setColor(android.graphics.Color.parseColor(tint(p.card, 0xD9)))
+                setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xE6)))
             }
-            setPadding(dp(context, 22), dp(context, 20), dp(context, 22), dp(context, 20))
+            setPadding(dp(context, 24), dp(context, 24), dp(context, 24), dp(context, 24))
         }
 
-        // 应用名（一行，居中）
+        // 应用名与锁定标语
         card.addView(
             TextView(context).apply {
-                text = "专注卫士"
-                textSize = 14f
+                text = "专注卫士 · 专注锁定中"
+                textSize = 15f
                 setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.text)))
                 typeface = Typeface.DEFAULT_BOLD
-                letterSpacing = 0.1f
+                letterSpacing = 0.05f
                 gravity = Gravity.CENTER
             },
             matchWrap()
@@ -651,11 +749,11 @@ object LockOverlayManager {
         // 状态行（锁定中 / 番茄钟专注 / 暂停中，每秒刷新）
         val status = TextView(context).apply {
             text = "设备已锁定"
-            textSize = 11f
-            setTextColor(Color.parseColor(tint(p.haze, 0xE6)))
+            textSize = 12f
+            setTextColor(Color.parseColor(tint(p.haze, 0xFF)))
             gravity = Gravity.CENTER
-            letterSpacing = 0.08f
-            setPadding(0, dp(context, 10), 0, 0)
+            letterSpacing = 0.04f
+            setPadding(0, dp(context, 8), 0, 0)
         }
         statusText = status
         card.addView(status, matchWrap())
@@ -663,22 +761,23 @@ object LockOverlayManager {
         // 大号剩余时长（衬线数字，与 Compose 锁机页签名一致）
         val time = TextView(context).apply {
             text = "--:--"
-            textSize = 46f
+            textSize = 50f
             setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = lockTypeface(context)
             gravity = Gravity.CENTER
-            setPadding(0, dp(context, 4), 0, 0)
+            setPadding(0, dp(context, 6), 0, 0)
         }
         timeText = time
         card.addView(time, matchWrap())
 
         card.addView(
             TextView(context).apply {
-                text = "剩余锁定时间"
-                textSize = 10f
+                text = "分 秒"
+                textSize = 11f
                 setTextColor(Color.parseColor(tint(p.faint, 0xFF)))
                 gravity = Gravity.CENTER
-                letterSpacing = 0.14f
+                letterSpacing = 0.2f
+                setPadding(0, dp(context, 2), 0, 0)
             },
             matchWrap()
         )
@@ -794,7 +893,7 @@ object LockOverlayManager {
             text = "--:--"
             textSize = 34f
             setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = lockTypeface(context)
             gravity = Gravity.CENTER
             setPadding(0, dp(context, 4), 0, 0)
         }
@@ -1227,7 +1326,7 @@ object LockOverlayManager {
                 }
                 val secs = when {
                     ls.isPaused -> ls.pauseRemainingSeconds
-                    ls.lockSource == "POMODORO" -> ls.pomodoroRemainingSeconds
+                    ls.lockSource == com.focusguard.app.data.LockState.SOURCE_POMODORO -> ls.pomodoroRemainingSeconds
                     else -> ls.remainingSeconds
                 }
                 val h = secs / 3600
@@ -1238,13 +1337,13 @@ object LockOverlayManager {
 
                 statusText?.text = when {
                     ls.isPaused -> "暂停中 · 可自由使用"
-                    ls.lockSource == "POMODORO" && ls.pomodoroIsWorkPhase -> "番茄钟专注阶段"
-                    ls.lockSource == "POMODORO" -> "番茄钟休息阶段"
+                    ls.lockSource == com.focusguard.app.data.LockState.SOURCE_POMODORO && ls.pomodoroIsWorkPhase -> "番茄钟专注阶段"
+                    ls.lockSource == com.focusguard.app.data.LockState.SOURCE_POMODORO -> "番茄钟休息阶段"
                     else -> "设备已锁定"
                 }
                 // 配色随阶段切换：专注=强调色，暂停/休息=成功色（与 Compose 锁机页同令牌）
                 val relaxed = ls.isPaused ||
-                    (ls.lockSource == "POMODORO" && !ls.pomodoroIsWorkPhase)
+                    (ls.lockSource == com.focusguard.app.data.LockState.SOURCE_POMODORO && !ls.pomodoroIsWorkPhase)
                 val p = lastContext?.let { palette(it) }
                 if (p != null) {
                     val accentColor = android.graphics.Color.parseColor(

@@ -51,12 +51,9 @@ object LockToolExecutor {
             val lockState = com.focusguard.app.data.LockState(context)
             val settings = com.focusguard.app.data.Settings(context)
 
-            lockState.startLock(minutes, "AI_CHAT")
-            // 用 AI 锁机设置里的解锁强度
-            lockState.unlockStrength = settings.aiLockStrength
-            if (settings.aiLockStrength == 3) {
-                lockState.setupFriendChallenge()
-            }
+            // 用 AI 锁机设置里的解锁强度；已在锁机（含暂停）时只能延长/加码，
+            // 不能用一次短锁机覆盖当前锁机
+            lockState.startLock(minutes, "AI_CHAT", settings.aiLockStrength)
 
             com.focusguard.app.service.LockGuardService.ensureRunning(context)
             com.focusguard.app.service.GuardWatchdogWorker.schedule(context)

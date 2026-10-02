@@ -17,6 +17,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.LockState
 import com.focusguard.app.service.LockGuardService
+import com.focusguard.app.ui.theme.inkCard
 
 /**
  * 全局强制锁机界面（全屏覆盖）。
@@ -955,7 +957,7 @@ private fun LockScreenContent(
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var pauseLeft by remember { mutableIntStateOf(lockState.pauseQuota - lockState.pauseUsed) }
 
-    val isPomodoro = lockState.lockSource == "POMODORO"
+    val isPomodoro = lockState.lockSource == com.focusguard.app.data.LockState.SOURCE_POMODORO
     // 箴言：优先用用户自定义（每行一条，随机取），否则用内置库。
     // 注意：LocalContext.current 是 @Composable 属性，必须在 Composable
     // 作用域取值，不能放进 remember 的 lambda（非 @Composable 上下文）。
@@ -977,7 +979,12 @@ private fun LockScreenContent(
     }
 
     // 进度环基准：首次进入时的剩余时间即为本段总时长
-    var totalSeconds by remember { mutableIntStateOf(lockState.remainingSeconds.coerceAtLeast(1)) }
+    var totalSeconds by remember {
+        mutableIntStateOf(
+            if (isPomodoro) lockState.pomodoroPhaseTotalSeconds
+            else lockState.remainingSeconds.coerceAtLeast(1)
+        )
+    }
 
     // 在 Composable 作用域取 Activity 引用（LaunchedEffect 内不能调 LocalContext.current）
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
@@ -995,15 +1002,13 @@ private fun LockScreenContent(
             pauseLeft = lockState.pauseQuota - lockState.pauseUsed
 
             if (isPomodoro) {
+                // 阶段推进由 LockGuardService.guardTick 统一负责（悬浮窗路径也生效），
+                // 这里只读显示，避免两处同时推进造成跳阶段。
                 phaseSeconds = lockState.pomodoroRemainingSeconds
                 isWorkPhase = lockState.pomodoroIsWorkPhase
-                if (phaseSeconds <= 0) {
-                    val finished = lockState.advancePomodoroPhase()
-                    if (finished) break
-                    isWorkPhase = lockState.pomodoroIsWorkPhase
-                    phaseSeconds = lockState.pomodoroRemainingSeconds
+                if (isWorkPhase != lastWorkPhase) {
                     // 新阶段开始：重置进度环基准
-                    totalSeconds = phaseSeconds.coerceAtLeast(1)
+                    totalSeconds = lockState.pomodoroPhaseTotalSeconds
                 }
                 // 阶段切换：休息→工作 重新进入 Lock Task；工作→休息 释放。
                 // 进入走 Activity 的异步路径（Binder 配置在后台线程，
@@ -1072,19 +1077,26 @@ private fun LockScreenContent(
     val progress = if (totalSeconds <= 0) 0f
         else (shownSeconds.toFloat() / totalSeconds).coerceIn(0f, 1f)
 
+    val appearance = com.focusguard.app.ui.theme.AppearanceState.get(mottoContext)
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(palette.bg)
+        modifier = Modifier.fillMaxSize()
     ) {
-        // 中央夜光光晕（呼吸）——模拟夜光表盘反光，全应用唯一允许的渐变
+        // 全局背景层（与主界面同源：纯色 / 渐变 / 网格 / 自定义图片 + 流光）
+        com.focusguard.app.ui.theme.AppBackground(
+            modifier = Modifier.fillMaxSize(),
+            accent = accent,
+            secondary = palette.glow,
+            base = palette.bg,
+            surface = palette.surface
+        )
+        // 中央夜光光晕（呼吸）——模拟夜光表盘反光
         Box(
             modifier = Modifier
                 .size(560.dp)
                 .align(Alignment.Center)
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = glowAlpha), Color.Transparent)
+                        colors = listOf(accent.copy(alpha = glowAlpha * 1.5f), Color.Transparent)
                     )
                 )
         )
@@ -1119,6 +1131,7 @@ private fun LockScreenContent(
                     val dateFormat = remember {
                         java.text.SimpleDateFormat("M月d日 EEEE", java.util.Locale.getDefault())
                     }
+                    if (appearance.showClock) {
                     Text(
                         text = timeFormat.format(java.util.Date(nowMillis)),
                         fontSize = 34.sp,
@@ -1128,14 +1141,15 @@ private fun LockScreenContent(
                     )
                     Text(
                         text = dateFormat.format(java.util.Date(nowMillis)),
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         letterSpacing = 1.sp,
                         color = palette.haze
                     )
+                    }
 
                     Spacer(Modifier.height(20.dp))
 
-                    // ── 状态胶囊 ─────────────────────────────────
+                    // ── 状态胶囊（系统级锁机细节标识） ─────────────────────────────────
                     StatusPill(
                         text = when {
                             isPausing -> "暂停中 · 可自由使用"
@@ -1144,6 +1158,7 @@ private fun LockScreenContent(
                             lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
                             else -> "专注锁定中"
                         },
+                        subBadge = "🛡️ 系统级守护",
                         accent = accent,
                         palette = palette,
                         locked = !isRelaxed
@@ -1201,13 +1216,11 @@ private fun LockScreenContent(
                     }
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    // ── 励志语录卡 ────────────────────────────────
-                    Box(
+                    // ── 励志语录卡（外观设置可关闭） ────────────────────────
+                    if (appearance.showMotto) Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(palette.card.copy(alpha = 0.6f))
-                            .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                            .inkCard()
                             .padding(horizontal = 20.dp, vertical = 16.dp)
                     ) {
                         Column {
@@ -1223,7 +1236,7 @@ private fun LockScreenContent(
                                 text = motto,
                                 fontSize = 14.sp,
                                 lineHeight = 22.sp,
-                                color = palette.text.copy(alpha = 0.85f)
+                                color = palette.text.copy(alpha = 0.92f)
                             )
                         }
                     }
@@ -1312,6 +1325,7 @@ private fun LockScreenContent(
                     val dateFormat = remember {
                         java.text.SimpleDateFormat("M月d日 EEEE", java.util.Locale.getDefault())
                     }
+                    if (appearance.showClock) {
                     Text(
                         text = timeFormat.format(java.util.Date(nowMillis)),
                         fontSize = 34.sp,
@@ -1321,14 +1335,15 @@ private fun LockScreenContent(
                     )
                     Text(
                         text = dateFormat.format(java.util.Date(nowMillis)),
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         letterSpacing = 1.sp,
                         color = palette.haze
                     )
+                    }
 
                     Spacer(Modifier.height(20.dp))
 
-                    // ── 状态胶囊 ─────────────────────────────────
+                    // ── 状态胶囊（系统级锁机细节标识） ─────────────────────────────────
                     StatusPill(
                         text = when {
                             isPausing -> "暂停中 · 可自由使用"
@@ -1337,6 +1352,7 @@ private fun LockScreenContent(
                             lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
                             else -> "专注锁定中"
                         },
+                        subBadge = "🛡️ 系统级守护",
                         accent = accent,
                         palette = palette,
                         locked = !isRelaxed
@@ -1387,13 +1403,11 @@ private fun LockScreenContent(
                     }
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    // ── 励志语录卡 ────────────────────────────────
-                    Box(
+                    // ── 励志语录卡（外观设置可关闭） ────────────────────────
+                    if (appearance.showMotto) Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(palette.card.copy(alpha = 0.6f))
-                            .border(1.dp, palette.line.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                            .inkCard()
                             .padding(horizontal = 20.dp, vertical = 16.dp)
                     ) {
                         Column {
@@ -1409,7 +1423,7 @@ private fun LockScreenContent(
                                 text = motto,
                                 fontSize = 14.sp,
                                 lineHeight = 22.sp,
-                                color = palette.text.copy(alpha = 0.85f)
+                                color = palette.text.copy(alpha = 0.92f)
                             )
                         }
                     }
@@ -1486,6 +1500,7 @@ private fun LockScreenContent(
 @Composable
 private fun StatusPill(
     text: String,
+    subBadge: String? = null,
     accent: Color,
     palette: com.focusguard.app.ui.theme.FocusColors.Palette,
     locked: Boolean
@@ -1493,8 +1508,8 @@ private fun StatusPill(
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(accent.copy(alpha = 0.12f))
-            .border(1.dp, palette.line.copy(alpha = 0.6f), RoundedCornerShape(50))
+            .background(accent.copy(alpha = 0.16f))
+            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(50))
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1507,11 +1522,28 @@ private fun StatusPill(
         Spacer(Modifier.width(7.dp))
         Text(
             text = text,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.5.sp,
-            color = accent
+            color = palette.text
         )
+        if (subBadge != null) {
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(palette.card.copy(alpha = 0.85f))
+                    .border(1.dp, palette.line, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = subBadge,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = accent
+                )
+            }
+        }
     }
 }
 
@@ -1562,9 +1594,24 @@ private fun CountdownRing(
                 )
             )
 
-            // 进度弧（剩余时间比例，单一强调色）
+            // 进度弧外发光（同色低透明宽描边，夜光表盘质感）
             drawArc(
-                color = accent,
+                color = accent.copy(alpha = 0.18f),
+                startAngle = -90f,
+                sweepAngle = 360f * animatedProgress,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = stroke * 2.2f,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+            )
+            // 进度弧（剩余时间比例，强调色由深到亮）
+            drawArc(
+                brush = androidx.compose.ui.graphics.Brush.sweepGradient(
+                    listOf(accent.copy(alpha = 0.55f), accent, accent.copy(alpha = 0.55f))
+                ),
                 startAngle = -90f,
                 sweepAngle = 360f * animatedProgress,
                 useCenter = false,
@@ -1600,20 +1647,45 @@ private fun CountdownRing(
                     minuteBounce.animateTo(0f, tween(300))
                 }
             }
-            // 签名元素：衬线大数字（钟表刻度质感），见 DESIGN.md §3.3
-            Text(
-                text = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s),
-                fontSize = if (h > 0) 40.sp else 50.sp,
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
-                color = palette.text,
+            // 签名元素：衬线大数字（钟表刻度质感），见 DESIGN.md §3.3。
+            // 每一位独立滚动：数字变化时旧值上移淡出、新值自下滑入（120ms）。
+            val digits = if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
+            val ringContext = androidx.compose.ui.platform.LocalContext.current
+            val lockFont = com.focusguard.app.ui.theme.AppearanceState.get(ringContext).lockFont
+            val digitFamily = when (lockFont) {
+                com.focusguard.app.ui.theme.Appearance.FONT_SANS -> FontFamily.SansSerif
+                com.focusguard.app.ui.theme.Appearance.FONT_MONO -> FontFamily.Monospace
+                else -> FontFamily.Serif
+            }
+            Row(
                 modifier = Modifier.graphicsLayer {
                     val sc = 1f + 0.04f * minuteBounce.value
                     scaleX = sc
                     scaleY = sc
                 }
-            )
+            ) {
+                digits.forEachIndexed { i, ch ->
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = ch,
+                        transitionSpec = {
+                            (androidx.compose.animation.slideInVertically(tween(160)) { it / 2 } +
+                                androidx.compose.animation.fadeIn(tween(160))) togetherWith
+                                (androidx.compose.animation.slideOutVertically(tween(120)) { -it / 2 } +
+                                    androidx.compose.animation.fadeOut(tween(120)))
+                        },
+                        label = "digit$i"
+                    ) { c ->
+                        Text(
+                            text = c.toString(),
+                            fontSize = if (h > 0) 40.sp else 50.sp,
+                            fontFamily = digitFamily,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp,
+                            color = palette.text
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(4.dp))
             Text(
                 text = if (h > 0) "时 分 秒" else "分 秒",

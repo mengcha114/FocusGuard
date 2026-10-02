@@ -14,6 +14,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,6 +36,9 @@ import androidx.navigation.compose.rememberNavController
 import com.focusguard.app.data.Settings as AppSettings
 import com.focusguard.app.ui.screens.*
 import com.focusguard.app.ui.theme.FocusGuardTheme
+
+/** 底栏顶层页面。 */
+private val topLevelRoutes = setOf("home", "apps", "timer_lock", "ai_chat", "settings")
 
 class MainActivity : ComponentActivity() {
 
@@ -161,7 +165,11 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            FocusGuardTheme(themeMode = appSettings.themeMode) {
+            com.focusguard.app.ui.theme.ThemeState.ensureLoaded(this)
+            FocusGuardTheme(
+                themeMode = com.focusguard.app.ui.theme.ThemeState.mode,
+                accentOverride = com.focusguard.app.ui.theme.ThemeState.accent
+            ) {
                 val navController = rememberNavController()
                 // permissionRefreshTick 变化时重新计算 allGranted
                 val refreshTick = permissionRefreshTick
@@ -202,7 +210,7 @@ class MainActivity : ComponentActivity() {
                         dismissButton = {
                             TextButton(onClick = {
                                 android.os.Process.killProcess(android.os.Process.myPid())
-                            }) { Text("不同意，退出", color = Color(0xFFF44336)) }
+                            }) { Text("不同意，退出", color = MaterialTheme.colorScheme.error) }
                         }
                     )
                 }
@@ -219,10 +227,12 @@ class MainActivity : ComponentActivity() {
                     )
                 } else {
                     androidx.compose.foundation.layout.Box(
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
                     ) {
-                        // 全局环境光斑：与半透明卡片叠加成玻璃材质（Android 12+ 生效）
-                        com.focusguard.app.ui.theme.AmbientGlow(
+                        // 全局背景层：纯色 / 渐变 / 网格 / 自定义图片 + 流光光晕（设置里可调）
+                        com.focusguard.app.ui.theme.AppBackground(
                             modifier = Modifier.fillMaxSize()
                         )
                     Scaffold(
@@ -231,7 +241,18 @@ class MainActivity : ComponentActivity() {
                             // （此前 selected 写死为 true/false，点击后阴影不移动）
                             val navBackStackEntry by navController.currentBackStackEntryAsState()
                             val currentRoute = navBackStackEntry?.destination?.route
-                            NavigationBar {
+                            // 二级页（备忘录 / 关键词）不显示底栏，层级更清晰
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = currentRoute in topLevelRoutes,
+                                enter = androidx.compose.animation.slideInVertically { it } +
+                                    androidx.compose.animation.fadeIn(),
+                                exit = androidx.compose.animation.slideOutVertically { it } +
+                                    androidx.compose.animation.fadeOut()
+                            ) {
+                            NavigationBar(
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                tonalElevation = 0.dp
+                            ) {
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.Home, contentDescription = null) },
                                     label = { Text("主页") },
@@ -303,7 +324,9 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                             }
-                        }
+                            }
+                        },
+                        containerColor = Color.Transparent
                     ) { padding ->
                         // 热路径：应用已在运行（分享/通知点击）→ 切到备忘录页。
                         // 必须在 NavHost 外（NavGraphBuilder 作用域不是 Composable）。
@@ -319,7 +342,35 @@ class MainActivity : ComponentActivity() {
                         NavHost(
                             navController = navController,
                             startDestination = if (pendingMemoOpen) "memo" else "home",
-                            modifier = Modifier.padding(padding)
+                            modifier = Modifier.padding(padding),
+                            // 页面切换：顶层页之间淡入 + 轻微缩放；进入二级页横向推入
+                            enterTransition = {
+                                if (targetState.destination.route in topLevelRoutes &&
+                                    initialState.destination.route in topLevelRoutes
+                                ) {
+                                    androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
+                                        androidx.compose.animation.scaleIn(
+                                            androidx.compose.animation.core.tween(220), initialScale = 0.97f
+                                        )
+                                } else {
+                                    slideIntoContainer(
+                                        androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection.Start,
+                                        androidx.compose.animation.core.tween(260)
+                                    ) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260))
+                                }
+                            },
+                            exitTransition = {
+                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160))
+                            },
+                            popEnterTransition = {
+                                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220))
+                            },
+                            popExitTransition = {
+                                slideOutOfContainer(
+                                    androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection.End,
+                                    androidx.compose.animation.core.tween(240)
+                                ) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200))
+                            }
                         ) {
                             composable("home") {
                                 HomeScreen(
@@ -357,9 +408,6 @@ class MainActivity : ComponentActivity() {
                             composable("timer_lock") {
                                 TimerLockScreen(onBack = { navController.popBackStack() })
                             }
-                            composable("unlock_challenge") {
-                                UnlockChallengeScreen(onUnlocked = { navController.popBackStack() })
-                            }
                         }
                     }
                     }
@@ -393,7 +441,7 @@ class MainActivity : ComponentActivity() {
                                 shape = RoundedCornerShape(12.dp)
                             )
                             stopVerifyError?.let {
-                                Text(it, fontSize = 12.sp, color = Color(0xFFF44336))
+                                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                             }
                         }
                     },

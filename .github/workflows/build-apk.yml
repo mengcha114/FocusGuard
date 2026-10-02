@@ -5,7 +5,8 @@ name: Build APK
 # 2. 手动触发（Actions 页面点 "Run workflow"）
 on:
   push:
-    branches: [main]
+    branches: [main, 'fix/**', 'feat/**']
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -55,6 +56,17 @@ jobs:
           printf 'FOCUSGUARD_KEY_ALIAS=%s\n' "$FOCUSGUARD_KEY_ALIAS" >> "$GITHUB_ENV"
           printf 'FOCUSGUARD_KEY_PASSWORD=%s\n' "$FOCUSGUARD_KEY_PASSWORD" >> "$GITHUB_ENV"
 
+      - name: 单元测试
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: 上传测试报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: app/build/reports/tests/
+          retention-days: 7
+
       - name: 构建 Debug APK
         run: ./gradlew assembleDebug --no-daemon
 
@@ -65,3 +77,16 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      # 仅在 main 分支推送且打标签时自动创建 / 更新 GitHub Release
+      - name: 发布 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/debug/app-debug.apk
+          name: ${{ github.ref_name }} - 正式版 (vc100)
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

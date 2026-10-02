@@ -40,7 +40,6 @@ fun SettingsScreen(
     var consecutiveViolations by remember { mutableStateOf(settings.consecutiveViolations.toString()) }
     var whitelist by remember { mutableStateOf(settings.whitelist) }
     var enforcementMode by remember { mutableStateOf(settings.enforcementMode) }
-    var themeMode by remember { mutableStateOf(settings.themeMode) }
     var dailyCallLimit by remember { mutableStateOf(settings.dailyCallLimit.toString()) }
 
     // AI 检出娱乐后的锁机设置
@@ -418,12 +417,12 @@ fun SettingsScreen(
                         text = when {
                             lockTaskOn -> "已生效 · 锁机期间系统级封锁"
                             dhizukuReady -> "Dhizuku 已连接 · 锁机时自动进入"
-                            else -> "未启用（将使用悬浮窗方案）"
+                            else -> "未启用（将使用普通模式）"
                         },
                         fontSize = 14.sp,
                         color = when {
-                            lockTaskOn -> Color(0xFF66BB6A)
-                            dhizukuReady -> Color(0xFFFFB74D)
+                            lockTaskOn -> MaterialTheme.colorScheme.tertiary
+                            dhizukuReady -> MaterialTheme.colorScheme.primary
                             else -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                         }
                     )
@@ -584,30 +583,7 @@ fun SettingsScreen(
 
         // ── 界面主题 ──────────────────────────────────────────────
         SettingsSection(title = "界面主题", icon = Icons.Default.Palette) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                (0..3).forEach { mode ->
-                    FilterChip(shape = RoundedCornerShape(10.dp),
-                        selected = themeMode == mode,
-                        onClick = { themeMode = mode },
-                        label = {
-                            Text(
-                                com.focusguard.app.ui.theme.ThemeModes.labelOf(mode),
-                                fontSize = 12.sp
-                            )
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "切换后点击保存生效",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
-            )
+            com.focusguard.app.ui.components.ThemePicker()
         }
 
         // ── 白名单 ────────────────────────────────────────────────
@@ -670,7 +646,7 @@ fun SettingsScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+                colors = ButtonDefaults.buttonColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
             ) {
                 Icon(Icons.Default.Share, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
@@ -701,7 +677,6 @@ fun SettingsScreen(
             settings.consecutiveViolations = consecutiveViolations.toIntOrNull() ?: 2
             settings.whitelist = whitelist
             settings.enforcementMode = enforcementMode
-            settings.themeMode = themeMode
             settings.tokenSavingEnabled = tokenSavingEnabled
             settings.screenHashDedupEnabled = screenHashDedup
             settings.screenTextPrefilterEnabled = screenTextPrefilter
@@ -728,36 +703,93 @@ fun SettingsScreen(
         // ── 方向判定：修改是否在「降低对自己的限制」 ──────────────
         // 增强限制（锁得更久/更容易触发/更难解锁）→ 直接保存；
         // 降低限制（缩短锁机/更难触发/更容易解锁）→ 需答题验证（防被监管对象篡改）。
+        // 判定改为「收紧白名单」：只有明确是收紧（或纯外观）的改动可直接保存，
+        // 其余任何改动一律视为放宽、需答题。旧实现逐项列举放宽项，漏掉了
+        // 白名单 / 敏感应用 / 置信度 / API 配置 / 提示词 / 调用上限等，
+        // 改这些即可让 AI 检测失效。
         fun isLoosening(): Boolean {
-            val newInterval = intervalMinutes.toIntOrNull()
-                ?: settings.intervalMinutes
-            val newViolations = consecutiveViolations.toIntOrNull()
-                ?: settings.consecutiveViolations
+            val newInterval = intervalMinutes.toIntOrNull() ?: settings.intervalMinutes
+            val newViolations = consecutiveViolations.toIntOrNull() ?: settings.consecutiveViolations
+            val newCallLimit = dailyCallLimit.toIntOrNull() ?: settings.dailyCallLimit
             val newAlertDelay = aiAlertDelaySeconds.coerceIn(0, 120)
             val enforceRank = mapOf(
                 Settings.EnforcementMode.WARN to 0,
                 Settings.EnforcementMode.APP_BLOCK to 1,
                 Settings.EnforcementMode.LOCK to 2
             )
-            return when {
-                // 锁机时长 / 仅锁该软件时长 缩短 → 降低限制
-                aiLockMinutes < settings.lockMinutesOnViolation -> true
-                appBlockMinutes < settings.appBlockMinutes -> true
-                // 连续违规次数调大 → 更难触发锁机
-                newViolations > settings.consecutiveViolations -> true
-                // 解锁强度调低（1 < 4 更容易解锁）
-                aiLockStrength < settings.aiLockStrength -> true
-                // 执法模式降级（LOCK → APP_BLOCK → WARN）
-                (enforceRank[enforcementMode] ?: 2) <
-                    (enforceRank[settings.enforcementMode] ?: 2) -> true
-                // 检测间隔调大 → 检测变少
-                newInterval > settings.intervalMinutes -> true
-                // 提醒宽限期调长 → 锁机来得更晚
-                newAlertDelay > settings.aiAlertDelaySeconds -> true
-                // 智能调度关闭（可能放宽节奏）
-                !smartScheduleEnabled && settings.smartScheduleEnabled -> true
-                else -> false
-            }
+            fun lines(s: String) = s.lines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+
+            // 数值类：只允许朝「更严」方向变化
+            val numericOk =
+                aiLockMinutes >= settings.lockMinutesOnViolation &&
+                    appBlockMinutes >= settings.appBlockMinutes &&
+                    newViolations <= settings.consecutiveViolations &&
+                    aiLockStrength >= settings.aiLockStrength &&
+                    (enforceRank[enforcementMode] ?: 2) >= (enforceRank[settings.enforcementMode] ?: 2) &&
+                    newInterval <= settings.intervalMinutes &&
+                    newAlertDelay <= settings.aiAlertDelaySeconds &&
+                    confidenceThreshold <= settings.confidenceThreshold &&
+                    newCallLimit >= settings.dailyCallLimit &&
+                    (smartScheduleEnabled || !settings.smartScheduleEnabled) &&
+                    // 开启「先提醒再锁机」= 多一段宽限 = 放宽
+                    (!aiAlertEnabled || settings.aiAlertEnabled)
+
+            // 列表类：白名单 / 敏感应用只能删、不能加；娱乐词只能加、学习词只能删
+            val listsOk =
+                lines(settings.whitelist).containsAll(lines(whitelist)) &&
+                    lines(settings.sensitiveApps).containsAll(lines(sensitiveApps)) &&
+                    lines(entertainmentKeywords).containsAll(lines(settings.entertainmentKeywords)) &&
+                    lines(settings.studyKeywords).containsAll(lines(studyKeywords))
+
+            // 开关类：关闭隐私保护 = 更严；开启省 token 系列 = 检测变少 = 放宽
+            val togglesOk =
+                (!privacyProtectEnabled || settings.privacyProtectEnabled) &&
+                    (!tokenSavingEnabled || settings.tokenSavingEnabled) &&
+                    (!screenHashDedup || settings.screenHashDedupEnabled) &&
+                    (!screenTextPrefilter || settings.screenTextPrefilterEnabled) &&
+                    (!decisionCacheEnabled || settings.decisionCacheEnabled) &&
+                    (!adaptiveInterval || settings.adaptiveIntervalEnabled)
+
+            // 检测通道：任何改动都可能让检测失效，一律需答题
+            val channelOk =
+                apiBaseUrl == settings.apiBaseUrl &&
+                    apiKey == settings.apiKey &&
+                    modelName == settings.modelName &&
+                    apiFormat == settings.apiFormat &&
+                    aiCustomPrompt == settings.aiCustomPrompt
+
+            // 主题 / 箴言属于外观，不影响限制
+            return !(numericOk && listsOk && togglesOk && channelOk)
+        }
+
+        /** 放宽验证被取消：界面值回滚到已保存的设置（旧实现不回滚，界面显示与实际不符）。 */
+        fun revertUnsaved() {
+            apiBaseUrl = settings.apiBaseUrl
+            apiKey = settings.apiKey
+            modelName = settings.modelName
+            apiFormat = settings.apiFormat
+            aiCustomPrompt = settings.aiCustomPrompt
+            intervalMinutes = settings.intervalMinutes.toString()
+            confidenceThreshold = settings.confidenceThreshold
+            consecutiveViolations = settings.consecutiveViolations.toString()
+            whitelist = settings.whitelist
+            enforcementMode = settings.enforcementMode
+            tokenSavingEnabled = settings.tokenSavingEnabled
+            screenHashDedup = settings.screenHashDedupEnabled
+            screenTextPrefilter = settings.screenTextPrefilterEnabled
+            decisionCacheEnabled = settings.decisionCacheEnabled
+            adaptiveInterval = settings.adaptiveIntervalEnabled
+            dailyCallLimit = settings.dailyCallLimit.toString()
+            aiLockMinutes = settings.lockMinutesOnViolation
+            aiLockStrength = settings.aiLockStrength
+            aiAlertEnabled = settings.aiAlertEnabled
+            aiAlertDelaySeconds = settings.aiAlertDelaySeconds
+            studyKeywords = settings.studyKeywords
+            entertainmentKeywords = settings.entertainmentKeywords
+            smartScheduleEnabled = settings.smartScheduleEnabled
+            appBlockMinutes = settings.appBlockMinutes
+            privacyProtectEnabled = settings.privacyProtectEnabled
+            sensitiveApps = settings.sensitiveApps
         }
 
         // ── 自动保存 ─────────────────────────────────────────────
@@ -768,7 +800,7 @@ fun SettingsScreen(
         LaunchedEffect(
             apiBaseUrl, apiKey, modelName, apiFormat, aiCustomPrompt,
             intervalMinutes, confidenceThreshold, consecutiveViolations, whitelist,
-            enforcementMode, themeMode, tokenSavingEnabled, screenHashDedup,
+            enforcementMode, tokenSavingEnabled, screenHashDedup,
             screenTextPrefilter, decisionCacheEnabled, adaptiveInterval, dailyCallLimit,
             aiLockMinutes, aiLockStrength, aiAlertEnabled, aiAlertDelaySeconds,
             appBlockMinutes, customMottos, smartScheduleEnabled,
@@ -783,7 +815,12 @@ fun SettingsScreen(
             }
             // 防抖：状态变化后等 2 秒（期间再变化会取消重启），无变化才处理
             kotlinx.coroutines.delay(2000)
-            if (isLoosening()) {
+            if (isLoosening() && com.focusguard.app.data.LockState(context).isLocked) {
+                // 锁机中（含暂停）：放宽类改动一律拒绝，答题也不行
+                revertUnsaved()
+                saveAll()
+                Toast.makeText(context, "锁机期间不能放宽限制，已恢复原设置", Toast.LENGTH_LONG).show()
+            } else if (isLoosening()) {
                 // 降低限制：弹答题验证（通过后才保存）
                 if (!showVerifyDialog) {
                     verifyQuestion = challengeGenerator.generate(2)
@@ -804,12 +841,12 @@ fun SettingsScreen(
         // ── 降低限制的答题验证对话框 ─────────────────────────────
         if (showVerifyDialog) {
             AlertDialog(
-                onDismissRequest = { showVerifyDialog = false },
+                onDismissRequest = { /* 必须明确选择：验证或取消 */ },
                 title = { Text("降低限制需先答题") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
-                            text = "你正在降低对自己的限制（如缩短锁机/调大间隔）。为防止限制被随意解除，请先回答一道题：",
+                            text = "你正在降低对自己的限制（如缩短锁机、调大间隔、修改白名单或检测配置）。为防止限制被随意解除，请先回答一道题：",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                         )
@@ -831,7 +868,7 @@ fun SettingsScreen(
                             Text(
                                 text = it,
                                 fontSize = 12.sp,
-                                color = Color(0xFFF44336)
+                                color = MaterialTheme.colorScheme.error
                             )
                         }
                     }
@@ -861,7 +898,8 @@ fun SettingsScreen(
                             showVerifyDialog = false
                             verifyAnswer = ""
                             verifyError = null
-                            Toast.makeText(context, "修改未保存", Toast.LENGTH_SHORT).show()
+                            revertUnsaved()
+                            Toast.makeText(context, "已恢复原设置", Toast.LENGTH_SHORT).show()
                         }
                     ) {
                         Text("取消", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
@@ -989,7 +1027,7 @@ fun SettingsSection(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+            containerColor = com.focusguard.app.ui.theme.cardContainer()
         )
     ) {
         Column(
