@@ -421,8 +421,8 @@ fun SettingsScreen(
                         },
                         fontSize = 14.sp,
                         color = when {
-                            lockTaskOn -> Color(0xFF66BB6A)
-                            dhizukuReady -> Color(0xFFFFB74D)
+                            lockTaskOn -> MaterialTheme.colorScheme.tertiary
+                            dhizukuReady -> MaterialTheme.colorScheme.primary
                             else -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                         }
                     )
@@ -646,7 +646,7 @@ fun SettingsScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+                colors = ButtonDefaults.buttonColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
             ) {
                 Icon(Icons.Default.Share, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
@@ -1027,7 +1027,7 @@ fun SettingsSection(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+            containerColor = com.focusguard.app.ui.theme.cardContainer()
         )
     ) {
         Column(

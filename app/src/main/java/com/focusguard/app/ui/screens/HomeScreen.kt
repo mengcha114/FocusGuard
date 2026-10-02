@@ -413,7 +413,7 @@ fun LogItem(
 ) {
     val color = when (classification) {
         "STUDY_WORK" -> MaterialTheme.colorScheme.tertiary
-        "ENTERTAINMENT" -> Color(0xFFF44336)
+        "ENTERTAINMENT" -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val label = when (classification) {
@@ -426,7 +426,7 @@ fun LogItem(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+            containerColor = com.focusguard.app.ui.theme.cardContainer()
         )
     ) {
         Row(
@@ -500,7 +500,7 @@ private fun MemoCard(onOpenMemo: () -> Unit) {
             .fillMaxWidth()
             .clickable(onClick = onOpenMemo),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -579,8 +579,8 @@ private fun MemoCard(onOpenMemo: () -> Unit) {
 @Composable
 private fun MemoRow(item: MemoItem, onToggle: () -> Unit) {
     val priorityColor = when (item.priority) {
-        2 -> Color(0xFFEF5350)
-        1 -> Color(0xFFFFB74D)
+        2 -> MaterialTheme.colorScheme.error
+        1 -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.primary
     }
     Row(
@@ -600,7 +600,7 @@ private fun MemoRow(item: MemoItem, onToggle: () -> Unit) {
                 imageVector = if (item.done) Icons.Default.CheckCircle
                 else Icons.Default.RadioButtonUnchecked,
                 contentDescription = if (item.done) "标记未完成" else "标记完成",
-                tint = if (item.done) Color(0xFF66BB6A) else priorityColor,
+                tint = if (item.done) MaterialTheme.colorScheme.tertiary else priorityColor,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -625,7 +625,7 @@ private fun MemoRow(item: MemoItem, onToggle: () -> Unit) {
                 Text(
                     text = tags.joinToString(" · "),
                     fontSize = 10.sp,
-                    color = if (item.overdue) Color(0xFFEF5350)
+                    color = if (item.overdue) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
                 )
             }

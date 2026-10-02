@@ -84,7 +84,7 @@ fun LogScreen() {
                         logs = emptyList()
                     }
                 ) {
-                    Text("清空", color = Color(0xFFF44336), fontSize = 13.sp)
+                    Text("清空", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
                 }
             }
         }
@@ -102,7 +102,7 @@ fun LogScreen() {
                     .fillMaxWidth()
                     .heightIn(max = 300.dp),
                 shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(
@@ -252,10 +252,10 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
         else -> "无"
     }
     val actionColor = when (log.action) {
-        "LOCK" -> Color(0xFFF44336)
+        "LOCK" -> MaterialTheme.colorScheme.error
         "EXIT" -> MaterialTheme.colorScheme.tertiary
-        "WARN" -> Color(0xFFFFC107)
-        "APP_BLOCK" -> Color(0xFFC6786F)
+        "WARN" -> MaterialTheme.colorScheme.primary
+        "APP_BLOCK" -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val sourceLabel = when (log.source) {
@@ -277,7 +277,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
             .fillMaxWidth()
             .clickable { expanded = !expanded },
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
     ) {
         Column(
             modifier = Modifier

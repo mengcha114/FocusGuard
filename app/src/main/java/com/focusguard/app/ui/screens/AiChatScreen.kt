@@ -115,7 +115,6 @@ fun AiChatScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(12.dp))
@@ -145,7 +144,7 @@ fun AiChatScreen() {
                     chatHistory.clear()
                     messages = loadAiReminders()
                 }) {
-                    Text("清空", color = Color(0xFFF44336), fontSize = 12.sp)
+                    Text("清空", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
             }
             // Tab 切换（TabRow：空间充足，图标与文字互不遮挡）

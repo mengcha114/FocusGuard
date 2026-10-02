@@ -16,6 +16,8 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.Spring
@@ -36,68 +38,149 @@ import androidx.compose.ui.platform.LocalContext
  */
 @Composable
 fun Modifier.inkCard(
-    container: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-    corner: Dp = 12.dp,
-    borderColor: Color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
-): Modifier = this
-    .clip(RoundedCornerShape(corner))
-    .background(container)
-    .border(1.dp, borderColor, RoundedCornerShape(corner))
+    container: Color? = null,
+    corner: Dp? = null,
+    borderColor: Color? = null
+): Modifier {
+    val scheme = MaterialTheme.colorScheme
+    val a = AppearanceState.get(LocalContext.current)
+    val shape = RoundedCornerShape(corner ?: a.cardCorner.dp)
+    val fill = container ?: when (a.cardStyle) {
+        Appearance.CARD_SOLID -> scheme.surfaceVariant
+        Appearance.CARD_OUTLINE -> Color.Transparent
+        else -> scheme.surfaceVariant.copy(alpha = a.cardOpacity.coerceIn(40, 100) / 100f)
+    }
+    val stroke = borderColor ?: when (a.cardStyle) {
+        Appearance.CARD_OUTLINE -> scheme.outline
+        Appearance.CARD_SOLID -> scheme.outline.copy(alpha = 0.25f)
+        else -> scheme.outline.copy(alpha = 0.45f)
+    }
+    return this.clip(shape).background(fill).border(1.dp, stroke, shape)
+}
 
 /**
- * 环境光斑：两团模糊的强调色光晕铺在页面背景层，
- * 与半透明卡片（[inkCard]）叠加形成玻璃拟态。
- *
- * 仅 Android 12+（RenderEffect 模糊可用）；低版本自动跳过，
- * 半透明卡片在纯色背景上依旧成立。
+ * 全局背景层：按 [Appearance.background] 绘制纯色 / 渐变 / 网格光斑 / 自定义图片，
+ * 再按需叠加流光光晕。光晕用 Canvas 径向渐变绘制，不依赖 RenderEffect，
+ * Android 8+ 全版本都能看到（旧实现在 Android 12 以下直接 return，
+ * 且开关只在首次组合时读取一次，所以「开启不起作用」）。
  */
+@Composable
+fun AppBackground(
+    modifier: Modifier = Modifier,
+    accent: Color = MaterialTheme.colorScheme.primary,
+    secondary: Color = MaterialTheme.colorScheme.tertiary,
+    base: Color = MaterialTheme.colorScheme.background,
+    surface: Color = MaterialTheme.colorScheme.surface
+) {
+    val context = LocalContext.current
+    val a = AppearanceState.get(context)
+    Box(modifier) {
+        when (a.background) {
+            Appearance.BG_SOLID -> Box(Modifier.fillMaxSize().background(base))
+            Appearance.BG_MESH -> MeshBackground(base, surface, accent, secondary)
+            Appearance.BG_IMAGE -> ImageBackground(a, base)
+            else -> Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(listOf(lerp(base, accent, 0.06f), base, lerp(base, secondary, 0.05f)))
+                )
+            )
+        }
+        if (a.glow) GlowLayer(accent, secondary, a.glowIntensity / 100f, a.glowMotion && a.motion)
+    }
+}
+
+/** 兼容旧调用名。 */
 @Composable
 fun AmbientGlow(
     accent: Color = MaterialTheme.colorScheme.primary,
     modifier: Modifier = Modifier,
     secondary: Color = MaterialTheme.colorScheme.tertiary
-) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
-    val context = LocalContext.current
-    val enabled = remember(context) {
-        runCatching { com.focusguard.app.data.Settings(context).bgBlurEnabled }.getOrDefault(true)
-    }
-    if (!enabled) return
+) = AppBackground(modifier, accent, secondary)
 
-    // 两团光斑缓慢漂移呼吸（12s 周期，幅度克制）；系统关闭动画时静止
-    val on = animationsEnabled()
+@Composable
+private fun GlowLayer(accent: Color, secondary: Color, intensity: Float, moving: Boolean) {
+    val on = moving && animationsEnabled()
     val drift = if (on) {
         androidx.compose.animation.core.rememberInfiniteTransition(label = "glow").animateFloat(
             initialValue = 0f,
             targetValue = 1f,
             animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                androidx.compose.animation.core.tween(12_000, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                androidx.compose.animation.core.tween(14_000, easing = androidx.compose.animation.core.FastOutSlowInEasing),
                 androidx.compose.animation.core.RepeatMode.Reverse
             ),
             label = "drift"
         ).value
     } else 0.5f
-    Box(modifier) {
-        Box(
-            modifier = Modifier
-                .size(360.dp)
-                .align(Alignment.TopEnd)
-                .offset(x = (90 + 30 * drift).dp, y = (-100 + 40 * drift).dp)
-                .blur(80.dp)
-                .background(
-                    Brush.radialGradient(listOf(accent.copy(alpha = 0.22f + 0.08f * drift), Color.Transparent))
-                )
+    val k = intensity.coerceIn(0.1f, 1f)
+    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        fun glow(c: Color, cx: Float, cy: Float, r: Float, alpha: Float) {
+            val center = androidx.compose.ui.geometry.Offset(cx, cy)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(c.copy(alpha = alpha), c.copy(alpha = alpha * 0.35f), Color.Transparent),
+                    center = center,
+                    radius = r
+                ),
+                radius = r,
+                center = center
+            )
+        }
+        glow(accent, w * (0.82f + 0.12f * drift), h * (0.06f + 0.08f * drift), w * 0.85f, 0.42f * k)
+        glow(secondary, w * (0.10f - 0.08f * drift), h * (0.78f - 0.10f * drift), w * 0.80f, 0.34f * k)
+        glow(lerp(accent, secondary, 0.5f), w * (0.5f + 0.15f * (drift - 0.5f)), h * 0.45f, w * 0.55f, 0.12f * k)
+    }
+}
+
+/** 网格光斑：四角多色柔光，适合偏爱浓郁色彩的用户。 */
+@Composable
+private fun MeshBackground(base: Color, surface: Color, accent: Color, secondary: Color) {
+    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+        drawRect(base)
+        val w = size.width
+        val h = size.height
+        val spots = listOf(
+            Triple(lerp(accent, surface, 0.35f), androidx.compose.ui.geometry.Offset(0f, 0f), 0.55f),
+            Triple(lerp(secondary, surface, 0.35f), androidx.compose.ui.geometry.Offset(w, h * 0.35f), 0.50f),
+            Triple(lerp(accent, secondary, 0.5f), androidx.compose.ui.geometry.Offset(w * 0.2f, h), 0.45f),
+            Triple(lerp(surface, accent, 0.25f), androidx.compose.ui.geometry.Offset(w, h), 0.40f)
         )
-        Box(
-            modifier = Modifier
-                .size(320.dp)
-                .align(Alignment.BottomStart)
-                .offset(x = (-110 + 40 * drift).dp, y = (80 - 30 * drift).dp)
-                .blur(80.dp)
-                .background(
-                    Brush.radialGradient(listOf(secondary.copy(alpha = 0.16f + 0.06f * (1 - drift)), Color.Transparent))
-                )
-        )
+        spots.forEach { (c, center, a) ->
+            val r = maxOf(w, h) * 0.75f
+            drawCircle(
+                brush = Brush.radialGradient(listOf(c.copy(alpha = a), Color.Transparent), center = center, radius = r),
+                radius = r,
+                center = center
+            )
+        }
+    }
+}
+
+/** 自定义图片背景：居中裁切 + 可选模糊 + 主题色遮罩（保证文字可读）。 */
+@Composable
+private fun ImageBackground(a: Appearance, base: Color) {
+    val context = LocalContext.current
+    val file = AppearanceState.imageFile(context, a)
+    val bitmap = remember(a.imageFile) {
+        file?.let { runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
+            ?.asImageBitmap()
+    }
+    Box(Modifier.fillMaxSize().background(base)) {
+        if (bitmap != null) {
+            androidx.compose.foundation.Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (a.imageBlur > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                            Modifier.blur(a.imageBlur.dp) else Modifier
+                    )
+            )
+            Box(Modifier.fillMaxSize().background(base.copy(alpha = a.imageDim.coerceIn(0, 90) / 100f)))
+        }
     }
 }
 
@@ -105,6 +188,7 @@ fun AmbientGlow(
 @Composable
 fun animationsEnabled(): Boolean {
     val context = LocalContext.current
+    if (!AppearanceState.get(context).motion) return false
     return remember(context) {
         runCatching {
             android.provider.Settings.Global.getFloat(
@@ -134,5 +218,17 @@ fun Modifier.pressScale(
     graphicsLayer {
         scaleX = scale
         scaleY = scale
+    }
+}
+
+/** Material Card 的统一容器色（跟随外观设置：玻璃 / 实色 / 描边 + 不透明度）。 */
+@Composable
+fun cardContainer(): Color {
+    val scheme = MaterialTheme.colorScheme
+    val a = AppearanceState.get(LocalContext.current)
+    return when (a.cardStyle) {
+        Appearance.CARD_SOLID -> scheme.surfaceVariant
+        Appearance.CARD_OUTLINE -> scheme.surface.copy(alpha = 0.35f)
+        else -> scheme.surfaceVariant.copy(alpha = a.cardOpacity.coerceIn(40, 100) / 100f)
     }
 }

@@ -552,16 +552,84 @@ object LockOverlayManager {
         com.focusguard.app.ui.theme.FocusColors.hex(c).substring(1)
     )
 
-    /** 雅致深空渐变背景，拒绝纯黑死黑，与系统级锁机页同源。 */
-    private fun buildBackground(context: Context): GradientDrawable {
+    /**
+     * 悬浮窗背景：与 Compose 锁机页同源（[com.focusguard.app.ui.theme.AppearanceState]）。
+     * 自定义图片 → 居中裁切 + 主题色遮罩；其余 → 主题渐变 + 角落光晕。
+     */
+    private fun buildBackground(context: Context): android.graphics.drawable.Drawable {
         val p = palette(context)
-        val bgTop = android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.bg))
-        val bgCenter = android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.surface))
-        return GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(bgTop, bgCenter, bgTop)
-        )
+        val a = com.focusguard.app.ui.theme.AppearanceState.get(context)
+        val bg = android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.bg))
+        val surface = android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.surface))
+        val base: android.graphics.drawable.Drawable =
+            if (a.background == com.focusguard.app.ui.theme.Appearance.BG_SOLID) {
+                GradientDrawable().apply { setColor(bg) }
+            } else {
+                GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(surface, bg, bg))
+            }
+        val layers = mutableListOf(base)
+        if (a.background == com.focusguard.app.ui.theme.Appearance.BG_IMAGE) {
+            com.focusguard.app.ui.theme.AppearanceState.imageFile(context, a)?.let { f ->
+                runCatching { android.graphics.BitmapFactory.decodeFile(f.absolutePath) }.getOrNull()?.let { bmp ->
+                    layers += CenterCropDrawable(bmp)
+                    layers += GradientDrawable().apply {
+                        setColor(android.graphics.Color.parseColor(tint(p.bg, (a.imageDim.coerceIn(0, 90) * 255 / 100))))
+                    }
+                }
+            }
+        }
+        if (a.glow) {
+            val alpha = (0x66 * a.glowIntensity.coerceIn(10, 100) / 100)
+            layers += GradientDrawable().apply {
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = context.resources.displayMetrics.widthPixels * 0.85f
+                setGradientCenter(0.85f, 0.08f)
+                colors = intArrayOf(
+                    android.graphics.Color.parseColor(tint(p.accent, alpha)),
+                    android.graphics.Color.TRANSPARENT
+                )
+            }
+            layers += GradientDrawable().apply {
+                gradientType = GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = context.resources.displayMetrics.widthPixels * 0.8f
+                setGradientCenter(0.1f, 0.8f)
+                colors = intArrayOf(
+                    android.graphics.Color.parseColor(tint(p.glow, alpha * 4 / 5)),
+                    android.graphics.Color.TRANSPARENT
+                )
+            }
+        }
+        return android.graphics.drawable.LayerDrawable(layers.toTypedArray())
     }
+
+    /** 居中裁切的位图 Drawable（悬浮窗自定义背景图用）。 */
+    private class CenterCropDrawable(private val bmp: android.graphics.Bitmap) : android.graphics.drawable.Drawable() {
+        private val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+        private val matrix = android.graphics.Matrix()
+        override fun draw(canvas: android.graphics.Canvas) {
+            val b = bounds
+            if (b.isEmpty) return
+            val scale = maxOf(b.width() / bmp.width.toFloat(), b.height() / bmp.height.toFloat())
+            matrix.setScale(scale, scale)
+            matrix.postTranslate(
+                b.left + (b.width() - bmp.width * scale) / 2f,
+                b.top + (b.height() - bmp.height * scale) / 2f
+            )
+            canvas.drawBitmap(bmp, matrix, paint)
+        }
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+        override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = android.graphics.PixelFormat.OPAQUE
+    }
+
+    /** 倒计时字体：与 Compose 锁机页一致（衬线 / 无衬线 / 等宽）。 */
+    private fun lockTypeface(context: Context): Typeface =
+        when (com.focusguard.app.ui.theme.AppearanceState.get(context).lockFont) {
+            com.focusguard.app.ui.theme.Appearance.FONT_SANS -> Typeface.create("sans-serif", Typeface.BOLD)
+            com.focusguard.app.ui.theme.Appearance.FONT_MONO -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            else -> Typeface.create("serif", Typeface.BOLD)
+        }
 
     private fun buildContent(
         context: Context,
@@ -695,7 +763,7 @@ object LockOverlayManager {
             text = "--:--"
             textSize = 50f
             setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = lockTypeface(context)
             gravity = Gravity.CENTER
             setPadding(0, dp(context, 6), 0, 0)
         }
@@ -825,7 +893,7 @@ object LockOverlayManager {
             text = "--:--"
             textSize = 34f
             setTextColor(android.graphics.Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = lockTypeface(context)
             gravity = Gravity.CENTER
             setPadding(0, dp(context, 4), 0, 0)
         }

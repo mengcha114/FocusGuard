@@ -202,7 +202,7 @@ fun AppControlScreen() {
 @Composable
 private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Unit) {
     val (statusLabel, statusColor) = when (app.category) {
-        AppCategory.GAME -> "游戏" to Color(0xFFF44336)
+        AppCategory.GAME -> "游戏" to MaterialTheme.colorScheme.error
         AppCategory.STUDY -> "学习" to MaterialTheme.colorScheme.tertiary
         AppCategory.SYSTEM -> "系统" to MaterialTheme.colorScheme.onSurfaceVariant
         AppCategory.VIDEO -> "视频" to MaterialTheme.colorScheme.tertiary
@@ -220,7 +220,7 @@ private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Un
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
     ) {
         Row(
             modifier = Modifier
@@ -421,7 +421,7 @@ private fun AppEditSheet(
             )
 
             errorMsg?.let {
-                Text(it, color = Color(0xFFC6786F), fontSize = 12.sp)
+                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             }
 
             Spacer(Modifier.height(4.dp))
@@ -510,7 +510,7 @@ private fun AppEditSheet(
                             shape = RoundedCornerShape(12.dp)
                         )
                         verifyError?.let {
-                            Text(it, fontSize = 12.sp, color = Color(0xFFF44336))
+                            Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                         }
                     }
                 },

@@ -231,8 +231,8 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .background(MaterialTheme.colorScheme.background)
                     ) {
-                        // 全局环境光斑：与半透明卡片叠加成玻璃材质（Android 12+ 生效）
-                        com.focusguard.app.ui.theme.AmbientGlow(
+                        // 全局背景层：纯色 / 渐变 / 网格 / 自定义图片 + 流光光晕（设置里可调）
+                        com.focusguard.app.ui.theme.AppBackground(
                             modifier = Modifier.fillMaxSize()
                         )
                     Scaffold(

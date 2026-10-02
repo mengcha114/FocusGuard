@@ -110,6 +110,14 @@ fun FocusGuardTheme(
     val palette = remember(themeMode, accentOverride, sysDark) {
         FocusColors.paletteFor(themeMode, context, accentOverride)
     }
+    val appearance = AppearanceState.get(context)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
+            density.density,
+            density.fontScale * appearance.fontScale.coerceIn(85, 125) / 100f
+        )
+    ) {
     MaterialTheme(
         colorScheme = schemeFrom(palette),
         typography = Typography,
@@ -122,6 +130,7 @@ fun FocusGuardTheme(
         ),
         content = content
     )
+    }
 }
 
 private val Int.dp get() = androidx.compose.ui.unit.Dp(this.toFloat())
