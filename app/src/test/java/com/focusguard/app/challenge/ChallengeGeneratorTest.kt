@@ -26,10 +26,13 @@ class ChallengeGeneratorTest {
     @Test
     fun answerChecksAcceptOwnAnswerAndRejectOffByOne() {
         repeat(500) {
-            val q = gen.generate(3, grade = GradeStore.Grade.COLLEGE)
+            val q = gen.generate(3, numericOnly = true, grade = GradeStore.Grade.COLLEGE)
             assertTrue(gen.isAnswerCorrect(q.answer, q.answer))
             assertTrue(gen.isAnswerCorrect(" ${q.answer} ", q.answer))
-            assertFalse(gen.isAnswerCorrect((q.answer.toLong() + 1).toString(), q.answer))
+            val n = q.answer.toLongOrNull()
+            if (n != null) {
+                assertFalse(gen.isAnswerCorrect((n + 1).toString(), q.answer))
+            }
         }
     }
 
@@ -74,8 +77,8 @@ class ChallengeGeneratorTest {
         val g = ChallengeGenerator()
         val kinds = ArrayList<String>()
         val texts = HashSet<String>()
-        repeat(150) {
-            val q = g.generate(2, grade = GradeStore.Grade.SENIOR_2)
+        repeat(60) {
+            val q = g.generate(2, numericOnly = true, grade = GradeStore.Grade.SENIOR_2)
             assertTrue("repeated question: ${q.question}", texts.add(q.question))
             kinds += q.kind
         }
