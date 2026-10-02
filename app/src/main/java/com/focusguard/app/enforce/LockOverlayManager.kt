@@ -706,7 +706,7 @@ object LockOverlayManager {
             }
             setPadding(dp(context, 14), dp(context, 6), dp(context, 14), dp(context, 6))
             addView(TextView(context).apply {
-                text = "🪟 浮窗常驻守护"
+                text = "🔒 普通模式守护"
                 textSize = 11f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))

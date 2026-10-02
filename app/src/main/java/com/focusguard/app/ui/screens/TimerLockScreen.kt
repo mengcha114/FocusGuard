@@ -51,7 +51,7 @@ private val pomodoroPresets = listOf(25 to 5, 50 to 10, 90 to 20)
 /** 当前设备的防护等级（决定锁机能否被绕过）。 */
 enum class ProtectionLevel(val label: String, val detail: String) {
     SYSTEM("系统级", "Dhizuku Lock Task：手势、最近任务、强行停止全部失效"),
-    OVERLAY("悬浮窗", "全屏悬浮窗 + 无障碍拦截；国产 ROM 一键清理仍可能终止守护"),
+    OVERLAY("普通模式", "全屏锁机界面 + 无障碍拦截；国产 ROM 一键清理仍可能终止守护"),
     BASIC("基础", "缺少悬浮窗权限，锁机页可能被手势切走")
 }
 
@@ -143,7 +143,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
         }
         FxExpand(visible = protection == ProtectionLevel.BASIC && accessibilityOn) {
             FxNotice(
-                text = "未授予悬浮窗权限：锁机页可能被手势切走。建议在权限页授予悬浮窗，或配置 Dhizuku 获得系统级锁机。",
+                text = "未授予悬浮窗权限，普通模式无法启用，锁机页可能被手势切走。建议在权限页授予悬浮窗权限，或配置 Dhizuku 获得系统级锁机。",
                 tone = MaterialTheme.colorScheme.error,
                 icon = Icons.Default.Warning
             )

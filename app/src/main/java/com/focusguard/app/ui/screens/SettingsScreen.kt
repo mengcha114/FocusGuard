@@ -417,7 +417,7 @@ fun SettingsScreen(
                         text = when {
                             lockTaskOn -> "已生效 · 锁机期间系统级封锁"
                             dhizukuReady -> "Dhizuku 已连接 · 锁机时自动进入"
-                            else -> "未启用（将使用悬浮窗方案）"
+                            else -> "未启用（将使用普通模式）"
                         },
                         fontSize = 14.sp,
                         color = when {

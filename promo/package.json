@@ -1,0 +1,22 @@
+{
+  "name": "focusguard-promo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "FocusGuard 宣传视频（Remotion）",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "render": "remotion render src/index.ts Promo out/promo.mp4 --codec h264 --crf 18 --audio-bitrate 192k",
+    "still": "remotion still src/index.ts Promo"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.532",
+    "@remotion/transitions": "4.0.532",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.532"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.31",
+    "typescript": "5.9.3"
+  }
+}
