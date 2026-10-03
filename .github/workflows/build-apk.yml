@@ -56,8 +56,9 @@ jobs:
           printf 'FOCUSGUARD_KEY_ALIAS=%s\n' "$FOCUSGUARD_KEY_ALIAS" >> "$GITHUB_ENV"
           printf 'FOCUSGUARD_KEY_PASSWORD=%s\n' "$FOCUSGUARD_KEY_PASSWORD" >> "$GITHUB_ENV"
 
+      # 拆分 flavor 后 testDebugUnitTest 有歧义，需明确指定两个变体
       - name: 单元测试
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: ./gradlew testEduDebugUnitTest testGeneralDebugUnitTest --no-daemon
 
       - name: 上传测试报告
         if: failure()
