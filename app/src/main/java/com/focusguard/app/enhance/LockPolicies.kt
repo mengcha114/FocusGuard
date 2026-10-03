@@ -24,6 +24,15 @@ object LockPolicies {
     /** 冻结是由谁施加的（dhizuku / shizuku）：解冻必须用同一个施加者。 */
     private const val KEY_SUSPENDED_BY = "suspended_by"
 
+    /** 用户启用的加固项（缺省时用各项的 defaultOn）。 */
+    private const val KEY_HARDENING = "hardening_enabled"
+
+    /** 当前已施加的加固项（用于锁机结束精确撤销）。 */
+    private const val KEY_HARDENING_APPLIED = "hardening_applied"
+
+    /** 「自动设置时间」的用户原值（锁机结束还原）。 */
+    private const val KEY_AUTOTIME_ORIGINAL = "autotime_original_bool"
+
     /** AI 对话手动下达的长期冻结（不受锁机结束影响，解冻需答题）。 */
     private const val KEY_PERSIST = "persist_suspended_pkgs"
     private const val KEY_PERSIST_BY = "persist_suspended_by"
@@ -56,19 +65,234 @@ object LockPolicies {
      * 本次锁机要施加的用户限制。
      * 注意：禁用 USB 调试会让依赖 adb 的 Shizuku 立即停止，所以 Shizuku 在运行时不加这一项。
      */
+    /**
+     * 本次锁机要施加的用户限制。
+     *
+     * 注意：**每一项都必须同时出现在 [ALL_RESTRICTIONS] 里**，否则锁机结束不会撤销，
+     * 用户会被永久限制（这是本模块最容易出错的地方）。
+     */
     private fun restrictions(c: Context): List<String> = buildList {
         add(UserManager.DISALLOW_CONFIG_DATE_TIME)  // 禁止改系统时间
         add(UserManager.DISALLOW_SAFE_BOOT)         // 禁止安全模式（会禁用第三方应用）
         add(UserManager.DISALLOW_ADD_USER)          // 禁止新建用户绕过
-        if (!ShizukuEnhancer.isAvailable()) add(UserManager.DISALLOW_DEBUGGING_FEATURES)
+        val shizukuOn = ShizukuEnhancer.isAvailable()
+        // 调试开关：Shizuku 依赖 adb，它在跑时不施加（默认开，可在设置里关）
+        if (!shizukuOn && isHardeningEnabled(c, Hardening.NO_DEBUG)) {
+            add(UserManager.DISALLOW_DEBUGGING_FEATURES)
+        }
         if (isBlockResetEnabled(c)) add(UserManager.DISALLOW_FACTORY_RESET)
+        // 加固项（默认开/关见 Hardening）
+        if (isHardeningEnabled(c, Hardening.NO_INSTALL)) {
+            add(UserManager.DISALLOW_INSTALL_APPS)
+            add(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES)
+        }
+        if (isHardeningEnabled(c, Hardening.NO_APPS_CONTROL)) add(UserManager.DISALLOW_APPS_CONTROL)
+        if (isHardeningEnabled(c, Hardening.NO_USB)) add(UserManager.DISALLOW_USB_FILE_TRANSFER)
+        if (isHardeningEnabled(c, Hardening.NO_UNINSTALL)) add(UserManager.DISALLOW_UNINSTALL_APPS)
     }
 
+    /** 撤销时用**全量**列表：比施加列表多没关系，少一项就会残留。 */
     private val ALL_RESTRICTIONS = listOf(
         UserManager.DISALLOW_CONFIG_DATE_TIME, UserManager.DISALLOW_SAFE_BOOT,
         UserManager.DISALLOW_ADD_USER, UserManager.DISALLOW_DEBUGGING_FEATURES,
-        UserManager.DISALLOW_FACTORY_RESET
+        UserManager.DISALLOW_FACTORY_RESET, UserManager.DISALLOW_INSTALL_APPS,
+        UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES, UserManager.DISALLOW_APPS_CONTROL,
+        UserManager.DISALLOW_USB_FILE_TRANSFER, UserManager.DISALLOW_UNINSTALL_APPS
     )
+
+    /**
+     * 可选的锁机加固项（设置页逐项开关）。
+     *
+     * 前 4 项默认开（「最强锁机」的基线），其余默认关由用户自行决定 ——
+     * 每项只在锁机期间生效，锁机结束按 [KEY_HARDENING_APPLIED] 精确撤销。
+     */
+    enum class Hardening(
+        val key: String,
+        val label: String,
+        val hint: String,
+        val defaultOn: Boolean
+    ) {
+        AUTO_TIME(
+            "auto_time", "强制自动时间",
+            "锁机期间强制「自动设置时间/时区」，改时间缩短不了锁机（原生能力，不需要 Shizuku）", true
+        ),
+        NO_INSTALL(
+            "no_install", "禁止安装应用",
+            "锁机期间装不了任何新应用（分屏/虚拟机/破解工具都进不来）；本应用的更新也会被挡", true
+        ),
+        NO_APPS_CONTROL(
+            "no_apps_control", "禁止管理应用",
+            "锁机期间在设置里不能强行停止/清除其它应用的数据", true
+        ),
+        NO_DEBUG(
+            "no_debug", "禁止 USB 调试",
+            "锁机期间关掉开发者选项与 adb（电脑连不上就卸不了/停不了）；Shizuku 在运行时不施加，否则它会掉线", true
+        ),
+        NO_USB(
+            "no_usb", "禁止 USB 传文件",
+            "锁机期间插电脑也看不到手机里的文件", false
+        ),
+        NO_CAMERA(
+            "no_camera", "禁止相机",
+            "锁机期间相机打不开（防拍照搜题）", false
+        ),
+        NO_CAPTURE(
+            "no_capture", "禁止截图录屏",
+            "锁机期间无法截图/录屏；注意与「锁机期间仍做 AI 检测」冲突（检测要截图），两者只开一个", false
+        ),
+        DENY_PERMS(
+            "deny_perms", "权限自动拒绝",
+            "锁机期间其它应用申请权限一律自动拒绝", false
+        ),
+        NO_UPDATE(
+            "no_update", "禁止系统更新",
+            "锁机期间禁用系统更新，避免更新重启打断锁机", false
+        ),
+        NO_UNINSTALL(
+            "no_uninstall", "禁止卸载任何应用",
+            "锁机期间任何应用都卸不掉（包括你自己想删的）", false
+        ),
+        INPUT_LOCK(
+            "input_lock", "输入法白名单",
+            "锁机期间只允许系统输入法，防第三方输入法自带的浏览器/面板绕过；只有小众输入法的机器慎用", false
+        ),
+        LOCK_NOW(
+            "lock_now", "执法瞬间锁屏",
+            "AI 执法时先把屏幕灭掉，必须重新解锁设备才看到锁机界面", false
+        ),
+        CRACK_FREEZE(
+            "crack_freeze", "冻结破解工具",
+            "锁机期间冻结「冰箱/小黑屋/Island/黑阈/Auto.js/自动点击器/多开分身/虚拟机/远程控制/修改器」等能用来破解或自动答题的工具；锁机结束自动解冻", true
+        ),
+        CRACK_HIDE(
+            "crack_hide", "隐藏破解工具",
+            "比冻结更彻底：图标从桌面与搜索里消失；锁机结束自动恢复", false
+        ),
+        CRACK_DETECT(
+            "crack_detect", "破解环境检测（只留痕）",
+            "锁机期间检测 root / Xposed / 调试器并写入检测日志；不做拒绝解锁，避免误伤与死锁", true
+        )
+    }
+
+    /** 加固项是否启用（未设置过时用默认值）。 */
+    fun isHardeningEnabled(c: Context, item: Hardening): Boolean {
+        val set = prefs(c).getStringSet(KEY_HARDENING, null)
+            ?: return item.defaultOn
+        return set.contains(item.key)
+    }
+
+    fun setHardeningEnabled(c: Context, item: Hardening, on: Boolean) {
+        val p = prefs(c)
+        val current = p.getStringSet(KEY_HARDENING, null)
+            ?: Hardening.entries.filter { it.defaultOn }.map { it.key }.toSet()
+        val next = current.toMutableSet()
+        if (on) next.add(item.key) else next.remove(item.key)
+        p.edit().putStringSet(KEY_HARDENING, next).apply()
+    }
+
+    /** 当前生效的加固项数量（状态卡展示用）。 */
+    fun enabledHardeningCount(c: Context): Int =
+        Hardening.entries.count { isHardeningEnabled(c, it) }
+
+    /** 系统自带（含系统更新版）输入法包名，用作输入法白名单。 */
+    private fun systemInputMethods(context: Context): List<String> {
+        val pm = context.packageManager
+        val intent = android.content.Intent("android.view.inputmethod.InputMethod")
+        val services = runCatching { pm.queryIntentServices(intent, 0) }.getOrDefault(emptyList())
+        return services.mapNotNull { it.serviceInfo?.packageName }
+            .filter { pkg ->
+                val ai = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull()
+                ai != null && (ai.flags and (
+                    android.content.pm.ApplicationInfo.FLAG_SYSTEM or
+                        android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+                    )) != 0
+            }
+            .distinct()
+    }
+
+    /**
+     * 施加启用的加固项，返回**实际生效**的项。
+     * 没生效的（工具未就绪 / 系统拒绝）不记账，下一个巡检会重试。
+     */
+    private fun applyHardening(app: Context): Set<String> {
+        val p = prefs(app)
+        val applied = p.getStringSet(KEY_HARDENING_APPLIED, emptySet()).orEmpty().toMutableSet()
+        if (!DhizukuEnhancer.ensureReady(app)) return applied
+
+        if (isHardeningEnabled(app, Hardening.AUTO_TIME)) {
+            if (!p.contains(KEY_AUTOTIME_ORIGINAL)) {
+                val original = runCatching {
+                    android.provider.Settings.Global.getInt(
+                        app.contentResolver, android.provider.Settings.Global.AUTO_TIME, 1
+                    ) == 1
+                }.getOrDefault(true)
+                p.edit().putBoolean(KEY_AUTOTIME_ORIGINAL, original).apply()
+            }
+            val a = DhizukuEnhancer.setAutoTimeEnabled(app, true)
+            val b = DhizukuEnhancer.setAutoTimeZoneEnabled(app, true)
+            if (a || b) applied.add(Hardening.AUTO_TIME.key)
+        }
+        if (isHardeningEnabled(app, Hardening.NO_CAMERA) &&
+            DhizukuEnhancer.setCameraDisabled(app, true)
+        ) {
+            applied.add(Hardening.NO_CAMERA.key)
+        }
+        if (isHardeningEnabled(app, Hardening.NO_CAPTURE) &&
+            DhizukuEnhancer.setScreenCaptureDisabled(app, true)
+        ) {
+            applied.add(Hardening.NO_CAPTURE.key)
+        }
+        if (isHardeningEnabled(app, Hardening.DENY_PERMS) &&
+            DhizukuEnhancer.setPermissionPolicyAutoDeny(app, true)
+        ) {
+            applied.add(Hardening.DENY_PERMS.key)
+        }
+        if (isHardeningEnabled(app, Hardening.NO_UPDATE) &&
+            DhizukuEnhancer.setSystemUpdateBlocked(app, true)
+        ) {
+            applied.add(Hardening.NO_UPDATE.key)
+        }
+        if (isHardeningEnabled(app, Hardening.INPUT_LOCK)) {
+            val methods = systemInputMethods(app)
+            if (methods.isNotEmpty() && DhizukuEnhancer.setPermittedInputMethods(app, methods)) {
+                applied.add(Hardening.INPUT_LOCK.key)
+            }
+        }
+        if (isHardeningEnabled(app, Hardening.CRACK_HIDE) && CrackGuard.applyHide(app)) {
+            applied.add(Hardening.CRACK_HIDE.key)
+        }
+        if (isHardeningEnabled(app, Hardening.CRACK_DETECT)) {
+            // 只留痕：root/Xposed 直接改内存我们挡不住，如实记录，不拒绝解锁
+            CrackGuard.reportIfNeeded(app)
+        }
+        return applied
+    }
+
+    /** 锁机结束：按记录撤销加固项。工具未就绪时保留记录，下次服务启动再试。 */
+    private fun revertHardening(app: Context) {
+        val p = prefs(app)
+        val applied = p.getStringSet(KEY_HARDENING_APPLIED, emptySet()).orEmpty()
+        if (!DhizukuEnhancer.ensureReady(app)) {
+            Log.w(TAG, "Dhizuku 未就绪，加固暂不撤销，稍后重试（记录 ${applied.size} 项）")
+            return
+        }
+        // 无条件撤销全部项：并发写入/记录丢失都不会留下「关不掉的相机」这类残留
+        if (true) {
+            val original = p.getBoolean(KEY_AUTOTIME_ORIGINAL, true)
+            DhizukuEnhancer.setAutoTimeEnabled(app, original)
+            DhizukuEnhancer.setAutoTimeZoneEnabled(app, original)
+            p.edit().remove(KEY_AUTOTIME_ORIGINAL).apply()
+        }
+        if (applied.contains(Hardening.NO_CAMERA.key)) DhizukuEnhancer.setCameraDisabled(app, false)
+        if (applied.contains(Hardening.NO_CAPTURE.key)) DhizukuEnhancer.setScreenCaptureDisabled(app, false)
+        if (applied.contains(Hardening.DENY_PERMS.key)) DhizukuEnhancer.setPermissionPolicyAutoDeny(app, false)
+        if (applied.contains(Hardening.NO_UPDATE.key)) DhizukuEnhancer.setSystemUpdateBlocked(app, false)
+        if (applied.contains(Hardening.INPUT_LOCK.key)) DhizukuEnhancer.setPermittedInputMethods(app, null)
+        // 被隐藏的破解工具无条件恢复（记录丢失也不会留下「消失的应用」）
+        runCatching { CrackGuard.revertHide(app) }
+        p.edit().putStringSet(KEY_HARDENING_APPLIED, emptySet()).apply()
+        Log.d(TAG, "锁机结束已撤销 ${applied.size} 项加固")
+    }
 
     /**
      * 需要冻结的娱乐应用：**用户手动标记的** ∪ **AI 学习到的**分类。
@@ -100,8 +324,17 @@ object LockPolicies {
             ShizukuEnhancer.readAutoTime()?.let { editor.putString(KEY_AUTO_TIME_ORIGINAL, it) }
             ShizukuEnhancer.ensureAutoTime()
         }
-        if (isFreezeEnabled(app) && p.getStringSet(KEY_SUSPENDED, emptySet()).isNullOrEmpty()) {
-            val pkgs = entertainmentPackages(app)
+        // 逐项加固（相机/截图/权限策略/系统更新/输入法/自动时间）
+        editor.putStringSet(KEY_HARDENING_APPLIED, applyHardening(app))
+        if (p.getStringSet(KEY_SUSPENDED, emptySet()).isNullOrEmpty()) {
+            val entertainment = if (isFreezeEnabled(app)) entertainmentPackages(app) else emptySet()
+            // 防破解：把能用来掐我们进程 / 自动答题 / 多开绕过的工具一起冻住
+            val cracks = if (isHardeningEnabled(app, Hardening.CRACK_FREEZE)) {
+                CrackGuard.matched(app)
+            } else {
+                emptySet()
+            }
+            val pkgs = entertainment + cracks
             val by = freeze(app, pkgs)
             if (by != null) {
                 editor.putStringSet(KEY_SUSPENDED, pkgs)
@@ -116,6 +349,7 @@ object LockPolicies {
     fun onLockEnd(context: Context) {
         val app = context.applicationContext
         val p = prefs(app)
+        runCatching { revertHardening(app) }.onFailure { Log.w(TAG, "撤销加固失败：${it.message}") }
         val editor = p.edit()
         if (p.getBoolean(KEY_RESTRICTED, false) && DhizukuEnhancer.ensureReady(app)) {
             ALL_RESTRICTIONS.forEach { DhizukuEnhancer.setUserRestriction(app, it, false) }
@@ -335,6 +569,22 @@ object LockPolicies {
                 .commit()
         }
         return ok
+    }
+
+    /**
+     * 锁机期间的定期补设（低频调用，必须后台线程）：
+     * 上次没设置成功的限制/加固这里重试，避免「一次失败 = 整轮锁机都没保护」。
+     */
+    fun reassertWhileLocked(context: Context) {
+        val app = context.applicationContext
+        val p = prefs(app)
+        if (DhizukuEnhancer.ensureReady(app) && !p.getBoolean(KEY_RESTRICTED, false)) {
+            val allOk = restrictions(app).all { DhizukuEnhancer.setUserRestriction(app, it, true) }
+            if (allOk) p.edit().putBoolean(KEY_RESTRICTED, true).apply()
+            else Log.w(TAG, "用户限制补设仍未全部成功，下轮再试")
+        }
+        val applied = applyHardening(app)
+        p.edit().putStringSet(KEY_HARDENING_APPLIED, applied).apply()
     }
 
     /** 服务启动时调用：不在锁机却有残留限制 / 冻结 → 立即清除。 */

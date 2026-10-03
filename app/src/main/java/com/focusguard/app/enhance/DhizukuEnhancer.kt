@@ -473,6 +473,125 @@ object DhizukuEnhancer {
         }
     } catch (e: Throwable) { Log.w(TAG, "冻结应用失败：${e.message}"); false }
 
+    // ── 锁机加固用的额外 Device Owner 能力（全部只在锁机期间施加，结束撤销） ──────
+
+    /** 强制/取消「自动设置时间」：原生能力，不需要 Shizuku。 */
+    fun setAutoTimeEnabled(context: Context, enabled: Boolean): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.setAutoTimeEnabled(ownerComponent!!, enabled)
+            Log.d(TAG, "setAutoTimeEnabled($enabled) 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setAutoTimeEnabled 失败：${e.message}"); false
+    }
+
+    /** 强制/取消「自动设置时区」。 */
+    fun setAutoTimeZoneEnabled(context: Context, enabled: Boolean): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.setAutoTimeZoneEnabled(ownerComponent!!, enabled)
+            Log.d(TAG, "setAutoTimeZoneEnabled($enabled) 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setAutoTimeZoneEnabled 失败：${e.message}"); false
+    }
+
+    /** 锁机期间禁用相机（防拍照搜题）。 */
+    fun setCameraDisabled(context: Context, disabled: Boolean): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.setCameraDisabled(ownerComponent!!, disabled)
+            Log.d(TAG, "setCameraDisabled($disabled) 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setCameraDisabled 失败：${e.message}"); false
+    }
+
+    /** 锁机期间禁止截图/录屏（注意：与「锁机期间仍做 AI 检测」互斥）。 */
+    fun setScreenCaptureDisabled(context: Context, disabled: Boolean): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.setScreenCaptureDisabled(ownerComponent!!, disabled)
+            Log.d(TAG, "setScreenCaptureDisabled($disabled) 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setScreenCaptureDisabled 失败：${e.message}"); false
+    }
+
+    /** 设备级权限策略：true = 其他应用申请运行时权限一律自动拒绝。 */
+    fun setPermissionPolicyAutoDeny(context: Context, autoDeny: Boolean): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.setPermissionPolicy(
+                ownerComponent!!,
+                if (autoDeny) DevicePolicyManager.PERMISSION_POLICY_AUTO_DENY
+                else DevicePolicyManager.PERMISSION_POLICY_PROMPT
+            )
+            Log.d(TAG, "setPermissionPolicy(autoDeny=$autoDeny) 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setPermissionPolicy 失败：${e.message}"); false
+    }
+
+    /** 限制可用输入法；传 null 表示恢复不限。 */
+    fun setPermittedInputMethods(context: Context, methods: List<String>?): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.setPermittedInputMethods(ownerComponent!!, methods)
+            Log.d(TAG, "setPermittedInputMethods(${methods?.size ?: 0} 个) 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setPermittedInputMethods 失败：${e.message}"); false
+    }
+
+    /** 锁机期间禁止系统更新（零长度安装窗口 = 永不安装）；false 恢复默认。 */
+    fun setSystemUpdateBlocked(context: Context, blocked: Boolean): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.setSystemUpdatePolicy(
+                ownerComponent!!,
+                if (blocked) android.app.admin.SystemUpdatePolicy.createWindowedInstallPolicy(0, 0)
+                else null
+            )
+            Log.d(TAG, "setSystemUpdatePolicy(blocked=$blocked) 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setSystemUpdatePolicy 失败：${e.message}"); false
+    }
+
+    /** 隐藏/恢复应用（比冻结更彻底：图标从桌面与搜索里消失）。返回是否全部成功。 */
+    fun setApplicationHidden(context: Context, pkgs: Collection<String>, hidden: Boolean): Boolean = try {
+        if (!ensureReady(context) || pkgs.isEmpty()) false else {
+            val failed = wrappedDpm?.setApplicationHidden(ownerComponent!!, pkgs.toTypedArray(), hidden)
+            val ok = failed.isNullOrEmpty()
+            Log.d(TAG, "setApplicationHidden(${pkgs.size} 个, hidden=$hidden) ok=$ok")
+            ok
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setApplicationHidden 失败：${e.message}"); false
+    }
+
+    /** 单个包当前是否被隐藏（用于恢复时逐包验证）。 */
+    fun isApplicationHidden(context: Context, pkg: String): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.isApplicationHidden(ownerComponent!!, pkg) ?: false
+        }
+    } catch (e: Throwable) {
+        false
+    }
+
+    /** 立即锁屏（执法瞬间灭屏，用户必须重新解锁设备才面对锁机界面）。 */
+    fun lockNow(context: Context): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.lockNow(0)
+            Log.d(TAG, "lockNow 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "lockNow 失败：${e.message}"); false
+    }
+
     /** 本应用是否已被允许进入 Lock Task 模式。 */
     fun isLockTaskPermitted(packageName: String): Boolean {
         val dpm = wrappedDpm ?: return false

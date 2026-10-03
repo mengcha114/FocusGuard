@@ -514,6 +514,13 @@ class LockGuardService : Service() {
             }
         }
 
+        // 锁机中的定期补设：加固/限制上次没设置成功的这里重试（~20 秒一次，后台线程）
+        if (lockedNow && tickCount % 66 == 33) {
+            Thread {
+                runCatching { com.focusguard.app.enhance.LockPolicies.reassertWhileLocked(applicationContext) }
+            }.start()
+        }
+
         // 未锁机时的残留冻结重试：解冻失败（Dhizuku/Shizuku 未就绪）此前只等
         // 下次服务启动，而前台服务常年活着 ⇒ 用户看到「到点了应用还冻着」。
         // 每 ~20 秒重试一次，直到 PackageManager 验证确认解开。

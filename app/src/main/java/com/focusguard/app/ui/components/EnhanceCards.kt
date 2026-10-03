@@ -46,6 +46,29 @@ fun LockHardeningCard() {
             checked = blockReset && dzReady,
             enabled = dzReady
         ) { on -> blockReset = on; LockPolicies.setBlockResetEnabled(context, on) }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
+
+        Text(
+            "锁机期间的系统加固（逐项可关，全部只在锁机期间生效，锁机结束自动撤销）",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+        )
+        LockPolicies.Hardening.entries.forEach { item ->
+            var on by remember(item.key, tick) {
+                mutableStateOf(LockPolicies.isHardeningEnabled(context, item))
+            }
+            SwitchRow(
+                title = item.label,
+                hint = item.hint,
+                checked = on,
+                enabled = true
+            ) { value ->
+                on = value
+                LockPolicies.setHardeningEnabled(context, item, value)
+            }
+        }
     }
 }
 
@@ -89,13 +112,19 @@ fun ShizukuStatusCard() {
     // 枚举已安装应用、取应用标签都是 IO，放到后台线程算，避免卡住设置页组合线程。
     var frozenCount by remember { mutableIntStateOf(0) }
     var suspendedList by remember { mutableStateOf<List<String>>(emptyList()) }
+    var crackCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(tick) {
         val app = context.applicationContext
         val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            LockPolicies.allFrozen(app).size to LockPolicies.suspendedOnDevice(app)
+            Triple(
+                LockPolicies.allFrozen(app).size,
+                LockPolicies.suspendedOnDevice(app),
+                com.focusguard.app.enhance.CrackGuard.matched(app).size
+            )
         }
         frozenCount = result.first
         suspendedList = result.second
+        crackCount = result.third
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -104,6 +133,17 @@ fun ShizukuStatusCard() {
         StatusRow("Dhizuku（系统级锁机）", dzReady, DhizukuEnhancer.lastError.ifBlank { "已就绪" })
         StatusRow("无障碍服务", a11y, if (a11y) "已开启" else "未开启（锁机拦截失效）")
         StatusRow("使用情况访问", usage, if (usage) "已授权" else "未授权（无法识别前台应用）")
+        if (crackCount > 0) {
+            Text(
+                "识别到 $crackCount 个破解/自动化工具（锁机期间按加固开关冻结或隐藏）",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.error
+            )
+        }
+        Text(
+            "锁机加固：已启用 ${LockPolicies.enabledHardeningCount(context)} 项" +
+                "（在「加固」卡里逐项开关；需要 Dhizuku，未就绪时会在就绪后自动生效）",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         // AI 对话下达的冻结属于「放宽需答题」的范围：设置页解冻同样要先答题，
         // 否则这里的「强制解冻 / 全部解冻」就成了绕过答题的后门。
         fun needsQuiz(): Boolean = runCatching {

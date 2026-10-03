@@ -986,6 +986,13 @@ class MonitorService : Service() {
         if (settings.enforcementMode != Settings.EnforcementMode.WARN &&
             settings.enforcementMode != Settings.EnforcementMode.APP_BLOCK
         ) {
+            // 「执法瞬间锁屏」：先把屏幕灭掉，用户必须重新解锁设备才看到锁机界面
+            if (com.focusguard.app.enhance.LockPolicies.isHardeningEnabled(
+                    this, com.focusguard.app.enhance.LockPolicies.Hardening.LOCK_NOW
+                )
+            ) {
+                Thread { runCatching { com.focusguard.app.enhance.DhizukuEnhancer.lockNow(applicationContext) } }.start()
+            }
             // 应用设置里配置的 AI 执法解锁强度；已在锁机时只加码不覆盖
             // （强度 3 的朋友密文由 startLock 内部生成）
             lockState.startLock(settings.lockMinutesOnViolation, "AI", settings.aiLockStrength)
