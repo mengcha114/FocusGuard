@@ -171,6 +171,9 @@ class LockGuardService : Service() {
 
     private var lastLockReassertAt = 0L
     private var lastBlockReassertAt = 0L
+
+    /** 封锁页节流：比锁机置顶的 1 秒短得多——「打开即挡」等不起 1 秒。 */
+    private val blockReassertCooldownMs = 250L
     private var tickCount = 0
 
     /** 是否被用户主动停止（主动停止时 onDestroy 不自重启）。 */
@@ -677,7 +680,7 @@ class LockGuardService : Service() {
         val appBlockStore = com.focusguard.app.data.AppBlockStore(applicationContext)
         val blockUntil = appBlockStore.blockedUntil(foreground)
         if (blockUntil > 0L) {
-            if (now - lastBlockReassertAt < REASSERT_COOLDOWN_MS) return
+            if (now - lastBlockReassertAt < blockReassertCooldownMs) return
             lastBlockReassertAt = now
             Log.d(TAG, "$label 处于临时封锁期，拉起封锁页")
             AppBlockActivity.show(
@@ -697,7 +700,7 @@ class LockGuardService : Service() {
         val usedMinutes = (usageRuleStore.getTodaySeconds(foreground) / 60).toInt()
         if (usedMinutes < limit) return
 
-        if (now - lastBlockReassertAt < REASSERT_COOLDOWN_MS) return
+        if (now - lastBlockReassertAt < blockReassertCooldownMs) return
         lastBlockReassertAt = now
 
         Log.d(TAG, "$label 今日已用 $usedMinutes 分钟，超过上限 $limit 分钟，拉起封锁页")

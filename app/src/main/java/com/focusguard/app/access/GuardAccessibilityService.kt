@@ -248,6 +248,60 @@ class GuardAccessibilityService : AccessibilityService() {
         lastWindowPackage
     }
 
+    /** 被封应用的判定缓存（包名 → 到期时间与结论），避免每次窗口变化都查使用时长。 */
+    private val blockCache = HashMap<String, Pair<Long, Boolean>>()
+    private var lastBlockInterceptAt = 0L
+
+    /**
+     * 应用级封锁的即时拦截。
+     *
+     * 原先只靠守护巡检（300ms 一次 + 1 秒节流），用户打开被封应用最多要等 1.3 秒
+     * 才看到封锁页，体验上像"没生效"。这里在窗口切换到该应用的瞬间就拉起封锁页，
+     * 判定结果缓存 5 秒，避免频繁查使用时长。
+     */
+    private fun interceptIfBlocked(pkg: String) {
+        val now = System.currentTimeMillis()
+        val cached = blockCache[pkg]
+        val blocked = if (cached != null && cached.first > now) {
+            cached.second
+        } else {
+            val value = runCatching { isBlockedNow(pkg) }.getOrDefault(false)
+            blockCache[pkg] = now + 5_000L to value
+            value
+        }
+        if (!blocked) return
+        if (now - lastBlockInterceptAt < 400L) return
+        lastBlockInterceptAt = now
+        Log.d(TAG, "$pkg 已被封锁，立即拉起封锁页")
+        runCatching {
+            val store = com.focusguard.app.data.AppBlockStore(this)
+            val until = store.blockedUntil(pkg)
+            val label = runCatching {
+                val pm = packageManager
+                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+            }.getOrDefault(pkg)
+            val rule = com.focusguard.app.usage.UsageRuleStore(this).getRule(pkg)
+            val used = (com.focusguard.app.usage.UsageRuleStore(this).getTodaySeconds(pkg) / 60).toInt()
+            com.focusguard.app.enforce.AppBlockActivity.show(
+                context = this,
+                packageName = pkg,
+                appLabel = label,
+                usedMinutes = used,
+                limitMinutes = rule?.hardBlockMinutes ?: 0,
+                blockUntil = until
+            )
+        }.onFailure { Log.w(TAG, "拉起封锁页失败：${it.message}") }
+    }
+
+    /** 该应用此刻是否应当被封锁（临时封锁期内，或今日使用已超上限）。 */
+    private fun isBlockedNow(pkg: String): Boolean {
+        if (pkg == packageName) return false
+        if (com.focusguard.app.data.AppBlockStore(this).blockedUntil(pkg) > 0L) return true
+        val store = com.focusguard.app.usage.UsageRuleStore(this)
+        val limit = store.getRule(pkg)?.hardBlockMinutes ?: return false
+        return (store.getTodaySeconds(pkg) / 60).toInt() >= limit
+    }
+
     /** 当前是否处于「锁机中且应当拦截」的状态。 */
     private fun isLockActive(): Boolean = runCatching {
         com.focusguard.app.data.LockState(this).shouldBlockNow
@@ -255,7 +309,11 @@ class GuardAccessibilityService : AccessibilityService() {
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString() ?: return
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) lastWindowPackage = pkg
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            lastWindowPackage = pkg
+            // 应用级封锁：切换到这个应用的一瞬间就拦，不等守护巡检
+            if (!isLockActive()) interceptIfBlocked(pkg)
+        }
         // 自身界面（锁屏页/答题页/应用主界面）不拦截
         if (pkg == packageName) return
 

@@ -479,7 +479,10 @@ fun SettingsScreen(
             }
         }
 
-        SettingsSection(title = "AI 锁机设置", icon = Icons.Default.Lock) {
+        // 这些配置只在「全局锁机」模式下有意义：选了「仅锁该软件」还让用户配锁机时长、
+        // 解锁强度、锁机提醒，会让人以为锁机仍会触发（用户反馈的"选择锁应用还提示锁机"）
+        if (enforcementMode == Settings.EnforcementMode.LOCK)
+            SettingsSection(title = "AI 锁机设置", icon = Icons.Default.Lock) {
             Text(
                 text = "AI 判定娱乐并达到连续次数后，按下面的配置自动锁机",
                 fontSize = 11.sp,
@@ -572,14 +575,11 @@ fun SettingsScreen(
             }
         }
 
-        // ── 仅锁该软件时长 ────────────────────────────────────────
+        // ── 仅锁该软件时长（只在「仅锁该软件」模式下显示） ────────
+        if (enforcementMode == Settings.EnforcementMode.APP_BLOCK)
         SettingsSection(title = "仅锁该软件时长", icon = Icons.Default.Block) {
             Text(
-                text = if (enforcementMode == Settings.EnforcementMode.APP_BLOCK) {
-                    "执法模式为「仅锁该软件」：判定娱乐后该应用封锁 $appBlockMinutes 分钟"
-                } else {
-                    "切换执法模式为「仅锁该软件」后生效：判定娱乐后该应用封锁 $appBlockMinutes 分钟"
-                },
+                text = "判定娱乐后该应用封锁 $appBlockMinutes 分钟",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
             )
@@ -595,6 +595,16 @@ fun SettingsScreen(
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
+        }
+
+        if (enforcementMode == Settings.EnforcementMode.WARN) {
+            SettingsSection(title = "仅提醒模式", icon = Icons.Default.Notifications) {
+                Text(
+                    "当前只在检测到娱乐时弹一条横幅提醒，不封锁应用、不锁机。",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
+                )
+            }
         }
 
         // ── 自定义锁机箴言 ────────────────────────────────────────
