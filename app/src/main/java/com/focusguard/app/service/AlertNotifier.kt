@@ -110,6 +110,8 @@ object AlertNotifier {
                 // Android 14+ 需要 USE_FULL_SCREEN_INTENT 权限（默认关闭，需用户允许）；
                 // 未授权时系统自动忽略此字段，退化为普通横幅
                 .setFullScreenIntent(fullScreenPi, true)
+                // 宽限期结束 + 3 分钟后自动消失：提醒完就该走，不要长期占着通知栏顶部
+                .setTimeoutAfter(((countdownSeconds.coerceAtLeast(0) + 180) * 1000L))
                 .build()
 
             val nm = context.getSystemService(NotificationManager::class.java)
@@ -148,6 +150,7 @@ object AlertNotifier {
                 .setStyle(Notification.BigTextStyle().bigText(message))
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
+                .setTimeoutAfter(120_000L)
                 .setCategory(Notification.CATEGORY_MESSAGE)
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setPriority(Notification.PRIORITY_HIGH)

@@ -287,6 +287,8 @@ class MonitorService : Service() {
                 .setContentText("点击打开应用，将自动重新请求屏幕录制授权并恢复检测")
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
+                // 自动消失：否则它会一直挂在通知栏，和常驻守护通知叠成两条
+                .setTimeoutAfter(120_000L)
                 .build()
             val nm = getSystemService(NotificationManager::class.java)
             nm.notify(1004, notification)

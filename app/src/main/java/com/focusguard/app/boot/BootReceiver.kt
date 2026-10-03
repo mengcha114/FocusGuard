@@ -112,6 +112,7 @@ class BootReceiver : BroadcastReceiver() {
                     android.app.PendingIntent.FLAG_IMMUTABLE
             )
             val notification = android.app.Notification.Builder(context, FocusGuardApp.CHANNEL_ID)
+                .setTimeoutAfter(60_000L)
                 .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
                 .setContentTitle("AI 守护待重新开启")
                 .setContentText("屏幕录制授权需要重新确认，点击开启（锁机守护不受影响）")

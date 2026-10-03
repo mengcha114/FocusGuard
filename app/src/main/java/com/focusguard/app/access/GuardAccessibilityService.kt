@@ -738,6 +738,7 @@ class GuardAccessibilityService : AccessibilityService() {
             )
                 .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
                 .setContentTitle("无障碍已断开（锁机仍生效）")
+                .setTimeoutAfter(120_000L)
                 .setContentText("锁机由前台守护继续维持，但拦截速度变慢，建议重新开启无障碍")
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)

@@ -328,6 +328,7 @@ class LockGuardService : Service() {
             )
                 .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
                 .setContentTitle("检测到系统时间被修改")
+                .setTimeoutAfter(120_000L)
                 .setContentText(
                     "时间偏差约 ${tamperMs / 1000}s：锁机倒计时以设备运行时间为准，并已追加惩罚时长，改时间无法提前解锁"
                 )
@@ -492,6 +493,11 @@ class LockGuardService : Service() {
 
         // 心跳 + 剩余时长快照（强停补回 / 重启恢复数据源）
         beatHeartbeat()
+
+        // 常驻通知自愈：检测服务与守护共用同一个通知位（NOTIFICATION_ID），
+        // 任一方 stopForeground 都可能把它撤掉，这里每 ~30 秒补刷一次，
+        // 既保证只有一条，也避免守护「没有前台通知」被系统回收。
+        if (tickCount % 100 == 0) refreshNotification()
 
         // 卸载阻止 + 禁止强行停止/清除数据，随锁机状态切换（Dhizuku Device Owner 能力）。
         // 整段锁机（含暂停）都保持，否则暂停期间去设置里清数据即可绕过。
