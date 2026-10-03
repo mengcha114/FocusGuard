@@ -173,8 +173,8 @@ object LockPolicies {
     /** 逐包确认是否仍处于挂起状态（权威判据，不依赖命令返回值）。 */
     private fun stillSuspended(context: Context, pkgs: Set<String>): Boolean = pkgs.any { pkg ->
         runCatching {
-            val info = context.packageManager.getPackageInfo(pkg, 0).applicationInfo
-            (info.flags and android.content.pm.ApplicationInfo.FLAG_SUSPENDED) != 0
+            val flags = context.packageManager.getPackageInfo(pkg, 0).applicationInfo?.flags ?: 0
+            (flags and android.content.pm.ApplicationInfo.FLAG_SUSPENDED) != 0
         }.getOrDefault(false)
     }
 
