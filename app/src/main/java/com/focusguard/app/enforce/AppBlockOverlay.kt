@@ -74,6 +74,10 @@ object AppBlockOverlay {
     @Volatile
     private var appSuspended = false
 
+    /** 本次封锁开始显示的时刻（用于区分「冻结导致桌面露出」与「用户主动回桌面」）。 */
+    @Volatile
+    private var shownAt = 0L
+
     /** 连续判定「用户已离开应用」的次数（防抖：单次采样不算）。 */
     private var leftStrikes = 0
 
@@ -189,6 +193,7 @@ object AppBlockOverlay {
         }
         root = view
         showing = pkg
+        shownAt = System.currentTimeMillis()
         leftStrikes = 0
         lastError = ""
         startSelfCheck()
@@ -267,10 +272,16 @@ object AppBlockOverlay {
                         }
                     }.start()
                 }
-                if (hasLeftApp(app, pkg) && !appSuspended) {
-                    // 没能停掉应用时（无 Shizuku/Dhizuku）：用户离开就撤下并顺手停掉它
-                    Log.d(TAG, "用户已离开 $pkg，撤下并停掉该应用")
-                    hideOnMain(stopApp = true)
+                // 用户离开的处理：
+                // · 应用**没被**停掉（无 Shizuku/Dhizuku）→ 立刻撤下并顺手停掉它；
+                // · 应用**已被**停掉 → 前 3 秒内的「前台变成桌面」是冻结造成的（应用被
+                //   系统掐掉、桌面露出来），**不能**据此撤下（否则又变成「打开就被踢出」）；
+                //   3 秒之后仍判定离开，说明是用户主动回桌面（系统手势）→ 撤下并解冻。
+                val left = hasLeftApp(app, pkg)
+                val settled = System.currentTimeMillis() - shownAt > 3_000L
+                if (left && (!appSuspended || settled)) {
+                    Log.d(TAG, "用户已离开 $pkg（已停掉=$appSuspended），撤下并解冻")
+                    hideOnMain(stopApp = false)
                     return
                 }
                 uiHandler.postDelayed(this, CHECK_INTERVAL_MS)
