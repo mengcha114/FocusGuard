@@ -25,7 +25,20 @@ fun LockHardeningCard() {
     val context = LocalContext.current
     var freeze by remember { mutableStateOf(LockPolicies.isFreezeEnabled(context)) }
     var blockReset by remember { mutableStateOf(LockPolicies.isBlockResetEnabled(context)) }
-    val dzReady = remember { DhizukuEnhancer.isReady() }
+    // 回到前台时重新判断可用性：去 Shizuku/Dhizuku 授权完回来，这里要立刻反映出来
+    var refreshKey by remember { mutableIntStateOf(0) }
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refreshKey++
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    val dzReady = remember(refreshKey) { DhizukuEnhancer.isReady() }
+    val adminActive = remember(refreshKey) {
+        com.focusguard.app.enhance.AdminEnhancer.isActive(context)
+    }
     val canFreeze = dzReady || ShizukuEnhancer.isReady()
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -64,9 +77,10 @@ fun LockHardeningCard() {
             var on by remember(item.key) {
                 mutableStateOf(LockPolicies.isHardeningEnabled(context, item))
             }
+            val usable = dzReady || (item.adminCapable && adminActive)
             SwitchRow(
                 title = item.label,
-                hint = item.hint,
+                hint = if (usable) item.hint else item.hint + "（需要 Dhizuku 就绪，当前不生效）",
                 checked = on,
                 enabled = true
             ) { value ->
@@ -83,9 +97,10 @@ fun LockHardeningCard() {
             var on by remember(item.key) {
                 mutableStateOf(LockPolicies.isHardeningEnabled(context, item))
             }
+            val usable = dzReady || (item.adminCapable && adminActive)
             SwitchRow(
                 title = item.label,
-                hint = item.hint,
+                hint = if (usable) item.hint else item.hint + "（需要 Dhizuku 就绪，当前不生效）",
                 checked = on,
                 enabled = true
             ) { value ->
@@ -137,18 +152,26 @@ fun ShizukuStatusCard() {
     var frozenCount by remember { mutableIntStateOf(0) }
     var suspendedList by remember { mutableStateOf<List<String>>(emptyList()) }
     var crackCount by remember { mutableIntStateOf(0) }
+    var crackNames by remember { mutableStateOf<List<String>>(emptyList()) }
     LaunchedEffect(tick) {
         val app = context.applicationContext
         val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val matched = com.focusguard.app.enhance.CrackGuard.matched(app)
+            val pm = app.packageManager
             Triple(
                 LockPolicies.allFrozen(app).size,
                 LockPolicies.suspendedOnDevice(app),
-                com.focusguard.app.enhance.CrackGuard.matched(app).size
+                matched.map { pkg ->
+                    runCatching {
+                        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                    }.getOrDefault(pkg)
+                }.sorted()
             )
         }
         frozenCount = result.first
         suspendedList = result.second
-        crackCount = result.third
+        crackCount = result.third.size
+        crackNames = result.third
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -157,9 +180,28 @@ fun ShizukuStatusCard() {
         StatusRow("Dhizuku（系统级锁机）", dzReady, DhizukuEnhancer.lastError.ifBlank { "已就绪" })
         StatusRow("无障碍服务", a11y, if (a11y) "已开启" else "未开启（锁机拦截失效）")
         StatusRow("使用情况访问", usage, if (usage) "已授权" else "未授权（无法识别前台应用）")
+        // 系统自带设备管理员：免 Dhizuku 的「立即锁屏 / 禁相机 / 密码解锁」，激活期间系统还会禁止卸载本应用
+        val adminActive = remember(tick) { com.focusguard.app.enhance.AdminEnhancer.isActive(context) }
+        StatusRow(
+            "系统设备管理员",
+            adminActive,
+            if (adminActive) "已激活（期间系统禁止卸载本应用）" else "未激活"
+        )
+        if (!adminActive) {
+            OutlinedButton(onClick = {
+                runCatching {
+                    context.startActivity(
+                        com.focusguard.app.enhance.AdminEnhancer
+                            .activationIntent(context)
+                            .apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+                    )
+                }
+            }) { Text("申请设备管理员") }
+        }
         if (crackCount > 0) {
             Text(
-                "识别到 $crackCount 个破解/自动化工具（锁机期间按加固开关冻结或隐藏）",
+                "识别到 $crackCount 个破解/自动化工具（锁机期间按加固开关冻结或隐藏）：" +
+                    crackNames.joinToString("、").take(80),
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.error
             )
         }

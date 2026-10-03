@@ -110,7 +110,9 @@ object LockPolicies {
         val key: String,
         val label: String,
         val hint: String,
-        val defaultOn: Boolean
+        val defaultOn: Boolean,
+        /** 系统自带的设备管理员也能施加（不需要 Dhizuku）。 */
+        val adminCapable: Boolean = false
     ) {
         AUTO_TIME(
             "auto_time", "强制自动时间",
@@ -134,7 +136,7 @@ object LockPolicies {
         ),
         NO_CAMERA(
             "no_camera", "禁止相机",
-            "锁机期间相机打不开（防拍照搜题）", false
+            "锁机期间相机打不开（防拍照搜题）", false, adminCapable = true
         ),
         NO_CAPTURE(
             "no_capture", "禁止截图录屏",
@@ -158,7 +160,7 @@ object LockPolicies {
         ),
         LOCK_NOW(
             "lock_now", "执法瞬间锁屏",
-            "AI 执法时先把屏幕灭掉，必须重新解锁设备才看到锁机界面", false
+            "AI 执法时先把屏幕灭掉，必须重新解锁设备才看到锁机界面", false, adminCapable = true
         ),
         CRACK_FREEZE(
             "crack_freeze", "冻结破解工具",
@@ -167,6 +169,11 @@ object LockPolicies {
         CRACK_HIDE(
             "crack_hide", "隐藏破解工具",
             "比冻结更彻底：图标从桌面与搜索里消失；锁机结束自动恢复", false
+        ),
+        KEYGUARD_LOCK(
+            "keyguard_lock", "必须用密码解锁",
+            "锁机期间禁用指纹/人脸/智能锁（连蓝牙也不会自动解锁）：只能输密码，增加解锁成本；请先确认自己记得密码。默认关",
+            false, adminCapable = true
         ),
         CRACK_DETECT(
             "crack_detect", "破解环境检测（只留痕）",
@@ -225,6 +232,16 @@ object LockPolicies {
                 (AdminEnhancer.isActive(app) && AdminEnhancer.setCameraDisabled(app, true))
             if (ok) applied.add(Hardening.NO_CAMERA.key)
         }
+        // 必须用密码解锁：Dhizuku 或系统自带设备管理员任一可用即可
+        if (isHardeningEnabled(app, Hardening.KEYGUARD_LOCK)) {
+            val flags = android.app.admin.DevicePolicyManager.KEYGUARD_DISABLE_TRUST_AGENTS or
+                android.app.admin.DevicePolicyManager.KEYGUARD_DISABLE_FINGERPRINT or
+                android.app.admin.DevicePolicyManager.KEYGUARD_DISABLE_FACE or
+                android.app.admin.DevicePolicyManager.KEYGUARD_DISABLE_IRIS
+            val ok = (dzReady && DhizukuEnhancer.setKeyguardDisabledFeatures(app, flags)) ||
+                (AdminEnhancer.isActive(app) && AdminEnhancer.setKeyguardDisabledFeatures(app, flags))
+            if (ok) applied.add(Hardening.KEYGUARD_LOCK.key)
+        }
         // 其余项都需要 Device Owner 权限（Dhizuku）
         if (!dzReady) return applied
 
@@ -276,11 +293,16 @@ object LockPolicies {
     private fun revertHardening(app: Context) {
         val p = prefs(app)
         val applied = p.getStringSet(KEY_HARDENING_APPLIED, emptySet()).orEmpty()
-        // 设备管理员（免 Dhizuku）能力先无条件撤销：相机不能留残留
+        // 设备管理员（免 Dhizuku）能力先无条件撤销：相机、锁屏特性都不能留残留
         runCatching { AdminEnhancer.setCameraDisabled(app, false) }
+        runCatching {
+            AdminEnhancer.setKeyguardDisabledFeatures(
+                app, android.app.admin.DevicePolicyManager.KEYGUARD_DISABLE_FEATURES_NONE
+            )
+        }
         if (!DhizukuEnhancer.ensureReady(app)) {
             // 只记了「禁相机」这种 admin 也能做的项 → 已经撤完，直接清记录
-            if ((applied - Hardening.NO_CAMERA.key).isEmpty()) {
+            if ((applied - Hardening.NO_CAMERA.key - Hardening.KEYGUARD_LOCK.key).isEmpty()) {
                 p.edit().putStringSet(KEY_HARDENING_APPLIED, emptySet()).apply()
             } else {
                 Log.w(TAG, "Dhizuku 未就绪，加固暂不撤销，稍后重试（记录 ${applied.size} 项）")
@@ -299,6 +321,11 @@ object LockPolicies {
         if (applied.contains(Hardening.DENY_PERMS.key)) DhizukuEnhancer.setPermissionPolicyAutoDeny(app, false)
         if (applied.contains(Hardening.NO_UPDATE.key)) DhizukuEnhancer.setSystemUpdateBlocked(app, false)
         if (applied.contains(Hardening.INPUT_LOCK.key)) DhizukuEnhancer.setPermittedInputMethods(app, null)
+        if (applied.contains(Hardening.KEYGUARD_LOCK.key)) {
+            DhizukuEnhancer.setKeyguardDisabledFeatures(
+                app, android.app.admin.DevicePolicyManager.KEYGUARD_DISABLE_FEATURES_NONE
+            )
+        }
         // 被隐藏的破解工具无条件恢复（记录丢失也不会留下「消失的应用」）
         runCatching { CrackGuard.revertHide(app) }
         p.edit().putStringSet(KEY_HARDENING_APPLIED, emptySet()).apply()
@@ -362,7 +389,10 @@ object LockPolicies {
         val p = prefs(app)
         runCatching { revertHardening(app) }.onFailure { Log.w(TAG, "撤销加固失败：${it.message}") }
         val editor = p.edit()
-        if (p.getBoolean(KEY_RESTRICTED, false) && DhizukuEnhancer.ensureReady(app)) {
+        // 无条件撤销**全量**限制：此前以 KEY_RESTRICTED 为条件，而该标志只在当初
+        // 「全部设置成功」时才置位 —— 任一项失败就导致已生效的限制（禁改时间/禁安全模式/
+        // 禁安装…）永不撤销，用户被永久限制。撤销全量列表是无害且幂等的。
+        if (DhizukuEnhancer.ensureReady(app)) {
             ALL_RESTRICTIONS.forEach { DhizukuEnhancer.setUserRestriction(app, it, false) }
             editor.putBoolean(KEY_RESTRICTED, false)
         }
@@ -512,6 +542,9 @@ object LockPolicies {
      */
     fun forceUnfreezeAllSuspended(context: Context): Pair<Int, Int> {
         val app = context.applicationContext
+        // 被「隐藏」的破解工具也要一起恢复：隐藏记录（KEY_HIDDEN）丢了的话，
+        // 只有这里能救回来（suspendedOnDevice 看不到隐藏状态）。
+        runCatching { CrackGuard.revertHide(app) }
         val targets = suspendedOnDevice(app)
         if (targets.isEmpty()) {
             prefs(app).edit()

@@ -125,6 +125,9 @@ class LockGuardService : Service() {
     /** 卸载阻止开关状态（与 Dhizuku setUninstallBlocked 同步）。 */
     private var uninstallBlocked = false
 
+    /** 上一次「禁卸载/禁强停」只成功了一半（需要下个巡检继续补齐）。 */
+    private var uninstallPartial = false
+
     /** 锁机加固（用户限制 / 冻结娱乐应用）是否已施加。 */
     private var policiesApplied = false
 
@@ -512,7 +515,7 @@ class LockGuardService : Service() {
                 else com.focusguard.app.enhance.LockPolicies.onLockEnd(app)
             }.start()
         }
-        if (lockedNow != uninstallBlocked) {
+        if (lockedNow != uninstallBlocked || uninstallPartial) {
             // 只读缓存门槛：未就绪（无 Dhizuku）直接跳过，避免后台线程
             // 触发 HiddenApiBypass/Dhizuku.init Binder 初始化（死锁/ANR 隐患）
             if (com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()) {
@@ -524,8 +527,11 @@ class LockGuardService : Service() {
                 )
                 // 成功才记账：此前先置位再调用，一次失败后整轮锁机不再重试，
                 // 「禁止卸载 / 禁止强停」可能全程空窗（正是安全模式卸载的窗口）。
-                if (b && u) uninstallBlocked = lockedNow
-                else Log.w(TAG, "禁卸载/禁用户控制未设置成功（b=$b u=$u），下个巡检重试")
+                // 任一成功就记账：此前要求两个都成功，只成功一个时锁机结束既不撤销
+                // 也不再重试，「禁止卸载/禁强停」会一直留着（用户可能永远卸不掉本应用）。
+                if (b || u) uninstallBlocked = lockedNow
+                uninstallPartial = !(b && u)
+                if (uninstallPartial) Log.w(TAG, "禁卸载/禁用户控制仅部分生效（b=$b u=$u），下个巡检补齐")
             }
         }
 

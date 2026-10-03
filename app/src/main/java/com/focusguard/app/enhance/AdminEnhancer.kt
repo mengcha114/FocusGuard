@@ -28,6 +28,35 @@ object AdminEnhancer {
         dpm(context)?.isAdminActive(component(context)) == true
     }.getOrDefault(false)
 
+    /** 系统激活弹窗 Intent（权限页与设置页共用，避免两处文案不一致）。 */
+    fun activationIntent(context: Context): android.content.Intent =
+        android.content.Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, component(context))
+            putExtra(
+                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "用于锁机期间立即锁屏、禁用相机、要求用密码解锁等管理能力；" +
+                    "不需要 root 或 Shizuku，激活后可在「设置 → 安全 → 设备管理器应用」里随时撤销。"
+            )
+        }
+
+    /**
+     * 锁机期间限制锁屏特性（禁指纹/人脸/智能锁 → 必须用密码解锁）。
+     * 传 [DevicePolicyManager.KEYGUARD_DISABLE_FEATURES_NONE] 恢复。
+     */
+    fun setKeyguardDisabledFeatures(context: Context, flags: Int): Boolean {
+        val manager = dpm(context) ?: return false
+        val active = runCatching { manager.isAdminActive(component(context)) }.getOrDefault(false)
+        if (!active) return false
+        return try {
+            manager.setKeyguardDisabledFeatures(component(context), flags)
+            Log.d(TAG, "设备管理员 setKeyguardDisabledFeatures($flags) 成功")
+            true
+        } catch (e: Throwable) {
+            Log.w(TAG, "设备管理员 setKeyguardDisabledFeatures 失败：${e.message}")
+            false
+        }
+    }
+
     /**
      * 禁用/恢复相机（设备管理员的 disable-camera 策略，不需要 Dhizuku）。
      * 与 Dhizuku 版本的区别：只在普通 admin 权限范围内，效果相同。

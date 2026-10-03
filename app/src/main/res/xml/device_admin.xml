@@ -8,11 +8,13 @@
   申请的：
   · force-lock      立即锁屏 —— 执法瞬间锁屏（没有 Dhizuku 也能用）
   · disable-camera  禁用相机 —— 锁机期间禁相机（同样免 Dhizuku）
+  · disable-keyguard-features  锁屏特性 —— 锁机期间「必须用密码解锁」（禁指纹/人脸/智能锁），可选
   注意：处于「已激活」状态时，系统会阻止卸载本应用 —— 顺带多一层防破解。
 -->
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-policies>
         <force-lock />
         <disable-camera />
+        <disable-keyguard-features />
     </uses-policies>
 </device-admin>

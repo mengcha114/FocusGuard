@@ -497,6 +497,17 @@ object DhizukuEnhancer {
         Log.w(TAG, "setAutoTimeZoneEnabled 失败：${e.message}"); false
     }
 
+    /** 锁机期间限制锁屏特性（禁指纹/人脸/智能锁 → 必须用密码解锁）。 */
+    fun setKeyguardDisabledFeatures(context: Context, flags: Int): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.setKeyguardDisabledFeatures(ownerComponent!!, flags)
+            Log.d(TAG, "setKeyguardDisabledFeatures($flags) 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setKeyguardDisabledFeatures 失败：${e.message}"); false
+    }
+
     /** 锁机期间禁用相机（防拍照搜题）。 */
     fun setCameraDisabled(context: Context, disabled: Boolean): Boolean = try {
         if (!ensureReady(context)) false else {

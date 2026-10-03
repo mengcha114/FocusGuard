@@ -120,7 +120,8 @@ class BootReceiver : BroadcastReceiver() {
                 .setAutoCancel(true)
                 .build()
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.notify(1001, notification)
+            // 独立通知位：1001 是常驻服务通知，守护会周期性重刷，用它会让这条提醒几秒内被覆盖
+            nm.notify(1008, notification)
         } catch (e: Exception) {
             Log.w(TAG, "发送开机提醒失败：${e.message}")
         }

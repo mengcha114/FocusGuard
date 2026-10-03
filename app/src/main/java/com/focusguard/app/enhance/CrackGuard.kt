@@ -58,14 +58,13 @@ object CrackGuard {
         "teamviewer", "向日葵", "anydesk", "airdroid", "远程控制", "远程协助",
         "scene", "微霸", "thanox", "黑盒",
         // 进程守护 / 「安全护盾」类：会拦截其它应用的操作（能掐掉我们的守护进程）
-        "游龙", "游龙工具", "安全护盾", "进程守护", "防卸载", "守护精灵", "护盾",
-        "手机变电脑", "桌面模式",
+        "游龙", "游龙工具", "安全护盾", "进程守护",
         // 自动化 / 宏
         "自动精灵", "一触即发", "易点", "超级点击器", "脚本精灵", "auto js",
-        // 多开 / 沙箱 / 云手机
-        "沙箱", "多开助手", "双开助手", "红手指", "云手机", "gaga", "虚拟空间", "平行空间",
+        // 多开 / 沙箱 / 云手机（只留明确的产品名，避免误伤普通应用）
+        "多开助手", "双开助手", "红手指", "gaga", "虚拟大师",
         // 远程控制
-        "todesk", "rustdesk", "网易uu远程", "uu远程", "远程桌面",
+        "todesk", "rustdesk", "网易uu远程", "uu远程",
         // 特权 / 改机 / 冻结
         "kernelsu", "apatch", "太极", "应用变量", "冰箱pro", "hibernator", "servicely",
         "greenify", "superfreezz", "nap time", "naptime"
@@ -101,6 +100,19 @@ object CrackGuard {
                 )) != 0
             if (sys) return@filter false
             val label = runCatching { pm.getApplicationLabel(info).toString() }.getOrDefault("")
+            // 用户白名单 / 已被判为学习办公的应用一律豁免：宁可漏冻，也不能误冻正常应用
+            val white = com.focusguard.app.data.Settings(app).whitelist
+                .split(',', '，', ';', '；', '、', '\n')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            if (white.any { w -> label.contains(w, true) || pkg.contains(w, true) }) {
+                return@filter false
+            }
+            val categoryStore = com.focusguard.app.detection.AppCategoryStore.shared(app)
+            val study = com.focusguard.app.detection.AppCategory.STUDY
+            if (categoryStore.getUserOverride(pkg) == study || categoryStore.getLearned(pkg) == study) {
+                return@filter false
+            }
             val haystack = (pkg + " " + label).lowercase()
             PKG_TOKENS.any { haystack.contains(it) } ||
                 LABEL_TOKENS.any { haystack.contains(it.lowercase()) } ||
