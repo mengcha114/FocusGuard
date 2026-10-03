@@ -377,8 +377,9 @@ class GuardAccessibilityService : AccessibilityService() {
                     "${android.os.SystemClock.elapsedRealtime() - eventAt}ms"
             )
             if (covered) return@runCatching
-            // 兜底（没有悬浮窗权限）：Activity 冷启动慢，先立刻把用户踢出被锁应用
-            if (liveWindowPackage() == pkg) performGlobalAction(GLOBAL_ACTION_HOME)
+            // 兜底（没有悬浮窗权限）：先真正挂起应用（它会被系统压到后台，后台声音也停），
+            // 再拉封锁页；**不再主动 HOME 踢人**（用户反馈「点了就强制退出」）。
+            runCatching { com.focusguard.app.enhance.LockPolicies.suspendBlock(this, pkg) }
             com.focusguard.app.enforce.AppBlockActivity.show(
                 context = this,
                 packageName = pkg,

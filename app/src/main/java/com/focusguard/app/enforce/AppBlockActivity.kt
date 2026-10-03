@@ -131,6 +131,18 @@ class AppBlockActivity : ComponentActivity() {
 
         instance = this
         blockedPackage = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
+        // 走到 Activity 说明没有悬浮窗可用：同样要真正停掉被锁应用
+        // （后台声音/画中画随之结束），否则「封住」只封了界面
+        runCatching {
+            if (blockedPackage.isNotBlank()) {
+                Thread {
+                    runCatching {
+                        com.focusguard.app.enhance.LockPolicies
+                            .suspendBlock(applicationContext, blockedPackage)
+                    }
+                }.start()
+            }
+        }
         val label = intent.getStringExtra(EXTRA_LABEL).orEmpty().ifBlank { blockedPackage }
         val used = intent.getIntExtra(EXTRA_USED_MINUTES, 0)
         val limit = intent.getIntExtra(EXTRA_LIMIT_MINUTES, 0)

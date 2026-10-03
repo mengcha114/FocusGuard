@@ -65,7 +65,8 @@ fun PermissionSetupScreen(
             PermissionItem(
                 key = "overlay",
                 title = "悬浮窗（普通模式锁机需要）",
-                description = "全屏锁机界面与警告提示依赖此权限；未配置 Dhizuku 时强烈建议开启",
+                description = "全屏锁机界面、**应用封锁遮盖**与警告提示都依赖它。没有它，被锁应用只能" +
+                    "退回「踢回桌面 + 封锁页」，会有明显的强制退出感",
                 icon = Icons.Default.Layers,
                 isGranted = PermissionChecker.canDrawOverlays(context),
                 isRequired = false

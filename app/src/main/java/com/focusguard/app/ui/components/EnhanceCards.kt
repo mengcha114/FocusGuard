@@ -181,6 +181,12 @@ fun ShizukuStatusCard() {
         StatusRow("无障碍服务", a11y, if (a11y) "已开启" else "未开启（锁机拦截失效）")
         StatusRow("使用情况访问", usage, if (usage) "已授权" else "未授权（无法识别前台应用）")
         // 系统自带设备管理员：免 Dhizuku 的「立即锁屏 / 禁相机 / 密码解锁」，激活期间系统还会禁止卸载本应用
+        val overlayOk = remember(tick) { android.provider.Settings.canDrawOverlays(context) }
+        StatusRow(
+            "悬浮窗权限",
+            overlayOk,
+            if (overlayOk) "已授权" else "未授权（应用封锁只能退回「踢回桌面 + 封锁页」）"
+        )
         val adminActive = remember(tick) { com.focusguard.app.enhance.AdminEnhancer.isActive(context) }
         StatusRow(
             "系统设备管理员",

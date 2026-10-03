@@ -56,6 +56,14 @@ object AppBlockOverlay {
     private var currentLimit: Int = 0
     private var checkRunnable: Runnable? = null
 
+    /** 连续判定「用户已离开应用」的次数（防抖：单次采样不算）。 */
+    private var leftStrikes = 0
+
+    /** 最近一次失败原因（设置页/日志排查用）。 */
+    @Volatile
+    var lastError: String = ""
+        private set
+
     @Volatile
     private var showing: String? = null
 
@@ -79,9 +87,29 @@ object AppBlockOverlay {
     ): Boolean {
         val app = context.applicationContext
         if (pkg.isBlank()) return false
-        if (!android.provider.Settings.canDrawOverlays(app)) return false
+        if (!android.provider.Settings.canDrawOverlays(app)) {
+            lastError = "没有悬浮窗权限"
+            return false
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            // 主线程：直接给出真实结果，调用方据此决定是否退回 Activity
+            return showOnMain(app, pkg, label, usedMinutes, limitMinutes, blockUntil)
+        }
         uiHandler.post {
-            showOnMain(app, pkg, label, usedMinutes, limitMinutes, blockUntil)
+            if (!showOnMain(app, pkg, label, usedMinutes, limitMinutes, blockUntil)) {
+                // 后台线程无法把失败传回去：这里自己拉起封锁页兜底，绝不静默什么都不做
+                Log.w(TAG, "悬浮窗遮盖失败（${lastError}），改用封锁页兜底")
+                runCatching {
+                    AppBlockActivity.show(
+                        context = app,
+                        packageName = pkg,
+                        appLabel = label,
+                        usedMinutes = usedMinutes,
+                        limitMinutes = limitMinutes,
+                        blockUntil = blockUntil
+                    )
+                }
+            }
         }
         return true
     }
@@ -98,7 +126,7 @@ object AppBlockOverlay {
         usedMinutes: Int,
         limitMinutes: Int,
         blockUntil: Long
-    ) {
+    ): Boolean {
         appContext = context
         currentPkg = pkg
         currentLabel = label
@@ -112,26 +140,31 @@ object AppBlockOverlay {
         if (existing != null && showing == pkg) {
             refreshTexts()
             startSelfCheck()
-            return
+            return true
         }
         removeViewInternal()
         val view = try {
             buildContent(context)
         } catch (e: Exception) {
-            Log.e(TAG, "构建封锁悬浮窗失败：${e.message}", e)
-            return
+            lastError = "构建失败：${e.message}"
+            Log.e(TAG, lastError, e)
+            return false
         }
         try {
             windowManager(context).addView(view, buildLayoutParams(context))
         } catch (e: Exception) {
-            Log.w(TAG, "挂载封锁悬浮窗失败：${e.message}")
-            return
+            lastError = "挂载失败：${e.message}"
+            Log.w(TAG, lastError)
+            return false
         }
         root = view
         showing = pkg
+        leftStrikes = 0
+        lastError = ""
         refreshTexts()
         startSelfCheck()
         Log.d(TAG, "已用悬浮窗遮盖 $pkg（$label）")
+        return true
     }
 
     private fun hideOnMain() {
@@ -203,10 +236,32 @@ object AppBlockOverlay {
         return (store.getTodaySeconds(pkg) / 60).toInt() >= limit
     }
 
-    /** 用户是否已经离开被锁应用（悬浮窗不产生 Activity 事件，因此这个判据很干净）。 */
+    /**
+     * 用户是否已经离开被锁应用（悬浮窗不产生 Activity 事件，因此这个判据很干净）。
+     *
+     * 注意两个坑：
+     * ① 刚点开图标那一刻，事件流可能还是**启动器/系统界面**（SYSTEM 类）——
+     *    那种「离开」是假象，会把刚显示的悬浮窗立刻撤掉（用户反馈的「点了却没出现封锁页」）；
+     * ② 单次采样可能抖动，要求**连续两次**都判定离开才撤。
+     */
     private fun hasLeftApp(context: Context, pkg: String): Boolean {
         val fg = com.focusguard.app.service.ForegroundAppDetector.current(context) ?: return false
-        return fg != pkg && fg != context.packageName
+        if (fg == pkg || fg == context.packageName) {
+            leftStrikes = 0
+            return false
+        }
+        val category = runCatching {
+            com.focusguard.app.detection.AppClassifier.classifyPackage(
+                context, fg, com.focusguard.app.detection.AppCategoryStore.shared(context)
+            )?.category
+        }.getOrNull()
+        if (category == null || category == com.focusguard.app.detection.AppCategory.SYSTEM) {
+            // 认不出 / 系统界面（启动器、系统设置外壳）→ 不作为「已离开」的证据
+            leftStrikes = 0
+            return false
+        }
+        leftStrikes++
+        return leftStrikes >= 2
     }
 
     // ── 界面 ─────────────────────────────────────────────
