@@ -95,22 +95,42 @@ class DetectionPipeline(
 
     suspend fun detect(projection: MediaProjection?): DetectionOutcome {
         val appInfo = AppClassifier.classifyForegroundApp(context, categoryStore)
-        val pkg = appInfo?.packageName.orEmpty()
+        val usagePkg = appInfo?.packageName.orEmpty()
+        // 第二来源：无障碍报告的活动窗口。UsageStats 有时瞬时为空（刚切换应用、
+        // 权限被撤、数据过期），此时只看 UsageStats 会把「前台未知」当成「不敏感」。
+        val windowPkg = runCatching {
+            com.focusguard.app.access.GuardAccessibilityService.instance?.currentWindowPackage()
+        }.getOrNull().orEmpty()
+        // 包名为空时用窗口包名补齐：既修隐私漏洞，也让检测在 UsageStats 失准时仍可用
+        val pkg = usagePkg.ifBlank { windowPkg }
         val label = appInfo?.label.ifNullOrBlank { pkg }
 
         // ── L0 隐私保护（优先于一切判定，含白名单）─────────────────
         // 银行/支付/密码管理等敏感应用的内容绝不能离开设备。即使该应用
         // 被加进白名单，也只是"不判违规"，用户未必愿意把截图发出去——
         // 隐私优先级高于检测功能：本轮不截屏、不读屏幕文字、不上传。
-        if (settings.privacyProtectEnabled && pkg.isNotBlank()) {
-            val sensitive = com.focusguard.app.privacy.PrivacyGuard.isSensitive(
-                pkg, label, settings.sensitiveApps
-            )
-            if (sensitive) {
+        if (settings.privacyProtectEnabled) {
+            val candidates = listOf(usagePkg, windowPkg).filter { it.isNotBlank() }.distinct()
+            if (candidates.isEmpty()) {
+                // 两个来源都认不出前台应用：宁可少检测一次，也不冒险上传
                 return DetectionOutcome(
                     "NEUTRAL", 1f,
-                    "隐私保护：$label 属于敏感应用，本轮已跳过截屏与内容读取",
+                    "隐私保护：无法识别前台应用，本轮已跳过截屏与内容读取",
                     DetectionSource.PRIVACY_SKIP, pkg, label
+                )
+            }
+            val hit = candidates.firstOrNull { candidate ->
+                com.focusguard.app.privacy.PrivacyGuard.isSensitive(
+                    candidate,
+                    if (candidate == usagePkg) label else "",
+                    settings.sensitiveApps
+                )
+            }
+            if (hit != null) {
+                return DetectionOutcome(
+                    "NEUTRAL", 1f,
+                    "隐私保护：${if (hit == usagePkg) label else hit} 属于敏感应用，本轮已跳过截屏与内容读取",
+                    DetectionSource.PRIVACY_SKIP, hit, label
                 )
             }
         }

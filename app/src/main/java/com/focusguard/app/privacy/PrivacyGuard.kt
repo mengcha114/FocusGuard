@@ -48,7 +48,9 @@ object PrivacyGuard {
         // ── 邮箱 / 通讯 ─────────────────────────────────
         "gmail", "outlook", "hotmail", "thunderbird", "protonmail",
         // ── 私密相册 / 图库 ────────────────────────────
-        "gallery", "photos"
+        "gallery", "photos",
+        // ── 身份 / 证件 / 社保 / 税务 ──────────────────
+        "idcard", "eid", "gov", "tax", "socialsecurity", "shebao", "gjj"
     )
 
     /** 内置敏感应用名特征（小写匹配，中文应用名）。 */
@@ -56,7 +58,10 @@ object PrivacyGuard {
         "银行", "网银", "支付", "钱包", "理财", "证券", "保险",
         "基金", "股票", "贷款", "医保", "医院", "医疗", "健康",
         "挂号", "问诊", "病历", "邮箱", "邮件", "密码", "密保",
-        "相册", "图库", "云盘照片", "身份验证", "动态口令"
+        "相册", "图库", "云盘照片", "身份验证", "动态口令",
+        // 证件 / 社保 / 税务 / 政务，以及密码本类
+        "身份证", "证件", "社保", "公积金", "税务", "政务", "办事",
+        "加密", "密语", "私密", "保险箱", "笔记锁"
     )
 
     /**
@@ -80,7 +85,7 @@ object PrivacyGuard {
             return true
         }
         if (userList.isNotBlank()) {
-            val hit = userList.split(',', '，', '\n')
+            val hit = userList.split(',', '，', ';', '；', '、', '\n')
                 .map { it.trim().lowercase() }
                 .filter { it.isNotEmpty() }
                 .any { pkg.contains(it) || lab.contains(it) }

@@ -77,6 +77,10 @@ class GuardAccessibilityService : AccessibilityService() {
          * 有 Dhizuku 时靠 setUninstallBlocked（设备策略，安全模式下同样生效）拦截，
          * 没有 Dhizuku 时只能拦界面入口：系统设置（应用信息/卸载）、安装器、各应用商店。
          */
+        /** 最近一次窗口状态变化的包名（前台识别的兜底来源）。 */
+        @Volatile
+        private var lastWindowPackage: String? = null
+
         private val uninstallEntryPackages = listOf(
             "com.android.settings",                  // 应用信息 → 卸载 / 强行停止 / 关无障碍
             "com.android.packageinstaller",          // 卸载确认界面
@@ -230,6 +234,20 @@ class GuardAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * 当前活动窗口的包名（来自无障碍，作为前台识别的第二来源）。
+     *
+     * 用途：UsageStats 有时拿不到前台应用（权限被撤、数据瞬时为空、刚切换应用），
+     * 此前那种情况下隐私保护会因为「包名为空」而被跳过，可能把银行/支付界面
+     * 的文字与截图发出去。这里补一个来源，两者都不确定时由检测管线直接跳过本轮。
+     */
+    fun currentWindowPackage(): String? = try {
+        rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }
+            ?: lastWindowPackage
+    } catch (e: Exception) {
+        lastWindowPackage
+    }
+
     /** 当前是否处于「锁机中且应当拦截」的状态。 */
     private fun isLockActive(): Boolean = runCatching {
         com.focusguard.app.data.LockState(this).shouldBlockNow
@@ -237,6 +255,7 @@ class GuardAccessibilityService : AccessibilityService() {
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString() ?: return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) lastWindowPackage = pkg
         // 自身界面（锁屏页/答题页/应用主界面）不拦截
         if (pkg == packageName) return
 
