@@ -79,7 +79,6 @@ object QuestionBank {
         }
         lastLoadError = ""
         val arr = JSONArray(text)
-        val arr = JSONArray(text)
         return List(arr.length()) { i ->
             val o = arr.getJSONObject(i)
             val opts = o.getJSONArray("o")
