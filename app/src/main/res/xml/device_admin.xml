@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  设备管理员策略声明（系统「设备管理员」列表里会显示本应用）。
-  只用最小集合：force-lock = 立即锁屏，用于「执法瞬间锁屏」在
-  没有 Dhizuku 的机器上也能生效；不申请擦除数据等危险策略。
+  设备管理员策略声明（系统「设备管理器应用」列表里会显示本应用）。
+  只申请**真正会用**的最小集合，故意不要这几项：
+  · 擦除数据（wipe-data）：不可逆的数据损失，不做；
+  · 重置/限制密码（reset-password / limit-password）：与自律无关，还可能把人锁在设备外；
+  · 监视登录、存储加密等：用不上。
+  申请的：
+  · force-lock      立即锁屏 —— 执法瞬间锁屏（没有 Dhizuku 也能用）
+  · disable-camera  禁用相机 —— 锁机期间禁相机（同样免 Dhizuku）
+  注意：处于「已激活」状态时，系统会阻止卸载本应用 —— 顺带多一层防破解。
 -->
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-policies>
         <force-lock />
+        <disable-camera />
     </uses-policies>
 </device-admin>

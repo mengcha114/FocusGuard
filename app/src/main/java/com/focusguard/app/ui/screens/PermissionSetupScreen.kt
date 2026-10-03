@@ -107,7 +107,8 @@ fun PermissionSetupScreen(
                 key = "device_admin",
                 title = "设备管理员（系统自带·推荐）",
                 description = "系统设置 → 安全 → 设备管理器应用里的那个，不需要 root 与 Shizuku。" +
-                    "激活后锁机可在执法瞬间立即锁屏；随时可在系统设置里撤销",
+                    "激活后可用：执法瞬间立即锁屏、锁机期间禁用相机；" +
+                    "另外**激活期间系统会禁止卸载本应用**（多一层防破解）。随时可在系统设置里撤销",
                 icon = Icons.Default.AdminPanelSettings,
                 isGranted = com.focusguard.app.enhance.AdminEnhancer.isActive(context),
                 isRequired = false

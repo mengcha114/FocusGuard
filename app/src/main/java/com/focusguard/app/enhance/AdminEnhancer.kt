@@ -28,6 +28,24 @@ object AdminEnhancer {
         dpm(context)?.isAdminActive(component(context)) == true
     }.getOrDefault(false)
 
+    /**
+     * 禁用/恢复相机（设备管理员的 disable-camera 策略，不需要 Dhizuku）。
+     * 与 Dhizuku 版本的区别：只在普通 admin 权限范围内，效果相同。
+     */
+    fun setCameraDisabled(context: Context, disabled: Boolean): Boolean {
+        val manager = dpm(context) ?: return false
+        val active = runCatching { manager.isAdminActive(component(context)) }.getOrDefault(false)
+        if (!active) return false
+        return try {
+            manager.setCameraDisabled(component(context), disabled)
+            Log.d(TAG, "设备管理员 setCameraDisabled($disabled) 成功")
+            true
+        } catch (e: Throwable) {
+            Log.w(TAG, "设备管理员 setCameraDisabled 失败：${e.message}")
+            false
+        }
+    }
+
     /** 立即锁屏（激活为设备管理员即可用，不需要 Dhizuku）。 */
     fun lockNow(context: Context): Boolean {
         val manager = dpm(context) ?: return false

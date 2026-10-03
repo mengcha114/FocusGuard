@@ -217,7 +217,16 @@ object LockPolicies {
     private fun applyHardening(app: Context): Set<String> {
         val p = prefs(app)
         val applied = p.getStringSet(KEY_HARDENING_APPLIED, emptySet()).orEmpty().toMutableSet()
-        if (!DhizukuEnhancer.ensureReady(app)) return applied
+        val dzReady = DhizukuEnhancer.ensureReady(app)
+
+        // 禁相机：Dhizuku（Device Owner）或系统自带设备管理员（disable-camera）任一可用即可
+        if (isHardeningEnabled(app, Hardening.NO_CAMERA)) {
+            val ok = (dzReady && DhizukuEnhancer.setCameraDisabled(app, true)) ||
+                (AdminEnhancer.isActive(app) && AdminEnhancer.setCameraDisabled(app, true))
+            if (ok) applied.add(Hardening.NO_CAMERA.key)
+        }
+        // 其余项都需要 Device Owner 权限（Dhizuku）
+        if (!dzReady) return applied
 
         if (isHardeningEnabled(app, Hardening.AUTO_TIME)) {
             if (!p.contains(KEY_AUTOTIME_ORIGINAL)) {
@@ -231,11 +240,6 @@ object LockPolicies {
             val a = DhizukuEnhancer.setAutoTimeEnabled(app, true)
             val b = DhizukuEnhancer.setAutoTimeZoneEnabled(app, true)
             if (a || b) applied.add(Hardening.AUTO_TIME.key)
-        }
-        if (isHardeningEnabled(app, Hardening.NO_CAMERA) &&
-            DhizukuEnhancer.setCameraDisabled(app, true)
-        ) {
-            applied.add(Hardening.NO_CAMERA.key)
         }
         if (isHardeningEnabled(app, Hardening.NO_CAPTURE) &&
             DhizukuEnhancer.setScreenCaptureDisabled(app, true)
@@ -272,8 +276,15 @@ object LockPolicies {
     private fun revertHardening(app: Context) {
         val p = prefs(app)
         val applied = p.getStringSet(KEY_HARDENING_APPLIED, emptySet()).orEmpty()
+        // 设备管理员（免 Dhizuku）能力先无条件撤销：相机不能留残留
+        runCatching { AdminEnhancer.setCameraDisabled(app, false) }
         if (!DhizukuEnhancer.ensureReady(app)) {
-            Log.w(TAG, "Dhizuku 未就绪，加固暂不撤销，稍后重试（记录 ${applied.size} 项）")
+            // 只记了「禁相机」这种 admin 也能做的项 → 已经撤完，直接清记录
+            if ((applied - Hardening.NO_CAMERA.key).isEmpty()) {
+                p.edit().putStringSet(KEY_HARDENING_APPLIED, emptySet()).apply()
+            } else {
+                Log.w(TAG, "Dhizuku 未就绪，加固暂不撤销，稍后重试（记录 ${applied.size} 项）")
+            }
             return
         }
         // 无条件撤销全部项：并发写入/记录丢失都不会留下「关不掉的相机」这类残留
