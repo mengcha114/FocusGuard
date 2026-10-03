@@ -1158,7 +1158,7 @@ private fun LockScreenContent(
                                 lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
                                 else -> "专注锁定中"
                             },
-                            subBadge = if (com.focusguard.app.enhance.DhizukuUpgrade.pending) "⏳ 恢复中：${com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { \"等待 Dhizuku\" }}" else "🛡️ 系统级守护",
+                            subBadge = if (com.focusguard.app.enhance.DhizukuUpgrade.pending) "⏳ 恢复中：" + com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { "等待 Dhizuku" } else "🛡️ 系统级守护",
                             accent = accent,
                             palette = palette,
                             locked = !isRelaxed
@@ -1337,7 +1337,7 @@ private fun LockScreenContent(
                             lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
                             else -> "专注锁定中"
                         },
-                        subBadge = if (com.focusguard.app.enhance.DhizukuUpgrade.pending) "⏳ 恢复中：${com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { \"等待 Dhizuku\" }}" else "🛡️ 系统级守护",
+                        subBadge = if (com.focusguard.app.enhance.DhizukuUpgrade.pending) "⏳ 恢复中：" + com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { "等待 Dhizuku" } else "🛡️ 系统级守护",
                         accent = accent,
                         palette = palette,
                         locked = !isRelaxed
