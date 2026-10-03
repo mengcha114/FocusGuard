@@ -81,6 +81,7 @@ fun UnlockChallengeScreen(
 
     /** 答错 / 超时统一处理：计数，次数用完则进入冷却。 */
     fun onWrong(msg: String) {
+        generator.easeDifficulty = true
         val enteredCooldown = lockState.recordWrongAnswer()
         freeWrongLeft = lockState.freeWrongLeft
         feedbackMessage = msg
@@ -127,6 +128,7 @@ fun UnlockChallengeScreen(
         val correct = generator.isAnswerCorrect(userAnswer, question.answer)
         if (correct) {
             lockState.recordCorrectAnswer()
+            generator.easeDifficulty = false
             freeWrongLeft = lockState.freeWrongLeft
             currentCorrectCount += 1
             if (currentCorrectCount >= targetCorrectCount) {
@@ -273,12 +275,18 @@ fun UnlockChallengeScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf("A", "B", "C", "D").forEach { optKey ->
+                        val multi = currentQuestion.answer.length > 1
+                        currentQuestion.options.indices.map { ('A' + it).toString() }.forEach { optKey ->
                             Button(
                                 onClick = {
                                     if (!switching && !cooling) {
-                                        userAnswer = optKey
-                                        submit()
+                                        if (multi) {
+                                            userAnswer = if (optKey in userAnswer) userAnswer.replace(optKey, "")
+                                            else (userAnswer + optKey).toCharArray().sorted().joinToString("")
+                                        } else {
+                                            userAnswer = optKey
+                                            submit()
+                                        }
                                     }
                                 },
                                 modifier = Modifier
@@ -286,8 +294,8 @@ fun UnlockChallengeScreen(
                                     .height(52.dp),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (userAnswer == optKey) palette.accent else palette.card,
-                                    contentColor = if (userAnswer == optKey) palette.bg else palette.text
+                                    containerColor = if (optKey in userAnswer) palette.accent else palette.card,
+                                    contentColor = if (optKey in userAnswer) palette.bg else palette.text
                                 )
                             ) {
                                 Text(optKey, fontSize = 20.sp, fontWeight = FontWeight.Bold)

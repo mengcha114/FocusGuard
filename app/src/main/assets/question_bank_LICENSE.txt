@@ -1,0 +1,4 @@
+本应用答题题库整理自以下开源数据集（MIT License）：
+1. TAL-SCQ5K，好未来（TAL Education），https://github.com/math-eval/TAL-SCQ5K
+2. AGIEval（高考部分），Microsoft，https://github.com/ruixiangcui/AGIEval
+题目经过年级判定、难度筛选与公式格式转换。

@@ -169,6 +169,7 @@ object LockOverlayManager {
 
     /** 答错 / 超时统一处理：计数，必要时进入冷却，否则显示解析后换题。 */
     private fun onWrong(context: Context, lockState: LockState, session: ChallengeSession, msg: String) {
+        generator(context).easeDifficulty = true
         val cooldown = lockState.recordWrongAnswer()
         showFeedback(session, msg, isError = true)
         session.switching = true
@@ -2287,14 +2288,21 @@ object LockOverlayManager {
             box.addView(
                 LinearLayout(context).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    listOf("A", "B", "C", "D").forEach { optKey ->
+                    val multi = session.question.answer.length > 1
+                    session.question.options.indices.map { ('A' + it).toString() }.forEach { optKey ->
                         addView(
                             buildKeyButton(context, optKey) {
                                 if (!session.switching && !session.cooling) {
-                                    session.input = optKey
-                                    refreshAnswerText(session)
-                                    // 点击选项后自动触发提交，带来极致快捷体验
-                                    onSubmitAnswer(context, lockState, session)
+                                    if (multi) {
+                                        // 多选：点选切换，选好后点「提交答案」
+                                        session.input = if (optKey in session.input) session.input.replace(optKey, "")
+                                        else (session.input + optKey).toCharArray().sorted().joinToString("")
+                                        refreshAnswerText(session)
+                                    } else {
+                                        session.input = optKey
+                                        refreshAnswerText(session)
+                                        onSubmitAnswer(context, lockState, session)
+                                    }
                                 }
                             }.apply {
                                 setBackgroundColor(android.graphics.Color.parseColor(tint(p.accent, 0x33)))
@@ -2532,6 +2540,7 @@ object LockOverlayManager {
         val correct = generator(context).isAnswerCorrect(session.input, session.question.answer)
         if (correct) {
             lockState.recordCorrectAnswer()
+            generator(context).easeDifficulty = false
             session.correctCount += 1
             challengeProgressText?.text = "${session.correctCount} / ${session.requiredCorrect}"
             if (session.correctCount >= session.requiredCorrect) {

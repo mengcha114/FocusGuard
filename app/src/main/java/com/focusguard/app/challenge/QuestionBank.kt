@@ -1,114 +1,103 @@
 package com.focusguard.app.challenge
 
+import android.content.Context
 import com.focusguard.app.data.GradeStore
+import org.json.JSONArray
+import java.util.zip.GZIPInputStream
 
 /**
- * 具有深度思维量、杜绝一眼秒杀的高品质本地权威题库。
+ * 本地题库（assets/question_bank.json.gz，由 tools/build_question_bank.py 生成）。
  *
- * 核心设计：
- * 1. 严格按学段细分隔离（小学/初一/初二/初三/高一/高二/高三/大学），各学段题干紧扣本年级核心思维点；
- * 2. 以数学与物理思维逻辑推导为主（函数最值、数列求和、解析几何焦点弦、动量守恒、微积分极值），杜绝常识秒杀；
- * 3. 携带考点模块 [topic] 标签，支持换一题时强制考点互斥轮换，保证换题时能换到用户能下笔的考点；
- * 4. 选项四选一，锁机界面支持 ABCD 快捷大按钮。
+ * 来源：TAL-SCQ5K（好未来）、AGIEval 高考部分（微软），均为 MIT 许可，
+ * 出处见 assets/question_bank_LICENSE.txt。年级按题目真实来源判定，难度已筛除过易与过难。
+ *
+ * 首次使用时懒加载（约 2500 题，解压后 1 MB 左右），之后常驻内存。
  */
 object QuestionBank {
 
     data class Item(
+        /** 年级，与 [GradeStore.Grade.level] 一致。 */
         val grade: Int,
         val subject: String,
-        val stream: String, // SCIENCE, HUMANITIES, ALL
-        val topic: String,   // FUNCTION, SEQUENCE, GEOMETRY, EQUATION, CALCULUS, PHYSICS_FORCE, PHYSICS_EM, LOGIC, APPLICATION
+        /** SCIENCE / HUMANITIES / ALL */
+        val stream: String,
+        /** 知识点模块（换一题时互斥轮换）。 */
+        val topic: String,
+        /** 难度 1 中等 / 2 偏难 / 3 难。 */
+        val difficulty: Int,
         val question: String,
         val options: List<String>,
+        /** 单选为一个字母；多选为排序后的字母组合，如 "AC"。 */
         val answer: String,
         val explanation: String
-    )
+    ) {
+        val isMulti: Boolean get() = answer.length > 1
+    }
 
-    val items: List<Item> = listOf(
-        Item(1, "数学", "ALL", "EQUATION", "笼子里有若干只鸡和兔，上面数有 35 个头，下面数有 94 只脚。笼中兔子的数量是（ ）只", listOf("A. 12", "B. 23", "C. 14", "D. 21"), "A", "假设全是鸡，则有 35×2 = 70 只脚，实际多了 94 - 70 = 24 只脚。每只兔比鸡多 2 只脚，故兔有 24÷2 = 12 只。"),
-        Item(1, "数学", "ALL", "APPLICATION", "甲乙两地相距 360 千米，客车和货车同时从两地相向而行，3 小时后相遇。客车每小时行 70 千米，货车每小时行（ ）千米", listOf("A. 40", "B. 50", "C. 60", "D. 70"), "B", "两车速度之和为 360 ÷ 3 = 120 千米/时。货车速度为 120 - 70 = 50 千米/时。"),
-        Item(1, "数学", "ALL", "APPLICATION", "一项工程，甲单独做需 12 天完成，乙单独做需 24 天完成。若甲乙两人合作，完成这项工程需要（ ）天", listOf("A. 6", "B. 8", "C. 10", "D. 18"), "B", "甲每天完成 1/12，乙每天完成 1/24，两人合作每天完成 1/12 + 1/24 = 1/8。总时间为 1 ÷ (1/8) = 8 天。"),
-        Item(1, "数学", "ALL", "LOGIC", "某工厂加工一批零件，第一天加工了总数的 1/4，第二天加工了余下的 1/3，此时还剩 120 个未加工。这批零件共有（ ）个", listOf("A. 180", "B. 240", "C. 300", "D. 360"), "B", "第一天后剩 3/4，第二天加工 3/4 × 1/3 = 1/4。两天共加工 1/2，剩下 1/2 为 120 个，总数为 120 ÷ (1/2) = 240 个。"),
-        Item(1, "科学", "ALL", "SCIENCE", "关于太阳系行星的说法中，体积和质量最大的一颗是（ ）", listOf("A. 地球", "B. 火星", "C. 木星", "D. 土星"), "C", "木星是太阳系八大行星中体积最大、自转最快的气态巨行星。"),
-        Item(2, "数学", "ALL", "EQUATION", "解方程 3(x - 2) = 2 - (x - 4)，方程的解为 x = （ ）", listOf("A. 1", "B. 2", "C. 3", "D. 4"), "C", "去括号得 3x - 6 = 2 - x + 4 => 3x - 6 = 6 - x => 4x = 12 => x = 3。"),
-        Item(2, "数学", "ALL", "ALGEBRA", "若 |a - 3| + (b + 2)² = 0，则代数式 (a + b)²⁰²⁴ 的值为（ ）", listOf("A. 0", "B. 1", "C. -1", "D. 2024"), "B", "绝对值与偶次方具有非负性，和为 0 则各自为 0。a - 3 = 0 => a = 3；b + 2 = 0 => b = -2。a + b = 1，1²⁰²⁴ = 1。"),
-        Item(2, "数学", "ALL", "ALGEBRA", "计算 (-1)¹⁰⁰ + (-1)¹⁰¹ × |-3| 的结果是（ ）", listOf("A. 4", "B. -2", "C. 2", "D. -4"), "B", "(-1)¹⁰⁰ = 1，(-1)¹⁰¹ = -1，|-3| = 3。原式 = 1 + (-1) × 3 = 1 - 3 = -2。"),
-        Item(2, "数学", "ALL", "GEOMETRY", "已知一个角的补角比这个角的余角的 3 倍少 20°，则这个角的度数为（ ）", listOf("A. 30°", "B. 35°", "C. 45°", "D. 55°"), "B", "设该角为 x。补角为 180° - x，余角为 90° - x。由题意 180 - x = 3(90 - x) - 20 => 180 - x = 250 - 3x => 2x = 70 => x = 35°。"),
-        Item(2, "数学", "ALL", "APPLICATION", "某商店进了一批商品，按标价的八折出售仍可获利 20%。若标价为 150 元，则该商品的进价为（ ）元", listOf("A. 96", "B. 100", "C. 108", "D. 120"), "B", "实际售价为 150 × 0.8 = 120 元。设进价为 c，由利润率 (120 - c)/c = 20% => 120 = 1.2c => c = 100 元。"),
-        Item(3, "数学", "ALL", "FUNCTION", "已知一次函数 y = kx + b 的图象经过点 A(2, 0) 和点 B(0, 4)，则关于 x 的不等式 kx + b > 0 的解集为（ ）", listOf("A. x < 2", "B. x > 2", "C. x < 4", "D. x > 4"), "A", "由 A(2,0) 和 B(0,4) 代入得 k = (0-4)/(2-0) = -2, b = 4。函数 y = -2x + 4。解 -2x + 4 > 0 得 x < 2。"),
-        Item(3, "数学", "ALL", "GEOMETRY", "在直角三角形 ABC 中，∠C = 90°，两直角边长分别为 AC = 5，BC = 12，则斜边上的高线长为（ ）", listOf("A. 60/13", "B. 65/12", "C. 13/2", "D. 5"), "A", "由勾股定理 AB = √(5² + 12²) = 13。利用面积等式 1/2 × 5 × 12 = 1/2 × 13 × h，得 h = 60/13。"),
-        Item(3, "数学", "ALL", "GEOMETRY", "将长为 8cm、宽为 6cm 的矩形纸片折叠使对角顶点重合，折痕展开后的长度为（ ）cm", listOf("A. 7.5", "B. 8", "C. 9.5", "D. 10"), "A", "对角线长为 √(8² + 6²) = 10cm，折痕为对角线的中垂线。设折痕半长为 y，由相似三角形 y / 5 = (6/8) => y = 30/8 = 3.75cm。折痕全长为 2y = 7.5cm。"),
-        Item(3, "物理", "ALL", "PHYSICS_FORCE", "底面积为 100 cm² 的容器内装有水，放入重为 6N 的木块漂浮在水面上（g=10N/kg），水面上升的高度为（ ）cm", listOf("A. 0.6", "B. 6", "C. 12", "D. 60"), "B", "漂浮 F浮 = G = 6N。排开水质量 m = 6/10 = 0.6kg = 600g，体积 V = 600 cm³。上升高度 Δh = V/S = 600 / 100 = 6 cm。"),
-        Item(3, "物理", "ALL", "PHYSICS_FORCE", "一重物重 120N，用滑轮组以 50N 的拉力在 2s 内匀速提升 1m。若承担动滑轮的绳子股数为 3，则该滑轮组的机械效率为（ ）", listOf("A. 60%", "B. 75%", "C. 80%", "D. 83.3%"), "C", "有用功 W有 = G·h = 120 × 1 = 120 J。绳端移动距离 s = 3h = 3m，总功 W总 = F·s = 50 × 3 = 150 J。效率 η = 120 / 150 = 80%。"),
-        Item(4, "数学", "ALL", "FUNCTION", "已知二次函数 y = x² - 2x - 3，当 -2 ≤ x ≤ 2 时，y 的最大值和最小值分别为（ ）", listOf("A. 5 和 -4", "B. 5 和 -3", "C. -3 和 -4", "D. 1 和 -4"), "A", "对称轴为 x = -(-2)/2 = 1，开口向上。当 x = 1 时取最小值 y = 1 - 2 - 3 = -4。在区间 [-2, 2] 内，距对称轴最远端点 x = -2 处取最大值 y = (-2)² - 2(-2) - 3 = 4 + 4 - 3 = 5。"),
-        Item(4, "数学", "ALL", "EQUATION", "已知关于 x 的一元二次方程 x² - (m + 2)x + 2m = 0 的两根平方和为 5，则实数 m 的值为（ ）", listOf("A. 1", "B. -1", "C. 1 或 -1", "D. 3"), "C", "由韦达定理 x1 + x2 = m + 2，x1·x2 = 2m。x1² + x2² = (x1+x2)² - 2x1·x2 = (m+2)² - 4m = m² + 4 = 5 => m² = 1 => m = ±1。判别式 Δ = (m-2)² ≥ 0 恒成立。"),
-        Item(4, "数学", "ALL", "GEOMETRY", "如图，在 △ABC 中，点 D, E 分别在 AB, AC 上，DE // BC。若 AD:DB = 2:3，且 △ADE 的面积为 8，则梯形 BCED 的面积为（ ）", listOf("A. 12", "B. 18", "C. 42", "D. 50"), "C", "AD / AB = 2 / (2 + 3) = 2/5。由相似性质面积比等于相似比平方，S(△ADE) : S(△ABC) = (2/5)² = 4/25。S(△ABC) = 8 × 25/4 = 50。梯形面积 = 50 - 8 = 42。"),
-        Item(4, "物理", "ALL", "PHYSICS_EM", "电阻 R1 = 10Ω 与 R2 = 20Ω 并联接在 6V 的电源两端，则干路电流为（ ）A", listOf("A. 0.3", "B. 0.6", "C. 0.9", "D. 1.8"), "C", "并联各支路电压均为 6V。I1 = 6/10 = 0.6A，I2 = 6/20 = 0.3A。干路电流 I = I1 + I2 = 0.6 + 0.3 = 0.9A。"),
-        Item(4, "化学", "ALL", "SCIENCE", "向含等质量稀盐酸和稀硫酸的两个烧杯中分别加入足量的金属锌，完全反应后产生氢气的质量关系是（ ）", listOf("A. 盐酸产生的多", "B. 硫酸产生的多", "C. 一样多", "D. 无法确定"), "A", "设酸质量均为 73g。73g 纯 HCl 提供 2mol H⁺ 产生 2g H2；73g 纯 H2SO4 提供 2×(73/98) ≈ 1.49mol H⁺ 产生约 1.49g H2。故等质量酸完全反应时盐酸产氢更多。"),
-        Item(5, "数学", "ALL", "FUNCTION", "函数 f(x) = x² - 4x + 1 在闭区间 [0, 3] 上的最大值与最小值之和为（ ）", listOf("A. -2", "B. -3", "C. 1", "D. -4"), "A", "对称轴为 x = 2，开口向上。在区间 [0, 3] 内顶点 x = 2 处取最小值 f(2) = 4 - 8 + 1 = -3。端点 f(0) = 1，f(3) = 9 - 12 + 1 = -2。最大值为 1。最值之和为 1 + (-3) = -2。"),
-        Item(5, "数学", "ALL", "FUNCTION", "已知 a = log_2(3)，b = log_3(2)，c = 2^(0.5)，则 a, b, c 的大小关系是（ ）", listOf("A. b < c < a", "B. a < c < b", "C. b < a < c", "D. c < a < b"), "A", "b = log_3(2) < 1；c = √2 ≈ 1.414；a = log_2(3) > log_2(2√2) = 1.5。故 b < c < a。"),
-        Item(5, "数学", "ALL", "FUNCTION", "若 sin α + cos α = 1/5，且 α ∈ (0, π)，则 tan α 的值为（ ）", listOf("A. -4/3", "B. -3/4", "C. 4/3 或 3/4", "D. -4/3 或 -3/4"), "A", "两边平方得 1 + 2sin α cos α = 1/25 => 2sin α cos α = -24/25 < 0。因 α ∈ (0, π)，故 sin α > 0, cos α < 0，α 在第二象限。(sin α - cos α)² = 1 - 2sin α cos α = 49/25 => sin α - cos α = 7/5。联立解得 sin α = 4/5, cos α = -3/5。tan α = -4/3。"),
-        Item(5, "数学", "ALL", "GEOMETRY", "已知平面向量 a = (1, 2)，b = (x, 1)。若 a ⊥ b，则 |a + b| 的模长等于（ ）", listOf("A. √5", "B. 3", "C. √10", "D. 5"), "C", "由 a·b = x + 2 = 0 得 x = -2。a + b = (-1, 3)，模长 = √((-1)² + 3²) = √10。"),
-        Item(5, "物理", "SCIENCE", "PHYSICS_FORCE", "质量为 1kg 的物块放在粗糙水平面上，用 5N 的水平拉力拉动它做匀加速直线运动，其加速度大小为 3 m/s²。物块与地面间的动摩擦因数为（g 取 10m/s²）（ ）", listOf("A. 0.1", "B. 0.2", "C. 0.3", "D. 0.5"), "B", "由牛顿第二定律 F - f = ma => 5 - f = 1×3 => 摩擦力 f = 2N。f = μ·mg => μ = 2 / (1×10) = 0.2。"),
-        Item(5, "物理", "SCIENCE", "PHYSICS_FORCE", "一物体从高空以初速度 v0 = 10 m/s 水平抛出，经 1s 落地（g 取 10m/s²，不计空气阻力）。物体落地时的速度大小为（ ）m/s", listOf("A. 10", "B. 10√2", "C. 20", "D. 15"), "B", "水平分速度 vx = 10 m/s；落地时坚直分速度 vy = gt = 10×1 = 10 m/s。合速度 v = √(vx² + vy²) = √(100 + 100) = 10√2 m/s。"),
-        Item(6, "数学", "ALL", "SEQUENCE", "数列 {a_n} 满足 a_1 = 1，a_(n+1) = 2a_n + 1，则该数列前 6 项的和 S_6 为（ ）", listOf("A. 63", "B. 120", "C. 126", "D. 127"), "B", "通项 a_n = 2^n - 1。前 6 项和 S_6 = (2¹ + 2² + ... + 2⁶) - 6 = (2⁷ - 2) - 6 = 126 - 6 = 120。"),
-        Item(6, "数学", "ALL", "SEQUENCE", "在等比数列 {a_n} 中，已知 a_2 = 2，a_5 = 16，则 a_3 + a_4 的值为（ ）", listOf("A. 8", "B. 10", "C. 12", "D. 14"), "C", "公比 q³ = a_5 / a_2 = 16/2 = 8 => q = 2。因此 a_3 = a_2 × q = 4，a_4 = a_3 × q = 8。a_3 + a_4 = 4 + 8 = 12。"),
-        Item(6, "数学", "ALL", "GEOMETRY", "过双曲线 x²/4 - y²/b² = 1 的右焦点 F 作垂直于实轴的通径交双曲线于 A, B 两点。若通径长等于实轴长，则该双曲线的离心率 e 为（ ）", listOf("A. √2", "B. √3", "C. 2", "D. √5"), "A", "通径长为 2b²/a，实轴长为 2a。依题意 2b²/a = 2a => b² = a²。离心率 e = c/a = √(a²+b²)/a = √(2a²)/a = √2。"),
-        Item(6, "数学", "ALL", "CALCULUS", "曲线 y = x³ - 3x + 1 在点 (2, 3) 处的切线方程为（ ）", listOf("A. y = 9x - 15", "B. y = 9x - 12", "C. y = 3x - 3", "D. y = 6x - 9"), "A", "求导 y' = 3x² - 3。在 x = 2 处的切线斜率 k = 3(4) - 3 = 9。切线方程为 y - 3 = 9(x - 2) => y = 9x - 18 + 3 = 9x - 15。"),
-        Item(6, "数学", "ALL", "CALCULUS", "设函数 f(x) = x³ - 3x² + ax + 1 在区间 (1, 3) 内单调递减，则实数 a 的取值范围是（ ）", listOf("A. a ≤ -9", "B. a ≤ 0", "C. a ≤ 3", "D. a ≥ 9"), "A", "导数 f'(x) = 3x² - 6x + a ≤ 0 在 (1, 3) 恒成立。抛物线对称轴 x=1，在 (1,3) 上递增，最大值在端点 x=3 处，f'(3) = 27 - 18 + a = 9 + a ≤ 0 => a ≤ -9。"),
-        Item(6, "物理", "SCIENCE", "PHYSICS_EM", "在磁感应强度 B = 0.5 T 的匀强磁场中，长度 L = 0.4 m 的导体棒垂直切割磁感线，运动速度 v = 5 m/s，棒两端的感应电动势大小为（ ）V", listOf("A. 0.1", "B. 1.0", "C. 2.0", "D. 0.5"), "B", "由公式 E = BLv = 0.5 × 0.4 × 5 = 1.0 V。"),
-        Item(6, "物理", "SCIENCE", "PHYSICS_EM", "带电量为 q、质量为 m 的粒子以速度 v 垂直射入磁感应强度为 B 的匀强磁场做匀速圆周运动，其运动轨迹的轨道半径 R 等于（ ）", listOf("A. mv / (qB)", "B. qB / (mv)", "C. mB / (qv)", "D. qv / (mB)"), "A", "洛伦兹力提供向心力 qvB = m v²/R，解得 R = mv / (qB)。"),
-        Item(6, "地理", "HUMANITIES", "LOGIC", "某地夏至日正午太阳高度为 75°（太阳位于正南方），冬至日正午太阳高度为 28°，则该地的纬度是（ ）", listOf("A. 38.5°N", "B. 31.5°N", "C. 23.5°N", "D. 35°N"), "A", "正午太阳高度 H = 90° - |φ - δ|。夏至日 75° = 90° - (φ - 23.5°) => φ = 38.5°N。代入冬至日验证：90° - (38.5° + 23.5°) = 28°，完全符合。"),
-        Item(7, "数学", "ALL", "CALCULUS", "已知函数 f(x) = e^x - ax 有两个不同的零点，则实数 a 的取值范围是（ ）", listOf("A. a > e", "B. 0 < a < e", "C. a > 1", "D. a < e"), "A", "令 f(x) = 0 得 a = e^x / x (x > 0)。记 g(x) = e^x / x，求导 g'(x) = e^x(x - 1)/x²。当 x ∈ (0, 1) 时递减，x > 1 时递增，在 x = 1 处取得极小值 g(1) = e。要有两个交点，水平线 y = a 必须大于极小值，故 a > e。"),
-        Item(7, "数学", "ALL", "GEOMETRY", "椭圆 x²/25 + y²/16 = 1 的左右焦点为 F1, F2，点 P 为椭圆上一点且 ∠F1PF2 = 90°，则 △F1PF2 的面积为（ ）", listOf("A. 9", "B. 12", "C. 16", "D. 25"), "C", "焦点三角形面积公式 S = b² × tan(θ/2)。此处 a=5, b=4，θ=90°，tan(45°)=1，故 S = 4² × 1 = 16。"),
-        Item(7, "数学", "ALL", "LOGIC", "二项式 (x - 2/x)⁶ 的展开式中，常数项的值等于（ ）", listOf("A. -160", "B. 160", "C. -240", "D. 240"), "A", "通项公式 T_(r+1) = C(6, r) · x^(6-r) · (-2/x)^r = C(6, r) · (-2)^r · x^(6-2r)。令 6-2r = 0 得 r = 3。常数项 = C(6, 3) · (-2)³ = 20 × (-8) = -160。"),
-        Item(7, "数学", "ALL", "LOGIC", "将 4 名志愿者全部安排到 3 个不同的展区服务，每个展区至少 1 人，不同的分配方案共有（ ）种", listOf("A. 24", "B. 36", "C. 48", "D. 72"), "B", "先将 4 人分为 2, 1, 1 三组：C(4, 2)/1! = 6 种；再将三组全排列分到 3 个展区：6 × A(3, 3) = 6 × 6 = 36 种。"),
-        Item(7, "物理", "SCIENCE", "PHYSICS_FORCE", "质量为 M 的木块静止在光滑水平面上，质量为 m 的子弹以速度 v0 水平击中木块并留在其中，系统损失的机械能为（ ）", listOf("A. 1/2 m v0²", "B. [M / (2(M + m))] m v0²", "C. [m / (2(M + m))] M v0²", "D. 0"), "B", "动量守恒 mv0 = (M+m)v => v = mv0/(M+m)。初动能 E1 = 1/2 m v0²，末动能 E2 = 1/2(M+m)v² = m²v0²/[2(M+m)]。损失 ΔE = E1 - E2 = [M / (2(M+m))] m v0²。"),
-        Item(8, "高数", "ALL", "CALCULUS", "极限 lim(x->0) (e^x - 1 - x) / x² 的极限值等于（ ）", listOf("A. 0", "B. 1/2", "C. 1", "D. 2"), "B", "由麦克劳林展开 e^x = 1 + x + x²/2 + o(x²)，分子等于 x²/2 + o(x²)，除以 x² 极限为 1/2。"),
-        Item(8, "高数", "ALL", "CALCULUS", "定积分 ∫[0, π] x · sin x dx 的值为（ ）", listOf("A. 1", "B. 2", "C. π", "D. 2π"), "C", "分部积分：∫ x sin x dx = -x cos x + ∫ cos x dx = -x cos x + sin x。代入 [0, π] 得 (-π cos π + sin π) - 0 = π。"),
-        Item(8, "线代", "ALL", "ALGEBRA", "设 3 阶方阵 A 的特征值为 1, 2, 3，则伴随矩阵 A* 的行列式 |A*| 等于（ ）", listOf("A. 6", "B. 12", "C. 36", "D. 216"), "C", "方阵行列式等于特征值之积：|A| = 1×2×3 = 6。对于 n 阶方阵，|A*| = |A|^(n-1)。此处 n=3，|A*| = 6^(3-1) = 6² = 36。"),
-        Item(8, "计算机", "ALL", "LOGIC", "在快速排序（Quick Sort）算法中，最坏情况下的时间复杂度为（ ）", listOf("A. O(n log n)", "B. O(n)", "C. O(n²)", "D. O(2ⁿ)"), "C", "当每次选取的基准值均为极值（如数据已完全逆序或有序）时，递归深度达 n，退化为冒泡，最坏复杂度为 O(n²)。"),
-        Item(2, "数学", "ALL", "ALGEBRA", "下列单项式中，与 -3a²b 是同类项的是（ ）", listOf("A. 2ab²", "B. 5a²b", "C. -3a²", "D. 2a²b²"), "B", "所含字母相同，并且相同字母的指数也相同的项叫做同类项。5a²b 与 -3a²b 字母均为 a, b 且 a 的指数为 2、b 的指数为 1。"),
-        Item(2, "数学", "ALL", "ALGEBRA", "若 (x + 3)(x - 2) = x² + mx + n，则 m + n 的值等于（ ）", listOf("A. -5", "B. 5", "C. -7", "D. 7"), "A", "(x+3)(x-2) = x² + x - 6。对比系数得 m = 1，n = -6。故 m + n = 1 + (-6) = -5。"),
-        Item(2, "数学", "ALL", "GEOMETRY", "如图，直线 a // b，被直线 c 所截。若 ∠1 = 50°，则 ∠1 的同旁内角的度数是（ ）", listOf("A. 40°", "B. 50°", "C. 130°", "D. 140°"), "C", "两直线平行，同旁内角互补。同旁内角 = 180° - 50° = 130°。"),
-        Item(2, "数学", "ALL", "ALGEBRA", "已知 2^x = 3，2^y = 5，则 2^(2x + y) 的值为（ ）", listOf("A. 11", "B. 30", "C. 45", "D. 90"), "C", "2^(2x+y) = (2^x)² × 2^y = 3² × 5 = 9 × 5 = 45。"),
-        Item(3, "数学", "ALL", "EQUATION", "解分式方程 2/(x - 1) = 3/x，该方程的解是（ ）", listOf("A. x = 3", "B. x = -3", "C. x = 1", "D. 无解"), "A", "两边同乘 x(x-1) 得 2x = 3(x - 1) => 2x = 3x - 3 => x = 3。检验：x=3 时分母不为 0，为原方程的解。"),
-        Item(3, "数学", "ALL", "FUNCTION", "直线 y = 2x - 4 与两坐标轴围成的直角三角形的面积为（ ）", listOf("A. 2", "B. 4", "C. 8", "D. 16"), "B", "令 x=0 得 y = -4，交点 (0, -4)；令 y=0 得 x = 2，交点 (2, 0)。直角边长为 2 和 4，面积 S = 1/2 × 2 × 4 = 4。"),
-        Item(3, "数学", "ALL", "GEOMETRY", "等腰三角形的一边长为 4，另一边长为 9，则该等腰三角形的周长为（ ）", listOf("A. 17", "B. 22", "C. 17 或 22", "D. 13"), "B", "若腰长为 4，则三边 4, 4, 9，因为 4+4=8 < 9 违背三角形三边关系定理；故腰长只能为 9，三边为 9, 9, 4，周长 = 9+9+4 = 22。"),
-        Item(3, "物理", "ALL", "PHYSICS_OPTICS", "将点燃的蜡烛置于焦距为 10cm 的凸透镜前 25cm 处，在透镜另一侧的光屏上能观察到（ ）", listOf("A. 倒立缩小的实像", "B. 倒立放大的实像", "C. 正立放大的虚像", "D. 倒立等大的实像"), "A", "物距 u = 25cm > 2f = 20cm。成倒立、缩小的实像，应用是照相机。"),
-        Item(4, "数学", "ALL", "FUNCTION", "如图，点 P 是反比例函数 y = 6/x (x > 0) 图象上一点，PA ⊥ x 轴于 A，PB ⊥ y 轴于 B，则矩形 OAPB 的面积为（ ）", listOf("A. 3", "B. 6", "C. 12", "D. 不确定"), "B", "反比例函数图象上任意一点向两坐标轴作垂线，形成的矩形面积恒等于 |k| = 6。"),
-        Item(4, "数学", "ALL", "GEOMETRY", "半径为 5 的圆 O 中，弦 AB 的长度为 8，则圆心 O 到弦 AB 的距离（弦心距）为（ ）", listOf("A. 3", "B. 4", "C. √41", "D. 2.5"), "A", "垂径定理垂直平分弦，半弦长为 4。由勾股定理，弦心距 d = √(R² - (AB/2)²) = √(5² - 4²) = 3。"),
-        Item(4, "数学", "ALL", "FUNCTION", "抛物线 y = ax² + bx + c 经过原点且开口向下，对称轴为 x = 2，则该二次函数当 x = 4 时的函数值 y 为（ ）", listOf("A. 大于 0", "B. 等于 0", "C. 小于 0", "D. 无法确定"), "B", "抛物线经过原点 (0, 0)，对称轴为 x = 2。由对称性，点 (0, 0) 关于对称轴 x = 2 的对称点为 (4, 0)，因此当 x = 4 时 y = 0。"),
-        Item(4, "物理", "ALL", "PHYSICS_EM", "将标有'6V 3W'的小灯泡 L 与阻值为 6Ω 的定值电阻 R 串联后接在 9V 的电源两端，此时小灯泡的实际功率为（灯丝电阻视为不变）（ ）", listOf("A. 3W", "B. 1.5W", "C. 2W", "D. 4.5W"), "A", "灯泡电阻 RL = U²/P = 36/3 = 12Ω。串联总电阻 R总 = 12 + 6 = 18Ω。电流 I = U总/R总 = 9/18 = 0.5A。灯泡实际功率 P = I² × RL = (0.5)² × 12 = 3W。（刚好达到额定功率）"),
-        Item(5, "数学", "ALL", "FUNCTION", "已知函数 f(x) 是定义在 R 上的奇函数，当 x > 0 时 f(x) = x² - 2x，则 f(-3) 的值为（ ）", listOf("A. 3", "B. -3", "C. 15", "D. -15"), "B", "f(3) = 3² - 2×3 = 9 - 6 = 3。由奇函数性质 f(-x) = -f(x)，得 f(-3) = -f(3) = -3。"),
-        Item(5, "数学", "ALL", "FUNCTION", "函数 f(x) = x + 4/x (x > 0) 的最小值为（ ）", listOf("A. 2", "B. 4", "C. 8", "D. 16"), "B", "根据基本不等式 a + b ≥ 2√(ab)，x + 4/x ≥ 2√(x · 4/x) = 2×2 = 4，当且仅当 x = 4/x 即 x = 2 时取等号。"),
-        Item(5, "数学", "ALL", "TRIGONOMETRY", "在 △ABC 中，内角 A, B, C 的对边分别为 a, b, c。若 a = 2，b = 2√3，A = 30°，则角 B 的大小为（ ）", listOf("A. 60°", "B. 120°", "C. 60° 或 120°", "D. 30°"), "C", "由正弦定理 a / sin A = b / sin B => 2 / sin 30° = 2√3 / sin B => 4 = 2√3 / sin B => sin B = √3/2。由于 b > a，B > A，B 可为 60° 或 120°。"),
-        Item(5, "物理", "SCIENCE", "PHYSICS_FORCE", "一个物体以 20 m/s 的初速度冲上一光滑斜面做匀减速直线运动，加速度大小为 5 m/s²。物体沿斜面上滑的最大距离为（ ）m", listOf("A. 20", "B. 40", "C. 80", "D. 100"), "B", "末速度为 0，由匀变速位移速度公式 v² - v0² = -2as => 0 - 20² = -2 × 5 × s => 400 = 10s => s = 40 m。"),
-        Item(6, "数学", "ALL", "SEQUENCE", "数列 {a_n} 的前 n 项和 S_n = n² + 2n，则 a_10 等于（ ）", listOf("A. 19", "B. 21", "C. 120", "D. 144"), "B", "a_10 = S_10 - S_9 = (10² + 20) - (9² + 18) = 120 - 99 = 21。或通项 a_n = 2n + 1，a_10 = 21。"),
-        Item(6, "数学", "ALL", "GEOMETRY", "已知抛物线 C: y² = 8x 的焦点为 F，准线为 l。点 P 在抛物线 C 上，若 P 到准线 l 的距离为 6，则点 P 的横坐标 x 为（ ）", listOf("A. 2", "B. 4", "C. 6", "D. 8"), "B", "2p = 8 => p = 4，p/2 = 2。准线方程为 x = -2。点 P 到准线距离为 x + p/2 = x + 2 = 6，解得 x = 4。"),
-        Item(6, "数学", "ALL", "CALCULUS", "函数 f(x) = x · ln x 的极小值点为 x = （ ）", listOf("A. 1", "B. e", "C. 1/e", "D. 0"), "C", "定义域 x > 0。求导 f'(x) = 1·ln x + x·(1/x) = ln x + 1。令 f'(x) = 0 得 ln x = -1 => x = 1/e。在 (0, 1/e) 单调减，(1/e, +∞) 单调增，极小值点为 1/e。"),
-        Item(6, "物理", "SCIENCE", "PHYSICS_EM", "一长直导线通有恒定电流 I，在导线下方平行放置一矩形闭合线圈。当线圈由静止自由下落时，线圈中产生的感应电流方向为（ ）", listOf("A. 始终逆时针", "B. 始终顺时针", "C. 先顺时针后逆时针", "D. 无感应电流"), "B", "由右手螺旋定则，导线下方磁场垂直纸面向里，下落时磁场变弱磁通量减少。由楞次定律增反减同，感应电流磁场也向里，安培右手定则判定为顺时针。"),
-        Item(7, "数学", "ALL", "CALCULUS", "当 x > 0 时，关于不等式 e^x 与 x + 1 的大小关系，下列恒成立的是（ ）", listOf("A. e^x > x + 1", "B. e^x < x + 1", "C. e^x = x + 1", "D. 无法确定"), "A", "构造切线放缩函数 g(x) = e^x - x - 1。g'(x) = e^x - 1。当 x > 0 时 g'(x) > 0，g(x) 在 (0, +∞) 严格单调递增。g(x) > g(0) = 0，故 e^x > x + 1。"),
-        Item(7, "数学", "ALL", "GEOMETRY", "已知椭圆 x²/a² + y²/b² = 1 (a > b > 0) 的左右顶点分别为 A1, A2。点 P 为椭圆上异于顶点的动点，则直线 PA1 与 PA2 的斜率之积 k_PA1 · k_PA2 恒等于（ ）", listOf("A. -b²/a²", "B. -a²/b²", "C. b²/a²", "D. -1"), "A", "设 P(x0, y0)，A1(-a, 0), A2(a, 0)。k1 = y0/(x0+a), k2 = y0/(x0-a)。k1·k2 = y0² / (x0² - a²)。点在椭圆上 y0² = b²(1 - x0²/a²) = -b²/a² (x0² - a²)。代入得乘积为 -b²/a²。"),
-        Item(7, "数学", "ALL", "LOGIC", "某人射击击中目标的概率为 0.8，独立连续射击 4 次，恰好命中 3 次的概率为（ ）", listOf("A. 0.2048", "B. 0.4096", "C. 0.512", "D. 0.8192"), "B", "独立重复试验二项分布：P = C(4, 3) × (0.8)³ × (0.2)¹ = 4 × 0.512 × 0.2 = 4 × 0.1024 = 0.4096。"),
-        Item(7, "物理", "SCIENCE", "PHYSICS_FORCE", "光滑水平面上，质量为 2kg 的小球以 6 m/s 速度与静止的质量为 1kg 的小球发生正碰。若碰撞为完全弹性碰撞，碰后原来静止的小球速度为（ ）m/s", listOf("A. 4", "B. 6", "C. 8", "D. 10"), "C", "弹性碰撞公式 v2 = 2m1·v1/(m1+m2) = 2×2×6 / (2+1) = 24 / 3 = 8 m/s。"),
-        Item(8, "高数", "ALL", "CALCULUS", "微分方程 y'' - 4y' + 4y = 0 的通解形式为（ ）", listOf("A. y = (C1 + C2 x) e^(2x)", "B. y = C1 e^(2x) + C2 e^(-2x)", "C. y = C1 cos 2x + C2 sin 2x", "D. y = C1 e^(4x) + C2"), "A", "特征方程 r² - 4r + 4 = (r - 2)² = 0，有两个相等的实根 r1 = r2 = 2。对应通解为 y = (C1 + C2 x) e^(2x)。"),
-        Item(8, "线代", "ALL", "ALGEBRA", "设 A, B 为同阶可逆矩阵，则 (AB)⁻¹ 等于（ ）", listOf("A. A⁻¹ B⁻¹", "B. B⁻¹ A⁻¹", "C. A B⁻¹", "D. B A⁻¹"), "B", "由逆矩阵性质 (AB)(B⁻¹ A⁻¹) = A (B B⁻¹) A⁻¹ = A I A⁻¹ = I，故 (AB)⁻¹ = B⁻¹ A⁻¹。"),
-        Item(8, "计算机", "ALL", "LOGIC", "对于含有 n 个顶点的连通无向图，其生成树所包含的边数必须为（ ）", listOf("A. n", "B. n - 1", "C. n + 1", "D. n(n-1)/2"), "B", "生成树是包含图的所有顶点的极小连通子图，n 个顶点且连通无环的图边数必须恰好为 n - 1。"),
-    )
+    @Volatile private var cache: List<Item>? = null
+
+    /** 单元测试注入。 */
+    internal fun setForTest(items: List<Item>) { cache = items }
+
+    fun all(context: Context?): List<Item> {
+        cache?.let { return it }
+        if (context == null) return emptyList()
+        synchronized(this) {
+            cache?.let { return it }
+            val loaded = runCatching { load(context) }.getOrDefault(emptyList())
+            cache = loaded
+            return loaded
+        }
+    }
+
+    private fun load(context: Context): List<Item> {
+        val text = context.applicationContext.assets.open("question_bank.json.gz").use { raw ->
+            GZIPInputStream(raw).bufferedReader(Charsets.UTF_8).readText()
+        }
+        val arr = JSONArray(text)
+        return List(arr.length()) { i ->
+            val o = arr.getJSONObject(i)
+            val opts = o.getJSONArray("o")
+            Item(
+                grade = o.getInt("g"),
+                subject = o.getString("s"),
+                stream = o.getString("st"),
+                topic = o.optString("t", o.getString("s")),
+                difficulty = o.optInt("d", 2),
+                question = o.getString("q"),
+                options = List(opts.length()) { opts.getString(it) },
+                answer = o.getString("a"),
+                explanation = o.optString("e", "")
+            )
+        }
+    }
 
     /**
-     * 按学段、选科方向筛选适配题目。
-     * [excludeTopic] 用于“换一题”时的考点互斥，强制避开刚刚不会做的考点模块！
+     * 按年级、选科取题。
+     *
+     * - 只取本年级；本年级题少于 [MIN_POOL] 时向下借**低一年级**的偏难题，绝不向上借（不超纲）；
+     * - 选科只对高二 / 高三 / 大学生效：数学所有人都出，理工加物化生，文史加史地；
+     * - [excludeTopic]：换一题时避开刚才的知识点；[maxDifficulty]：答错后降难度。
      */
-    fun find(grade: GradeStore.Grade, stream: GradeStore.Stream, excludeTopic: String? = null): List<Item> {
-        val g = grade.level
-        val s = stream.id
-        val matched = items.filter { item ->
-            item.grade == g && (s == "ALL" || item.stream == "ALL" || item.stream == s)
+    fun find(
+        context: Context?,
+        grade: GradeStore.Grade,
+        stream: GradeStore.Stream,
+        excludeTopic: String? = null,
+        maxDifficulty: Int = 3
+    ): List<Item> {
+        val items = all(context)
+        val streamOn = grade.level >= GradeStore.Grade.SENIOR_2.level
+        fun streamOk(it: Item) = !streamOn || stream == GradeStore.Stream.ALL ||
+            it.stream == "ALL" || it.stream == stream.id
+        var pool = items.filter { it.grade == grade.level && streamOk(it) }
+        if (pool.size < MIN_POOL && grade.level > 1) {
+            pool = pool + items.filter { it.grade == grade.level - 1 && it.difficulty >= 2 && streamOk(it) }
         }
-        if (excludeTopic.isNullOrBlank()) return matched
-        val rotated = matched.filter { it.topic != excludeTopic }
-        return rotated.ifEmpty { matched }
+        val byDiff = pool.filter { it.difficulty <= maxDifficulty }.ifEmpty { pool }
+        if (excludeTopic.isNullOrBlank()) return byDiff
+        return byDiff.filter { it.topic != excludeTopic }.ifEmpty { byDiff }
     }
+
+    private const val MIN_POOL = 40
 }

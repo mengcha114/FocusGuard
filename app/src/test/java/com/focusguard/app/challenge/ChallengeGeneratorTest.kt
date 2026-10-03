@@ -52,12 +52,33 @@ class ChallengeGeneratorTest {
         assertTrue("too few kinds: ${seen.size}", seen.size >= 7)
     }
 
+    private fun item(g: Int, s: String, st: String, d: Int = 2, a: String = "B", t: String = s) =
+        QuestionBank.Item(g, s, st, t, d, "$s 第$g 年级题 $t $d $a", listOf("A. 1", "B. 2", "C. 3", "D. 4"), a, "")
+
     @Test
-    fun questionBankContainsHighSchoolMathAndScience() {
-        val hsMath = QuestionBank.find(GradeStore.Grade.SENIOR_2, GradeStore.Stream.ALL).filter { it.subject == "数学" }
-        assertTrue("高中数学真题不足", hsMath.isNotEmpty())
-        val hsScience = QuestionBank.find(GradeStore.Grade.SENIOR_2, GradeStore.Stream.SCIENCE).filter { it.subject in listOf("物理", "化学", "生物") }
-        assertTrue("高中理科综合真题不足", hsScience.isNotEmpty())
+    fun bankRespectsGradeAndStream() {
+        QuestionBank.setForTest(
+            List(50) { item(7, "数学", "ALL", t = "函数$it") } +
+                List(5) { item(7, "物理", "SCIENCE") } + List(5) { item(7, "历史", "HUMANITIES") } +
+                List(50) { item(6, "数学", "ALL") } + List(5) { item(8, "高数", "ALL") }
+        )
+        val sci = QuestionBank.find(null, GradeStore.Grade.SENIOR_3, GradeStore.Stream.SCIENCE)
+        assertTrue(sci.none { it.subject == "历史" }); assertTrue(sci.any { it.subject == "物理" })
+        val hum = QuestionBank.find(null, GradeStore.Grade.SENIOR_3, GradeStore.Stream.HUMANITIES)
+        assertTrue(hum.none { it.subject == "物理" })
+        // 不向上借：高二绝不出高三 / 大学题
+        assertTrue(QuestionBank.find(null, GradeStore.Grade.SENIOR_2, GradeStore.Stream.ALL).all { it.grade <= 6 })
+        // 答错降难度
+        QuestionBank.setForTest(listOf(item(7, "数学", "ALL", d = 1), item(7, "数学", "ALL", d = 3, t = "x")))
+        assertTrue(QuestionBank.find(null, GradeStore.Grade.SENIOR_3, GradeStore.Stream.ALL, maxDifficulty = 1).all { it.difficulty == 1 })
+    }
+
+    @Test
+    fun multiSelectAnswerIsOrderInsensitive() {
+        assertTrue(gen.isAnswerCorrect("CA", "AC"))
+        assertTrue(gen.isAnswerCorrect("a, c", "AC"))
+        assertFalse(gen.isAnswerCorrect("A", "AC"))
+        assertFalse(gen.isAnswerCorrect("ABC", "AC"))
     }
 
     @Test

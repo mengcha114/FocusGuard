@@ -38,6 +38,8 @@ data class ChallengeQuestion(
  */
 class ChallengeGenerator(context: Context? = null) {
 
+    private val appContext: Context? = context?.applicationContext
+
     private val rnd = SecureRandom()
     private val prefs = context?.applicationContext?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val gradeStore = context?.let { GradeStore(it) }
@@ -109,38 +111,48 @@ class ChallengeGenerator(context: Context? = null) {
      * @param grade 指定年级；为空时读取 [GradeStore]（无 Context 时按小学）
      */
     @Suppress("UNUSED_PARAMETER")
+    /** 答错后置为 true：下一题只出中等难度（避免越错越难、用户做不出）。答对后复位。 */
+    var easeDifficulty: Boolean = false
+
+    /**
+     * 选科权重抽题：数学约 65%，其余学科平分；最近出过的题跳过。
+     */
+    private fun pickBankItem(pool: List<QuestionBank.Item>, recentFp: Set<String>): QuestionBank.Item? {
+        val fresh = pool.filter { "bank|${it.question}" !in recentFp }.ifEmpty { pool }
+        if (fresh.isEmpty()) return null
+        val r = kotlin.random.Random(rnd.nextLong())
+        val math = fresh.filter { it.subject == "数学" }
+        val other = fresh - math.toSet()
+        val src = when {
+            math.isEmpty() -> other
+            other.isEmpty() -> math
+            r.nextDouble() < 0.65 -> math
+            else -> other.groupBy { it.subject }.values.random(r)
+        }
+        return src.random(r)
+    }
+
     fun generate(difficulty: Int = 2, numericOnly: Boolean = false, grade: GradeStore.Grade? = null, excludeTopic: String? = null): ChallengeQuestion {
         val level = difficulty.coerceIn(1, 3)
         val effectiveGrade = grade ?: gradeStore?.effective ?: GradeStore.Grade.PRIMARY
         val stream = gradeStore?.stream ?: GradeStore.Stream.ALL
         val recentFp = loadFp()
 
-        // 1. 优先从高难度真题库中抽取符合具体学段与选科的题目
-        // 且支持 excludeTopic 考点互斥，保证“换一题”必然换到不同知识点！
+        // 1. 本地真题库（按真实来源年级 + 选科）；答错后 easeDifficulty 降一档
         if (!numericOnly) {
-            val bankItems = QuestionBank.find(effectiveGrade, stream, excludeTopic).shuffled(kotlin.random.Random(rnd.nextLong()))
-            for (item in bankItems) {
-                val fp = "bank|${item.subject}|${item.question}"
-                if (fp !in recentFp) {
-                    remember(item.topic, fp)
-                    val formattedQ = buildString {
-                        append("【${item.subject}】")
-                        append(item.question)
-                        if (item.options.isNotEmpty()) {
-                            append("\n\n")
-                            append(item.options.joinToString("\n"))
-                        }
-                    }
-                    return ChallengeQuestion(
-                        question = formattedQ,
-                        answer = item.answer,
-                        explanation = item.explanation,
-                        kind = item.topic,
-                        timeLimitSec = if (effectiveGrade.level >= 5) 150 else 100,
-                        options = item.options,
-                        subject = item.subject
-                    )
-                }
+            val pool = QuestionBank.find(appContext, effectiveGrade, stream, excludeTopic, if (easeDifficulty) 1 else 3)
+            pickBankItem(pool, recentFp)?.let { item ->
+                remember(item.topic, "bank|${item.question}")
+                val head = if (item.isMulti) "【${item.subject}·多选】" else "【${item.subject}】"
+                return ChallengeQuestion(
+                    question = head + item.question,
+                    answer = item.answer,
+                    explanation = item.explanation,
+                    kind = item.topic,
+                    timeLimitSec = if (effectiveGrade.level >= 5) 180 else 120,
+                    options = item.options,
+                    subject = item.subject
+                )
             }
         }
 
@@ -218,6 +230,10 @@ class ChallengeGenerator(context: Context? = null) {
 
     /** 判定用户作答是否正确，容忍全/半角、空格、千分位、单位后缀等常见差异。 */
     fun isAnswerCorrect(userAnswer: String, expected: String): Boolean {
+        if (expected.matches(Regex("[A-H]{2,}"))) {
+            val got = userAnswer.uppercase().filter { it in 'A'..'H' }.toSet()
+            return got.isNotEmpty() && got == expected.toSet()
+        }
         val a = normalize(userAnswer)
         val b = normalize(expected)
         if (a.isEmpty()) return false
