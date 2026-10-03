@@ -23,12 +23,15 @@ class ChallengeGeneratorTest {
 
     @Test
     fun generalModeProducesMultiStepArithmetic() {
+        // 真实题型（mix/chainMul/percent/fraction/paren）：
+        // 此前 kind 恒为 "general"，导致「换一题」的排除条件永远匹配不到
+        val generalKinds = setOf("mix", "chainMul", "percent", "fraction", "paren")
         ChallengeMode.setForTest(ChallengeMode.GENERAL)
         try {
             val g = ChallengeGenerator()
             repeat(200) {
                 val q = g.generate(3)
-                assertEquals("general", q.kind)
+                assertTrue(q.kind, q.kind in generalKinds)
                 assertTrue("${q.answer} / ${q.question}", q.answer.matches(Regex("-?\\d+")))
                 assertTrue(q.options.isEmpty())
                 // 至少两个运算符，避免退化成一眼出答案的题
