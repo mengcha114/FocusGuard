@@ -1479,14 +1479,22 @@ object LockOverlayManager {
         isFriendUnlockMode = false
         // 已有未完成的答题会话（用户点「返回锁机界面」再进）→ 恢复同一题，
         // 防止用"退出重进"绕过「换一题」5 次限制反复刷题。
-        if (challengeSession == null) {
+        // 但**用途/所需题数不同必须重建**：此前只判 null，于是「解锁答题」后
+        // 返回锁机页再点「暂停答题」会复用解锁会话 —— 答对后整段解锁（想暂停反而解了锁）。
+        val wantCorrect = requiredCorrect.coerceAtLeast(1)
+        val existing = challengeSession
+        if (existing == null || existing.forPause != forPause || existing.requiredCorrect != wantCorrect) {
             challengeSession = ChallengeSession(
                 question = generator(context).generate(
-                    difficulty = if (requiredCorrect >= 3) 3 else 2
+                    difficulty = if (wantCorrect >= 3) 3 else 2
                 ),
-                requiredCorrect = requiredCorrect.coerceAtLeast(1),
+                requiredCorrect = wantCorrect,
                 forPause = forPause
             )
+        } else {
+            // 同用途复用：计时重新起算。否则在锁机页停留超过题目时限后再进来，
+            // 首帧 left<=0 会被直接判「超时」，白记一次答错甚至推进冷却。
+            existing.startedAt = android.os.SystemClock.elapsedRealtime()
         }
         // 锁机时钟停掉（答题界面没有倒计时视图）
         clockRunnable?.let { uiHandler.removeCallbacks(it) }
@@ -2281,39 +2289,56 @@ object LockOverlayManager {
         val box = challengeKeyboardBox ?: return
         box.removeAllViews()
 
-        // 若当前题目包含单选选项，在键盘顶部直接常驻 [ A ] [ B ] [ C ] [ D ] 四个快捷大按钮！
+        // 选择题：把选项文字完整列出来（整行可点）。
+        // 此前只画 A/B/C/D 字母键，而题库的题干里不含选项 ⇒ 用户只能盲猜。
         if (session.question.options.isNotEmpty()) {
-            box.addView(
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    val multi = session.question.answer.length > 1
-                    session.question.options.indices.map { ('A' + it).toString() }.forEach { optKey ->
-                        addView(
-                            buildKeyButton(context, optKey) {
-                                if (!session.switching && !session.cooling) {
-                                    if (multi) {
-                                        // 多选：点选切换，选好后点「提交答案」
-                                        session.input = if (optKey in session.input) session.input.replace(optKey, "")
-                                        else (session.input + optKey).toCharArray().sorted().joinToString("")
-                                        refreshAnswerText(session)
-                                    } else {
-                                        session.input = optKey
-                                        refreshAnswerText(session)
-                                        onSubmitAnswer(context, lockState, session)
-                                    }
-                                }
-                            }.apply {
-                                setBackgroundColor(android.graphics.Color.parseColor(tint(p.accent, 0x33)))
-                            },
-                            LinearLayout.LayoutParams(0, dp(context, 52), 1f).apply {
-                                marginStart = dp(context, 4); marginEnd = dp(context, 4)
-                                topMargin = dp(context, 2); bottomMargin = dp(context, 8)
-                            }
+            val multi = session.question.answer.length > 1
+            session.question.options.forEachIndexed { index, raw ->
+                val letter = ('A' + index).toString()
+                val picked = multi && letter in session.input
+                // 题库选项通常自带「A. 」前缀，没有时补上，保证字母与文字一一对应
+                val label = if (raw.trimStart().startsWith(letter)) raw.trim() else "$letter. $raw"
+                box.addView(
+                    TextView(context).apply {
+                        text = label
+                        textSize = 15f
+                        setTextColor(
+                            android.graphics.Color.parseColor(
+                                if (picked) com.focusguard.app.ui.theme.FocusColors.hex(p.bg)
+                                else com.focusguard.app.ui.theme.FocusColors.hex(p.text)
+                            )
                         )
-                    }
-                },
-                matchWrap()
-            )
+                        setPadding(
+                            dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12)
+                        )
+                        background = GradientDrawable().apply {
+                            cornerRadius = dp(context, 12).toFloat()
+                            setColor(
+                                android.graphics.Color.parseColor(
+                                    if (picked) tint(p.accent, 0xE6) else tint(p.card, 0xA6)
+                                )
+                            )
+                            setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.line, 0xB3)))
+                        }
+                        isClickable = true
+                        setOnClickListener {
+                            if (session.switching || session.cooling) return@setOnClickListener
+                            if (multi) {
+                                // 多选：点选切换，选好后点下方「提交答案」
+                                session.input = if (letter in session.input) session.input.replace(letter, "")
+                                else (session.input + letter).toCharArray().sorted().joinToString("")
+                                refreshAnswerText(session)
+                                renderKeyboard(context, lockState, session)
+                            } else {
+                                session.input = letter
+                                refreshAnswerText(session)
+                                onSubmitAnswer(context, lockState, session)
+                            }
+                        }
+                    },
+                    matchWrap().apply { bottomMargin = dp(context, 8) }
+                )
+            }
         }
 
         val rows: List<List<String>> = if (challengeLetterPage) {

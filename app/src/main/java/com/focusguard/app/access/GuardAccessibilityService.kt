@@ -278,9 +278,11 @@ class GuardAccessibilityService : AccessibilityService() {
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         for (delayMs in longArrayOf(300L, 800L, 1600L)) {
             handler.postDelayed({
-                if (token == burstToken && runCatching { isBlockedNow(pkg) }.getOrDefault(false)) {
-                    showAppBlock(pkg)
-                }
+                // 用户可能已经退回桌面：只有在仍处于该应用时才补发，
+                // 否则封锁页会盖在桌面上（比"晚一点才挡"更烦人）
+                if (token != burstToken) return@postDelayed
+                if (currentWindowPackage() != pkg) return@postDelayed
+                if (runCatching { isBlockedNow(pkg) }.getOrDefault(false)) showAppBlock(pkg)
             }, delayMs)
         }
     }

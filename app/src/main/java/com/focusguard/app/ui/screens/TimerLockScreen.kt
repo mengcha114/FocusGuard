@@ -414,7 +414,12 @@ private fun ConfirmLockDialog(
         icon = { Icon(Icons.Default.Lock, null, tint = MaterialTheme.colorScheme.primary) },
         title = { Text("确认开始锁机") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 小屏/大字体下内容会超出弹窗高度（防护说明 + 强度 4 提示最长），
+            // 加滚动避免文字被裁掉
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
                 Text(
                     formatDuration(totalMinutes * 60),
                     fontSize = 40.sp,

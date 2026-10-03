@@ -408,13 +408,29 @@ class DetectionPipeline(
 
             // 模型判定这是隐私画面：不执法、不当成娱乐，记入疑似敏感名单，
             // 之后同一应用直接本地跳过截图（不再上传）
-            if (aiResult.sensitive && settings.aiPrivacyLearning) {
-                com.focusguard.app.privacy.SensitiveLearning.mark(context, pkg)
-                com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "AI 判定隐私敏感：$label")
-                Log.d(TAG, "AI 判定 $pkg 为隐私敏感，已加入本地跳过名单")
+            if (aiResult.sensitive) {
+                // 游戏/视频/短视频/社交类不写入长期名单：这些正是本应用要管控的对象，
+                // 一次「看着像隐私」的判定不能让它永久免检（AI 也会误判）。
+                // 本轮仍然按隐私处理（不执法、不留证），只是不记住该应用。
+                val learnable = appInfo?.category != AppCategory.GAME &&
+                    appInfo?.category != AppCategory.VIDEO &&
+                    appInfo?.category != AppCategory.SHORT_VIDEO &&
+                    appInfo?.category != AppCategory.SOCIAL
+                if (settings.aiPrivacyLearning && learnable) {
+                    com.focusguard.app.privacy.SensitiveLearning.mark(context, pkg)
+                    com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "AI 判定隐私敏感：$label")
+                    Log.d(TAG, "AI 判定 $pkg 为隐私敏感，已加入本地跳过名单")
+                    return DetectionOutcome(
+                        "NEUTRAL", 1f,
+                        "隐私保护：AI 判定为隐私敏感画面，已跳过并记住该应用",
+                        DetectionSource.PRIVACY_SKIP, pkg, label
+                    )
+                }
+                com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "AI 判定隐私敏感（单轮）：$label")
+                Log.d(TAG, "AI 判定 $pkg 为隐私敏感，属娱乐/社交类，只跳过本轮不记入名单")
                 return DetectionOutcome(
                     "NEUTRAL", 1f,
-                    "隐私保护：AI 判定为隐私敏感画面，已跳过并记住该应用",
+                    "隐私保护：本轮画面疑似隐私内容，未执法、未截图留存（不长期跳过该应用）",
                     DetectionSource.PRIVACY_SKIP, pkg, label
                 )
             }

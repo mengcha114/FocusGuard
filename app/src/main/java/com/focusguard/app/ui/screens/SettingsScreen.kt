@@ -848,7 +848,7 @@ fun SettingsScreen(
                 aiPrivacyLearning != settings.aiPrivacyLearning ||
                 browserPrivacyFirst != settings.browserPrivacyFirst ||
                 textOnlyUpload != settings.textOnlyUpload ||
-                !settings.builtinPrivacyHints || builtinPrivacyHints != settings.builtinPrivacyHints
+                builtinPrivacyHints != settings.builtinPrivacyHints
         }
 
         /** 放宽验证被取消：界面值回滚到已保存的设置（旧实现不回滚，界面显示与实际不符）。 */

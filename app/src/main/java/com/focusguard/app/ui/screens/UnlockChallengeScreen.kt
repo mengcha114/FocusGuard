@@ -261,7 +261,9 @@ fun UnlockChallengeScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = userAnswer.ifEmpty { "请点击下方键盘输入答案" },
+                        text = userAnswer.ifEmpty {
+                            if (currentQuestion.options.isNotEmpty()) "请选择下方选项" else "请点击下方键盘输入答案"
+                        },
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (userAnswer.isEmpty()) palette.faint else palette.text
@@ -274,38 +276,40 @@ fun UnlockChallengeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // 如果是选择题，上方直接呈现 A B C D 大按键
+                // 选择题：把选项文字完整列出来（整行可点）。此前只画 A/B/C/D 字母键，
+                // 而题库题干不含选项，等于让用户盲猜。
                 if (currentQuestion.options.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        val multi = currentQuestion.answer.length > 1
-                        currentQuestion.options.indices.map { ('A' + it).toString() }.forEach { optKey ->
-                            Button(
-                                onClick = {
-                                    if (!switching && !cooling) {
-                                        if (multi) {
-                                            userAnswer = if (optKey in userAnswer) userAnswer.replace(optKey, "")
-                                            else (userAnswer + optKey).toCharArray().sorted().joinToString("")
-                                        } else {
-                                            userAnswer = optKey
-                                            submit()
-                                        }
-                                    }
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(52.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (optKey in userAnswer) palette.accent else palette.card,
-                                    contentColor = if (optKey in userAnswer) palette.bg else palette.text
-                                )
-                            ) {
-                                Text(optKey, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    val multi = currentQuestion.answer.length > 1
+                    com.focusguard.app.ui.components.OptionList(
+                        options = currentQuestion.options,
+                        selected = userAnswer,
+                        multi = multi,
+                        enabled = !switching && !cooling,
+                        containerColor = palette.card,
+                        contentColor = palette.text,
+                        selectedColor = palette.accent,
+                        selectedContentColor = palette.bg
+                    ) { letter ->
+                        if (!switching && !cooling) {
+                            if (multi) {
+                                userAnswer = if (letter in userAnswer) userAnswer.replace(letter, "")
+                                else (userAnswer + letter).toCharArray().sorted().joinToString("")
+                            } else {
+                                userAnswer = letter
+                                submit()
                             }
                         }
+                    }
+                    if (multi) {
+                        Button(
+                            onClick = { if (!switching && !cooling) submit() },
+                            enabled = !switching && !cooling && userAnswer.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth().height(46.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = palette.accent, contentColor = palette.bg
+                            )
+                        ) { Text("提交答案", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
                     }
                     Spacer(Modifier.height(4.dp))
                 }

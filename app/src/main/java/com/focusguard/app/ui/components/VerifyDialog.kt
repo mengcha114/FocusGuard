@@ -44,6 +44,8 @@ fun VerifyDialog(
     var cooldownSec by remember { mutableIntStateOf(guard.cooldownSeconds) }
     var wrongLeft by remember { mutableIntStateOf(guard.wrongLeft) }
     var refreshLeft by remember { mutableIntStateOf(guard.refreshLeft) }
+    // 作答时限：与答题页/悬浮窗一致（超时算答错）。此前验证弹窗没有计时，可以无限期停留查答案。
+    var secondsLeft by remember { mutableIntStateOf(question.timeLimitSec) }
     val cooling = cooldownSec > 0
 
     fun nextQuestion(excludeTopic: String? = question.kind) {
@@ -64,6 +66,26 @@ fun VerifyDialog(
         nextQuestion()
     }
 
+    /** 答错 / 超时统一处理：计数、提示、立即换题。 */
+    fun recordWrongAndNext(timeout: Boolean = false) {
+        val enteredCooldown = guard.recordWrong()
+        wrongLeft = guard.wrongLeft
+        feedbackIsError = true
+        feedback = when {
+            timeout && enteredCooldown ->
+                "超时且连续答错 ${AttemptGuard.MAX_WRONG} 次，需等待 5 分钟。正确答案：${question.answer}"
+            timeout ->
+                "超时，算作答错，已换一题（再错 $wrongLeft 次需等待 5 分钟）。正确答案：${question.answer}"
+            enteredCooldown ->
+                "连续答错 ${AttemptGuard.MAX_WRONG} 次，需等待 5 分钟。正确答案：${question.answer}"
+            else ->
+                "回答错误，已换一题（再错 $wrongLeft 次需等待 5 分钟）。上题答案：${question.answer}"
+        }
+        cooldownSec = guard.cooldownSeconds
+        // 答错立即换题，杜绝同一道题反复试到蒙对
+        nextQuestion()
+    }
+
     fun submit(value: String) {
         if (cooling || value.isBlank()) return
         if (generator.isAnswerCorrect(value, question.answer)) {
@@ -72,17 +94,18 @@ fun VerifyDialog(
             onPassed()
             return
         }
-        val enteredCooldown = guard.recordWrong()
-        wrongLeft = guard.wrongLeft
-        feedbackIsError = true
-        feedback = if (enteredCooldown) {
-            "连续答错 ${AttemptGuard.MAX_WRONG} 次，需等待 5 分钟。正确答案：${question.answer}"
-        } else {
-            "回答错误，已换一题（再错 $wrongLeft 次需等待 5 分钟）。上题答案：${question.answer}"
+        recordWrongAndNext()
+    }
+
+    // 作答时限：超时按答错处理
+    LaunchedEffect(question, cooling) {
+        if (cooling) return@LaunchedEffect
+        secondsLeft = question.timeLimitSec
+        while (secondsLeft > 0) {
+            delay(1000L)
+            secondsLeft--
         }
-        cooldownSec = guard.cooldownSeconds
-        // 答错立即换题，杜绝同一道题反复试到蒙对
-        nextQuestion()
+        recordWrongAndNext(timeout = true)
     }
 
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp
@@ -100,7 +123,7 @@ fun VerifyDialog(
                 Text(description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     text = if (cooling) "冷却中 ${guard.cooldownText()} · 冷却结束后自动出新题"
-                    else "可错 $wrongLeft 次 · 可换题 $refreshLeft 次",
+                    else "可错 $wrongLeft 次 · 可换题 $refreshLeft 次 · 剩余 ${secondsLeft}s",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = if (cooling) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
@@ -114,17 +137,30 @@ fun VerifyDialog(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     if (question.options.isNotEmpty()) {
-                        // 选择题：按选项数显示字母按钮，点一下即提交
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            question.options.indices.forEach { i ->
-                                val letter = ('A' + i).toString()
-                                OutlinedButton(
-                                    onClick = { submit(letter) },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(0.dp)
-                                ) { Text(letter, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+                        // 选择题：列出选项文字（此前只显示 A/B/C/D 字母键，题干又不含选项 ⇒ 只能盲猜）
+                        val multi = question.answer.length > 1
+                        OptionList(
+                            options = question.options,
+                            selected = answer,
+                            multi = multi,
+                            enabled = !cooling,
+                            onSelect = { letter ->
+                                if (cooling) return@OptionList
+                                if (multi) {
+                                    answer = if (letter in answer) answer.replace(letter, "")
+                                    else (answer + letter).toCharArray().sorted().joinToString("")
+                                } else {
+                                    answer = letter
+                                    submit(letter)
+                                }
                             }
+                        )
+                        if (multi) {
+                            Button(
+                                onClick = { submit(answer) },
+                                enabled = !cooling && answer.isNotEmpty(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("提交答案") }
                         }
                     } else {
                         OutlinedTextField(
