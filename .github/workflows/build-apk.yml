@@ -3,6 +3,10 @@ name: Build APK
 # 触发条件：
 # 1. 推送到 main 分支
 # 2. 手动触发（Actions 页面点 "Run workflow"）
+# 发布 Release 需要写权限（GitHub 默认令牌权限已收紧为只读，必须显式声明）
+permissions:
+  contents: write
+
 on:
   push:
     branches: [main, 'fix/**', 'feat/**']
