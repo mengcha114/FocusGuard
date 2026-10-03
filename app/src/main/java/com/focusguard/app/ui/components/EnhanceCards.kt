@@ -148,6 +148,29 @@ fun ShizukuStatusCard() {
                 )
             }
         }
+        // 记录之外的兜底：系统里真正处于挂起状态的应用（旧版本可能把记录清掉了）
+        val stillSuspended = remember(tick) { LockPolicies.suspendedOnDevice(context) }
+        if (stillSuspended.isNotEmpty()) {
+            Text(
+                "检测到 ${stillSuspended.size} 个应用仍处于系统挂起状态（冻结记录可能已丢失）。" +
+                    "点「全部解冻」一次性解开",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.error
+            )
+            OutlinedButton(onClick = {
+                Thread {
+                    val (freed, left) = LockPolicies.forceUnfreezeAllSuspended(context.applicationContext)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        android.widget.Toast.makeText(
+                            context,
+                            if (left == 0) "已解冻 $freed 个应用"
+                            else "解开 $freed 个，仍有 $left 个：请确认 Dhizuku / Shizuku 可用后重试",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                        tick++
+                    }
+                }.start()
+            }) { Text("全部解冻") }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = {

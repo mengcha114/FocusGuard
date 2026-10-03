@@ -239,6 +239,49 @@ object LockPolicies {
         return ok
     }
 
+    /** 设备上当前**真正**处于挂起状态的应用（不看记录，供「记录丢了但还冻着」自救）。 */
+    fun suspendedOnDevice(context: Context): List<String> {
+        val pm = context.packageManager
+        val apps = runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList())
+        return apps
+            .filter { info ->
+                info.packageName != context.packageName &&
+                    (info.flags and android.content.pm.ApplicationInfo.FLAG_SUSPENDED) != 0
+            }
+            .map { it.packageName }
+            .sorted()
+    }
+
+    /**
+     * 把设备上所有挂起中的应用强制解冻（两条路径都试 + 验证）。
+     *
+     * 用于「记录已被清掉、但应用还冻着」的场景 —— 旧版本会在解冻其实失败时
+     * 误判成功并清空记录，之后就再也不知道冻过哪些应用了。
+     *
+     * @return (解开数, 仍挂起数)
+     */
+    fun forceUnfreezeAllSuspended(context: Context): Pair<Int, Int> {
+        val app = context.applicationContext
+        val targets = suspendedOnDevice(app)
+        if (targets.isEmpty()) {
+            prefs(app).edit()
+                .putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "")
+                .putStringSet(KEY_PERSIST, emptySet()).putString(KEY_PERSIST_BY, "")
+                .apply()
+            return 0 to 0
+        }
+        DhizukuEnhancer.setPackagesSuspended(app, targets, false)
+        ShizukuEnhancer.suspendPackages(targets, false)
+        val left = suspendedOnDevice(app)
+        if (left.isEmpty()) {
+            prefs(app).edit()
+                .putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "")
+                .putStringSet(KEY_PERSIST, emptySet()).putString(KEY_PERSIST_BY, "")
+                .apply()
+        }
+        return (targets.size - left.size) to left.size
+    }
+
     /**
      * 设置页的「强制解冻」，由用户自己选路径。
      *
