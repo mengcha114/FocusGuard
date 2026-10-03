@@ -61,6 +61,14 @@ object AppBlockOverlay {
     /** 悬浮窗里 Compose 的 owner（移除窗口时销毁，避免泄漏）。 */
     private var composeOwner: OverlayComposeOwner? = null
 
+    /** [pkg] 是否是桌面（HOME）应用。 */
+    private fun isHomePackage(context: Context, pkg: String): Boolean = runCatching {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        context.packageManager.resolveActivity(
+            intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+        )?.activityInfo?.packageName == pkg
+    }.getOrDefault(false)
+
     /** 连续判定「用户已离开应用」的次数（防抖：单次采样不算）。 */
     private var leftStrikes = 0
 
@@ -252,6 +260,9 @@ object AppBlockOverlay {
             leftStrikes = 0
             return false
         }
+        // 前台是桌面 = 用户主动回桌面（或按了返回桌面）：明确「已离开」，立即撤下，
+        // 不然悬浮窗会一直盖在桌面上（用户反馈的「卡在那个页面」）
+        if (isHomePackage(context, fg)) return true
         val category = runCatching {
             com.focusguard.app.detection.AppClassifier.classifyPackage(
                 context, fg, com.focusguard.app.detection.AppCategoryStore.shared(context)
@@ -297,6 +308,9 @@ object AppBlockOverlay {
                     },
                     onGoHome = {
                         val app = appContext ?: return@AppBlockContent
+                        // 必须先撤下悬浮窗：它是最上层窗口，光把桌面拉到前台是看不见的
+                        // （用户反馈「点返回桌面没反应、一直卡在封锁页」）
+                        hide()
                         val home = Intent(Intent.ACTION_MAIN).apply {
                             addCategory(Intent.CATEGORY_HOME)
                             flags = Intent.FLAG_ACTIVITY_NEW_TASK
