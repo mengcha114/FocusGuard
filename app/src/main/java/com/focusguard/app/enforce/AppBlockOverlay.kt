@@ -228,7 +228,10 @@ object AppBlockOverlay {
             com.focusguard.app.data.Settings(context).themeMode,
             context
         )
-        fun color(hex: String) = Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(hex))
+        // palette 里的字段是 Compose Color，FocusColors.hex(...) 转成 #RRGGBB 字符串，
+        // 再交给 android.graphics.Color.parseColor 得到传统 View 用的颜色
+        fun color(value: androidx.compose.ui.graphics.Color) =
+            Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(value))
 
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
