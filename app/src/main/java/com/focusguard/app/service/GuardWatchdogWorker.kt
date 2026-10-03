@@ -82,9 +82,12 @@ class GuardWatchdogWorker(
                 LockGuardService.start(context)
             }
 
-            // 2. 锁机激活但锁机页缺失 → 拉起
+            // 2. 锁机激活但锁机页不在前台 → 拉起
+            // 用 foreground 而不是 instance != null：实例被切到后台后仍非空，
+            // 会让这层兜底形同虚设；悬浮窗已是主防线时也不再拉 Activity。
             if (lockState.isLocked && lockState.shouldBlockNow &&
-                LockScreenActivity.instance == null &&
+                !com.focusguard.app.enforce.LockOverlayManager.isShowing &&
+                !LockScreenActivity.foreground &&
                 !com.focusguard.app.enforce.UnlockChallengeActivity.active &&
                 !LockScreenActivity.friendUnlockActive
             ) {
