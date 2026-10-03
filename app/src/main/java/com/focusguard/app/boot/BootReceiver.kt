@@ -88,8 +88,15 @@ class BootReceiver : BroadcastReceiver() {
                 LockScreenActivity.show(app)
             }
 
-            // 4. 守护服务（AI 检测）开机前在运行 → 提醒用户重新授权
+            // 4. 屏幕录制（MediaProjection）授权**不可能跨重启保留**：
+            //    重启后令牌失效，但我们的标志还留着「已授权」→ 权限页显示已授权、
+            //    实际检测跑不起来（用户反馈「重启后掉权限」）。这里如实清掉，
+            //    并在需要时提醒用户一键恢复（点通知打开应用会自动弹出授权框）。
             val settings = Settings(app)
+            if (settings.screenCaptureGranted) {
+                settings.screenCaptureGranted = false
+                Log.d(TAG, "重启后已清除屏幕录制授权标志（令牌无法跨重启保留）")
+            }
             if (settings.serviceRunning) {
                 notifyReopen(app)
             }
@@ -111,11 +118,13 @@ class BootReceiver : BroadcastReceiver() {
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or
                     android.app.PendingIntent.FLAG_IMMUTABLE
             )
-            val notification = android.app.Notification.Builder(context, FocusGuardApp.CHANNEL_ID)
-                .setTimeoutAfter(60_000L)
+            val notification = android.app.Notification.Builder(
+                context, FocusGuardApp.ALERT_CHANNEL_ID
+            )
+                // 重启后这条必须一直留着直到用户处理（此前 60 秒就消失，容易错过）
                 .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
-                .setContentTitle("AI 守护待重新开启")
-                .setContentText("屏幕录制授权需要重新确认，点击开启（锁机守护不受影响）")
+                .setContentTitle("重启后需要恢复 AI 检测")
+                .setContentText("屏幕录制授权重启后必须重新确认：点这里一键恢复（锁机守护不受影响）")
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .build()

@@ -62,6 +62,23 @@ fun LockHardeningCard() {
 
         HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
 
+        // 重启后不必手动授权录屏：由无障碍替用户点掉系统授权弹窗
+        val settings = remember { com.focusguard.app.data.Settings(context) }
+        var autoGrant by remember { mutableStateOf(settings.autoGrantProjection) }
+        SwitchRow(
+            title = "重启后自动授权屏幕录制",
+            hint = "屏幕录制的授权重启后必然失效。打开后由无障碍服务替你点掉系统的" +
+                "「立即开始录制」弹窗，不用手动确认；不打开则等你自己点一下。默认开",
+            checked = autoGrant,
+            enabled = true
+        ) { value ->
+            autoGrant = value
+            settings.autoGrantProjection = value
+            android.widget.Toast.makeText(
+                context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+
         Text(
             "锁机期间的系统加固（逐项即时保存、**不需要答题**；只在锁机期间生效，锁机结束自动撤销）",
             fontSize = 12.sp,

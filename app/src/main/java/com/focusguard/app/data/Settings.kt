@@ -467,6 +467,11 @@ gacha
         set(value) = prefs.edit().putBoolean(KEY_SERVICE_RUNNING, value).apply()
     
     // Permission states
+    /** 重启后自动点掉「屏幕录制」授权弹窗（无障碍代点）；默认开，可关。 */
+    var autoGrantProjection: Boolean
+        get() = prefs.getBoolean("auto_grant_projection", true)
+        set(value) = prefs.edit().putBoolean("auto_grant_projection", value).apply()
+
     var screenCaptureGranted: Boolean
         get() = prefs.getBoolean(KEY_SCREEN_CAPTURE_GRANTED, false)
         set(value) = prefs.edit().putBoolean(KEY_SCREEN_CAPTURE_GRANTED, value).apply()

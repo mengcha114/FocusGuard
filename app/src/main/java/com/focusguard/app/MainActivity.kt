@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        com.focusguard.app.enforce.ProjectionConsent.disarm()
         if (result.resultCode == RESULT_OK && result.data != null) {
             appSettings.screenCaptureGranted = true
             com.focusguard.app.service.MonitorService.startService(
@@ -151,6 +152,10 @@ class MainActivity : ComponentActivity() {
                 !autoReauthAttempted
             ) {
                 autoReauthAttempted = true
+                // 允许无障碍替用户点掉系统授权弹窗（重启后免手动；可在设置里关）
+                if (appSettings.autoGrantProjection) {
+                    com.focusguard.app.enforce.ProjectionConsent.arm()
+                }
                 screenCaptureLauncher.launch(
                     mediaProjectionManager.createScreenCaptureIntent()
                 )
