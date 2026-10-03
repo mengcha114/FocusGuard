@@ -690,7 +690,7 @@ class LockGuardService : Service() {
         // 被撤、事件窗口瞬时为空时兜底。此前 `foreground == null` 就整段 return，
         // 第二候选写了也用不上。
         val windowPkg = com.focusguard.app.access.GuardAccessibilityService.instance
-            ?.currentWindowPackage()
+            ?.liveWindowPackage()
         val targets = listOfNotNull(foreground, windowPkg)
             .filter { it.isNotBlank() && it != packageName }
             .distinct()

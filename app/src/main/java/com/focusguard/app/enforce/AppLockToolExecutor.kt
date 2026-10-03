@@ -49,8 +49,16 @@ object AppLockToolExecutor {
         ).toString()
     }.getOrDefault(pkg)
 
-    /** 立即锁住应用（打开即被全屏挡回）。返回 (显示名, 分钟数)。 */
-    fun lockApp(context: Context, pkg: String, minutes: Int?): Pair<String, Int> {
+    /** 锁住结果：是否当场弹了封锁页（用户不在该应用时只登记，等他打开再挡）。 */
+    data class LockResult(val label: String, val minutes: Int, val shownNow: Boolean)
+
+    /**
+     * 立即锁住应用（登记封锁；用户此刻正在该应用时再当场弹页）。
+     *
+     * 必须复核「目标是否仍是当前前台」：AI 对话里说完到执行之间可能已经过了几秒，
+     * 用户退出了该应用 —— 那时弹页会让封锁页盖在他正用的应用上（用户报告的缺陷）。
+     */
+    fun lockApp(context: Context, pkg: String, minutes: Int?): LockResult {
         val label = labelOf(context, pkg)
         val mins = (minutes ?: Settings(context).appBlockMinutes).coerceIn(1, 24 * 60)
         val until = System.currentTimeMillis() + mins * 60_000L
@@ -58,15 +66,19 @@ object AppLockToolExecutor {
         // 守护没在跑的话，封锁页被划掉就没人补拉了
         com.focusguard.app.service.LockGuardService.ensureRunning(context)
         com.focusguard.app.service.GuardWatchdogWorker.schedule(context)
-        AppBlockActivity.show(
-            context = context,
-            packageName = pkg,
-            appLabel = label,
-            usedMinutes = 0,
-            limitMinutes = mins,
-            blockUntil = until
-        )
-        return label to mins
+        val shownNow = com.focusguard.app.service.ForegroundAppDetector.isForeground(context, pkg) ||
+            com.focusguard.app.access.GuardAccessibilityService.instance?.liveWindowPackage() == pkg
+        if (shownNow) {
+            AppBlockActivity.show(
+                context = context,
+                packageName = pkg,
+                appLabel = label,
+                usedMinutes = 0,
+                limitMinutes = mins,
+                blockUntil = until
+            )
+        }
+        return LockResult(label, mins, shownNow)
     }
 
     /** 解除应用封锁（答题通过后调用）。 */

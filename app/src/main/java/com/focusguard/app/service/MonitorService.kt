@@ -538,6 +538,15 @@ class MonitorService : Service() {
             Log.d(TAG, "锁机中，应用封锁交给锁机页")
             return
         }
+        // 超限判定可能落在「用户刚退出该应用」的一瞬间：这时只留状态不弹页，
+        // 等他下次打开该应用由拦截路径挡住（否则会盖在当前应用上，用户报告的缺陷）。
+        val stillThere = ForegroundAppDetector.isForeground(this, verdict.packageName) ||
+            com.focusguard.app.access.GuardAccessibilityService.instance
+                ?.liveWindowPackage() == verdict.packageName
+        if (!stillThere) {
+            Log.d(TAG, "${verdict.packageName} 已超限但当前不在该应用，不弹页")
+            return
+        }
         val label = runCatching {
             packageManager.getApplicationLabel(
                 packageManager.getApplicationInfo(verdict.packageName, 0)

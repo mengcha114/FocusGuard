@@ -444,10 +444,15 @@ fun AiChatScreen() {
                                             freezeNotes += "没找到应用「${req.query}」"
                                         } else when (req.kind) {
                                             "lock" -> {
-                                                val (label, mins) = com.focusguard.app.enforce
+                                                val r = com.focusguard.app.enforce
                                                     .AppLockToolExecutor
                                                     .lockApp(context, target.first, req.minutes)
-                                                freezeNotes += "已锁住「$label」$mins 分钟（打开即被挡住）"
+                                                freezeNotes += if (r.shownNow) {
+                                                    "已锁住「${r.label}」${r.minutes} 分钟（打开即被挡住）"
+                                                } else {
+                                                    "已登记封锁「${r.label}」${r.minutes} 分钟" +
+                                                        "（你当前不在该应用，打开时会被挡住）"
+                                                }
                                             }
                                             "unlock" -> unlockTargets += target
                                             "limit" -> {

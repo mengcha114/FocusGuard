@@ -169,14 +169,16 @@ class GuardAccessibilityService : AccessibilityService() {
             if (winPkg.isNotBlank()) {
                 lastWindowPackage = winPkg
                 lastWindowPackageAt = System.currentTimeMillis()
-                if (winPkg != packageName && !isLockActive()) interceptIfBlocked(winPkg)
+                if (winPkg != packageName && !isLockActive()) {
+                    interceptIfBlocked(winPkg, android.os.SystemClock.elapsedRealtime())
+                }
             }
         } else if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
             // 部分 ROM 会把 WINDOW_STATE_CHANGED 合并/延迟（用户报告「锁住应用后仍要等几秒」），
-            // 窗口列表变化时再给一次机会：只要当前活动窗口是被封应用就立刻拦。
-            val winPkg = freshWindowPackage().orEmpty()
+            // 窗口列表变化时再给一次机会：只认**实时**活动窗口，避免陈旧包名误弹封锁页。
+            val winPkg = liveWindowPackage().orEmpty()
             if (winPkg.isNotBlank() && winPkg != packageName && !isLockActive()) {
-                interceptIfBlocked(winPkg)
+                interceptIfBlocked(winPkg, android.os.SystemClock.elapsedRealtime())
             }
         }
 
@@ -261,22 +263,16 @@ class GuardAccessibilityService : AccessibilityService() {
      * 的文字与截图发出去。这里补一个来源，两者都不确定时由检测管线直接跳过本轮。
      */
     /**
-     * 仅在窗口信息足够新时返回包名。
+     * 当前活动窗口的包名 —— **只读实时窗口，绝不用缓存/陈旧值**。
      *
-     * [currentWindowPackage] 的兜底值可能已经过期（例如用户已回桌面）——
-     * 用它当「前台候选」去拉起封锁页，会把封锁页盖到桌面上。
-     * 这里要求兜底值必须来自最近 [maxAgeMs] 内的窗口事件。
+     * 显示封锁页这种会打断用户的操作只能用这个：[currentWindowPackage] 允许用上次
+     * 窗口事件兜底，用户退回桌面后的几秒内它仍报「在封锁应用里」，表现为偶发弹一下
+     * 封锁页（用户报告的缺陷）。隐私判定方向相反（多判一次敏感是安全的），那边继续用它。
      */
-    fun freshWindowPackage(maxAgeMs: Long = 3_000L): String? {
-        val live = try {
-            rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }
-        } catch (e: Exception) {
-            null
-        }
-        if (live != null) return live
-        val pkg = lastWindowPackage ?: return null
-        val age = System.currentTimeMillis() - lastWindowPackageAt
-        return pkg.takeIf { it.isNotBlank() && age in 0..maxAgeMs }
+    fun liveWindowPackage(): String? = try {
+        rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }
+    } catch (e: Exception) {
+        null
     }
 
     fun currentWindowPackage(): String? = try {
@@ -307,12 +303,15 @@ class GuardAccessibilityService : AccessibilityService() {
      * 2. 刚切过去的那一次启动请求常被系统丢下（目标应用正在启动），
      *    因此随后再补发几次，直到封锁页确实压在最上面。
      */
-    private fun interceptIfBlocked(pkg: String) {
+    private fun interceptIfBlocked(
+        pkg: String,
+        eventAt: Long = android.os.SystemClock.elapsedRealtime()
+    ) {
         if (!runCatching { isBlockedNow(pkg) }.getOrDefault(false)) return
         val now = System.currentTimeMillis()
         if (now - lastBlockInterceptAt < 200L) return
         lastBlockInterceptAt = now
-        showAppBlock(pkg)
+        showAppBlock(pkg, eventAt)
 
         // 补发：只发一次时系统可能把启动请求丢掉，实测要等下一次巡检才出现
         val token = ++burstToken
@@ -323,8 +322,8 @@ class GuardAccessibilityService : AccessibilityService() {
                 // 用户可能已经退回桌面：只有在仍处于该应用时才补发，
                 // 否则封锁页会盖在桌面上（比"晚一点才挡"更烦人）
                 if (token != burstToken) return@postDelayed
-                if (freshWindowPackage() != pkg) return@postDelayed
-                if (runCatching { isBlockedNow(pkg) }.getOrDefault(false)) showAppBlock(pkg)
+                if (liveWindowPackage() != pkg) return@postDelayed
+                if (runCatching { isBlockedNow(pkg) }.getOrDefault(false)) showAppBlock(pkg, eventAt)
             }, delayMs)
         }
     }
@@ -335,8 +334,10 @@ class GuardAccessibilityService : AccessibilityService() {
      * 没有悬浮窗权限时，全屏页的启动请求很可能被系统的后台启动限制丢弃，
      * 那时先把用户顶回桌面——「打开就被打断」这件事本身不依赖任何界面。
      */
-    private fun showAppBlock(pkg: String) {
-        Log.d(TAG, "$pkg 已被封锁，拉起封锁页")
+    private fun showAppBlock(
+        pkg: String,
+        eventAt: Long = android.os.SystemClock.elapsedRealtime()
+    ) {
         runCatching {
             val until = com.focusguard.app.data.AppBlockStore(this).blockedUntil(pkg)
             val label = runCatching {
@@ -345,9 +346,16 @@ class GuardAccessibilityService : AccessibilityService() {
             }.getOrDefault(pkg)
             val rule = ruleStore.getRule(pkg)
             val used = (ruleStore.getTodaySeconds(pkg) / 60).toInt()
-            if (!android.provider.Settings.canDrawOverlays(this)) {
+            // 封锁页是 Activity，冷启动要几百毫秒到几秒。判定命中就先立刻把用户踢出
+            // 被锁应用（用户报告「反复进出还有几秒延迟」），封锁页随后接管。
+            val inTarget = liveWindowPackage() == pkg
+            if (inTarget || !android.provider.Settings.canDrawOverlays(this)) {
                 performGlobalAction(GLOBAL_ACTION_HOME)
             }
+            Log.d(
+                TAG,
+                "$pkg 拦截：事件→判定+踢出 ${android.os.SystemClock.elapsedRealtime() - eventAt}ms"
+            )
             com.focusguard.app.enforce.AppBlockActivity.show(
                 context = this,
                 packageName = pkg,

@@ -89,6 +89,17 @@ class Enforcer(private val context: Context) {
             com.focusguard.app.service.LockGuardService.ensureRunning(context)
             com.focusguard.app.service.GuardWatchdogWorker.schedule(context)
 
+            // 用户可能早已退出该应用（检测→执法之间可能隔十几秒，或走了宽限期）：
+            // 这种情况下只登记封锁、不弹页，否则封锁页会盖在他正在用的应用上。
+            val stillThere = com.focusguard.app.service.ForegroundAppDetector
+                .isForeground(context, packageName) ||
+                com.focusguard.app.access.GuardAccessibilityService.instance
+                    ?.liveWindowPackage() == packageName
+            if (!stillThere) {
+                Log.d(TAG, "$appLabel 已登记封锁（当前不在该应用，不弹页）")
+                return
+            }
+
             AppBlockActivity.show(
                 context = context,
                 packageName = packageName,

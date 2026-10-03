@@ -94,6 +94,13 @@ object ForegroundAppDetector {
             ?: com.focusguard.app.access.GuardAccessibilityService.instance?.currentWindowPackage()
             ?: com.focusguard.app.detection.AppClassifier.classifyForegroundApp(context, store)?.packageName
 
+    /**
+     * 目标应用此刻是否**确实**在前台。
+     * 执法/弹封锁页之前必须复核：检测到执法之间可能隔了十几秒，用户早已退出该应用。
+     */
+    fun isForeground(context: Context, pkg: String): Boolean =
+        pkg.isNotBlank() && current(context) == pkg
+
     /** 清空缓存（权限变更或服务重启时调用）。 */
     fun invalidate() {
         cachedPackage = null
