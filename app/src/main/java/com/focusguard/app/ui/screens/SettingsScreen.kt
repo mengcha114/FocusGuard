@@ -72,6 +72,7 @@ fun SettingsScreen(
     // 隐私保护（敏感应用跳过截屏/文字读取/上传）
     var privacyProtectEnabled by remember { mutableStateOf(settings.privacyProtectEnabled) }
     var contentPrivacyCheck by remember { mutableStateOf(settings.contentPrivacyCheck) }
+    var browserPrivacyFirst by remember { mutableStateOf(settings.browserPrivacyFirst) }
     var textOnlyUpload by remember { mutableStateOf(settings.textOnlyUpload) }
     var redactLogs by remember { mutableStateOf(settings.redactLogs) }
     var builtinPrivacyHints by remember { mutableStateOf(settings.builtinPrivacyHints) }
@@ -215,6 +216,13 @@ fun SettingsScreen(
                 icon = Icons.Default.TextFields,
                 checked = textOnlyUpload,
                 onCheckedChange = { textOnlyUpload = it }
+            )
+            TokenSavingToggle(
+                title = "浏览器内隐私优先",
+                subtitle = "浏览器读不到屏幕文字时不截图上传（网页版网银/支付都在浏览器里）",
+                icon = Icons.Default.Language,
+                checked = browserPrivacyFirst,
+                onCheckedChange = { browserPrivacyFirst = it }
             )
             TokenSavingToggle(
                 title = "日志与导出脱敏",
@@ -748,6 +756,7 @@ fun SettingsScreen(
             // 隐私保护
             settings.privacyProtectEnabled = privacyProtectEnabled
             settings.contentPrivacyCheck = contentPrivacyCheck
+            settings.browserPrivacyFirst = browserPrivacyFirst
             settings.textOnlyUpload = textOnlyUpload
             settings.redactLogs = redactLogs
             settings.builtinPrivacyHints = builtinPrivacyHints
@@ -827,6 +836,7 @@ fun SettingsScreen(
                 lines(studyKeywords) != lines(settings.studyKeywords) ||
                 lines(entertainmentKeywords) != lines(settings.entertainmentKeywords) ||
                 contentPrivacyCheck != settings.contentPrivacyCheck ||
+                browserPrivacyFirst != settings.browserPrivacyFirst ||
                 textOnlyUpload != settings.textOnlyUpload ||
                 !settings.builtinPrivacyHints || builtinPrivacyHints != settings.builtinPrivacyHints
         }
@@ -860,6 +870,7 @@ fun SettingsScreen(
             privacyProtectEnabled = settings.privacyProtectEnabled
             sensitiveApps = settings.sensitiveApps
             contentPrivacyCheck = settings.contentPrivacyCheck
+            browserPrivacyFirst = settings.browserPrivacyFirst
             textOnlyUpload = settings.textOnlyUpload
             redactLogs = settings.redactLogs
             builtinPrivacyHints = settings.builtinPrivacyHints
@@ -879,7 +890,7 @@ fun SettingsScreen(
             appBlockMinutes, customMottos, smartScheduleEnabled,
             studyKeywords, entertainmentKeywords,
             privacyProtectEnabled, sensitiveApps,
-            contentPrivacyCheck, textOnlyUpload, redactLogs, builtinPrivacyHints
+            contentPrivacyCheck, browserPrivacyFirst, textOnlyUpload, redactLogs, builtinPrivacyHints
         ) {
             if (isFirstSave) {
                 // 首次组合：只保存不提示（避免一进页面就弹"已保存"）

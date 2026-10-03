@@ -37,9 +37,24 @@ class ContentPrivacyTest {
     }
 
     @Test
+    fun cardNumberWithSeparatorsIsDetected() {
+        assertNotNull(ContentPrivacy.inspect("卡号：6225-8801-3123-4567"))
+        assertNotNull(ContentPrivacy.inspect("银行卡号 6225 8801 3123 4567"))
+    }
+
+    @Test
+    fun passwordFieldsAreDetected() {
+        // 银行/支付登录页必然包含「密码」；学习类只会在登录页出现，误跳代价可接受
+        assertNotNull(ContentPrivacy.inspect("请输入密码"))
+        assertNotNull(ContentPrivacy.inspect("账号 6225880131234567890"))
+    }
+
+    @Test
     fun ordinaryStudyScreenIsNotFlagged() {
         assertNull(ContentPrivacy.inspect("第三章 导数与微分 习题 3.2 求下列函数的导数"))
         assertNull(ContentPrivacy.inspect("今天学习了 3 小时数学，做了 20 道题"))
+        assertNull(ContentPrivacy.inspect("B 站 学习频道：高等数学 第 3 讲"))
+        assertNull(ContentPrivacy.inspect("第三章 习题 3.2 求导数的定义"))
         assertNull(ContentPrivacy.inspect("2026 年 3 月 15 日 星期天 天气晴"))
         assertNull(ContentPrivacy.inspect(""))
         assertNull(ContentPrivacy.inspect(null))

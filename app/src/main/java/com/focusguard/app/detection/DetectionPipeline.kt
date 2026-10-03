@@ -258,6 +258,21 @@ class DetectionPipeline(
             )
         }
 
+        // ── 浏览器隐私优先：读不到文字就不上传 ──
+        // 浏览器（网页版网银 / 支付 / 政务）无法靠包名识别内容，如果连屏幕文字都拿不到，
+        // 截图里可能有卡号密码——宁可这一轮不检测，也不把它发给 AI。
+        if (settings.browserPrivacyFirst &&
+            com.focusguard.app.privacy.PrivacyGuard.isBrowser(pkg) &&
+            screenText.isNullOrBlank()
+        ) {
+            com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "浏览器内未取到文字")
+            return DetectionOutcome(
+                "NEUTRAL", 0f,
+                "隐私保护：浏览器内未取到屏幕文字，本轮已跳过上传",
+                DetectionSource.PRIVACY_SKIP, pkg, label
+            )
+        }
+
         // 以下步骤需要画面，先确认前置条件
         if (projection == null) {
             return DetectionOutcome(
@@ -359,7 +374,7 @@ class DetectionPipeline(
                 customPrompt = effectivePrompt,
                 apiFormat = settings.apiFormat,
                 // 告诉模型本次会真正执行什么，避免选了「仅锁该软件」却写成「锁机」
-                enforcementHint = com.focusguard.app.data.Settings.enforcementHintText(settings.enforcementMode)
+                enforcementHint = settings.enforcementHint()
             )
             tokenBudget.recordCall()
 

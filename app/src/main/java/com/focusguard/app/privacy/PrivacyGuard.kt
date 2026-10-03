@@ -67,6 +67,20 @@ object PrivacyGuard {
         "云盘", "有道云", "印象笔记", "石墨", "腾讯文档"
     )
 
+    /** 浏览器类包名特征：网页版网银/政务都在浏览器里，隐私上要更保守。 */
+    private val browserPackageHints = listOf(
+        "chrome", "firefox", "edge", "browser", "quark", "ucmobile", "ucweb",
+        "mqqbrowser", "sogou", "opera", "brave", "vivaldi", "samsung.android.app.sbrowser",
+        "miui.browser", "heytap.browser", "baidu.searchbox", "viayoo"
+    )
+
+    /** 是否是浏览器类应用。 */
+    fun isBrowser(packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        val pkg = packageName.lowercase()
+        return browserPackageHints.any { pkg.contains(it) }
+    }
+
     /**
      * 判定前台应用是否敏感。纯函数，无 IO。
      *

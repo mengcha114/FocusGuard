@@ -512,20 +512,23 @@ class AiClient {
         customPrompt: String,
         apiFormat: String,
         withDetail: Boolean,
-        withTools: Boolean
+        withTools: Boolean,
+        enforcementHint: String = ""
     ): AiResult {
         return try {
             // ── 按协议构造请求 ─────────────────────────
             val request = when (apiFormat) {
                 "anthropic" -> buildAnthropicRequest(
-                    baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt
+                    baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt,
+                    enforcementHint
                 )
                 "gemini" -> buildGeminiRequest(
-                    baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt, withDetail
+                    baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt,
+                    withDetail, enforcementHint
                 )
                 else -> buildOpenAiRequest(
                     baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt,
-                    withDetail, withTools
+                    withDetail, withTools, enforcementHint
                 )
             }
 
@@ -711,7 +714,8 @@ class AiClient {
         modelName: String,
         base64Image: String,
         whitelist: String,
-        customPrompt: String
+        customPrompt: String,
+        enforcementHint: String = ""
     ): Request {
         // system 提示词单独放顶层
         val userContent = JSONArray().apply {
@@ -732,7 +736,7 @@ class AiClient {
         val body = JSONObject().apply {
             put("model", modelName)
             put("max_tokens", MAX_OUTPUT_TOKENS)
-            put("system", buildSystemPrompt(whitelist, customPrompt))
+            put("system", buildSystemPrompt(whitelist, customPrompt, enforcementHint))
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "user")
@@ -758,7 +762,8 @@ class AiClient {
         base64Image: String,
         whitelist: String,
         customPrompt: String,
-        withDetail: Boolean
+        withDetail: Boolean,
+        enforcementHint: String = ""
     ): Request {
         val body = JSONObject().apply {
             // 系统指令必须走 systemInstruction 字段：
@@ -767,7 +772,7 @@ class AiClient {
             put("systemInstruction", JSONObject().apply {
                 put("parts", JSONArray().apply {
                     put(JSONObject().apply {
-                        put("text", buildSystemPrompt(whitelist, customPrompt))
+                        put("text", buildSystemPrompt(whitelist, customPrompt, enforcementHint))
                     })
                 })
             })

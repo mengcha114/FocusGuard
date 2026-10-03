@@ -137,6 +137,7 @@ gacha
         private const val KEY_TEXT_ONLY_UPLOAD = "text_only_upload"
         private const val KEY_REDACT_LOGS = "redact_logs"
         private const val KEY_BUILTIN_HINTS = "builtin_privacy_hints"
+        private const val KEY_BROWSER_PRIVACY = "browser_privacy_first"
         // 用户自定义敏感应用列表（逗号/换行分隔，按包名或应用名片段匹配）。
         private const val KEY_SENSITIVE_APPS = "sensitive_apps"
     }
@@ -490,7 +491,7 @@ gacha
      * 给模型的措辞提示：说明本次检测会真正执行什么动作，
      * 避免选了「仅锁该软件」时提醒语仍写「即将锁机」（用户反馈的文案不一致）。
      */
-    fun enforcementHintText(mode: EnforcementMode): String = when (mode) {
+    private fun hintText(mode: EnforcementMode): String = when (mode) {
         EnforcementMode.APP_BLOCK ->
             "检测到娱乐后只会锁定该应用（不是整机锁机）：提醒语请说「该应用将被锁定 N 分钟」，禁止说「锁机」"
         EnforcementMode.WARN ->
@@ -498,6 +499,17 @@ gacha
         EnforcementMode.LOCK ->
             "检测到娱乐并达到次数后会整机锁机：提醒语可以说「即将锁机」"
     }
+
+    /** 给模型的措辞提示（按当前执法方式），见 [hintText]。 */
+    fun enforcementHint(): String = hintText(enforcementMode)
+
+    /**
+     * 浏览器隐私优先（默认开）：网页版网银、政务、支付都在浏览器里，包名认不出内容。
+     * 开启后，浏览器处于前台又读不到屏幕文字时，本轮直接跳过上传，而不是截图发给 AI。
+     */
+    var browserPrivacyFirst: Boolean
+        get() = prefs.getBoolean(KEY_BROWSER_PRIVACY, true)
+        set(value) = prefs.edit().putBoolean(KEY_BROWSER_PRIVACY, value).apply()
 
     /** 上传前内容级隐私兜底（识别身份证/银行卡/验证码等，默认开）。 */
     var contentPrivacyCheck: Boolean

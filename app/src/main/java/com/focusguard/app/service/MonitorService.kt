@@ -718,12 +718,11 @@ class MonitorService : Service() {
                                 whitelist = settings.whitelist,
                                 customPrompt = settings.aiCustomPrompt,
                                 apiFormat = settings.apiFormat,
-                                enforcementHint = com.focusguard.app.data.Settings
-                                    .enforcementHintText(settings.enforcementMode)
+                                enforcementHint = settings.enforcementHint()
                             )
                         }.getOrNull()
                         tokenBudget.recordCall()
-                        capture.close()
+                        capture.recycle()
                         if (result != null &&
                             result.classification == "STUDY_WORK" &&
                             result.confidence >= settings.confidenceThreshold
