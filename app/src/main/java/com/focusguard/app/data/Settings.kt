@@ -504,11 +504,14 @@ gacha
     fun enforcementHint(): String = hintText(enforcementMode)
 
     /**
-     * 浏览器隐私优先（默认开）：网页版网银、政务、支付都在浏览器里，包名认不出内容。
-     * 开启后，浏览器处于前台又读不到屏幕文字时，本轮直接跳过上传，而不是截图发给 AI。
+     * 浏览器严格隐私模式（默认关）。
+     *
+     * 默认的隐私保护靠「密码输入框」与「卡号/密码/验证码等文字」判定，已经能拦住
+     * 网页版网银，同时不会误伤纯图形的网页小游戏。打开本开关后更保守：浏览器页面
+     * 读不到任何文字时也不上传——代价是网页小游戏这类纯图形页面将无法被识别。
      */
     var browserPrivacyFirst: Boolean
-        get() = prefs.getBoolean(KEY_BROWSER_PRIVACY, true)
+        get() = prefs.getBoolean(KEY_BROWSER_PRIVACY, false)
         set(value) = prefs.edit().putBoolean(KEY_BROWSER_PRIVACY, value).apply()
 
     /** 上传前内容级隐私兜底（识别身份证/银行卡/验证码等，默认开）。 */

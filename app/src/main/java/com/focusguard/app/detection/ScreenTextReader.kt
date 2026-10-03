@@ -14,8 +14,24 @@ object ScreenTextReader {
     private const val MAX_NODES = 400
     private const val MAX_TEXT_LENGTH = 2000
 
+    /**
+     * 当前屏幕的结构化信息。
+     *
+     * [hasPasswordField] 是「用户正在输入密码」的强信号——即使页面没有任何文字标签
+     * （纯图标按钮、画布渲染），无障碍树里密码输入框的 isPassword 仍为 true，因此
+     * 隐私判定不必依赖文字是否存在，也就不会把「纯图形的网页小游戏」误当成敏感页面。
+     */
+    data class ScreenInfo(
+        val text: String,
+        val hasPasswordField: Boolean,
+        val hasEditableField: Boolean
+    )
+
     /** 返回当前屏幕文字，无障碍服务未启用时返回 null。 */
-    fun readCurrentScreenText(): String? {
+    fun readCurrentScreenText(): String? = readScreenInfo()?.text?.takeIf { it.isNotBlank() }
+
+    /** 返回当前屏幕的结构化信息；无障碍不可用时返回 null。 */
+    fun readScreenInfo(): ScreenInfo? {
         val service = GuardAccessibilityService.instance ?: return null
         val root = try {
             service.rootInActiveWindow
@@ -25,18 +41,26 @@ object ScreenTextReader {
 
         val builder = StringBuilder()
         var visited = 0
+        var passwordField = false
+        var editableField = false
 
         fun traverse(node: AccessibilityNodeInfo?) {
             if (node == null) return
             if (visited >= MAX_NODES) return
-            if (builder.length >= MAX_TEXT_LENGTH) return
             visited++
 
-            node.text?.toString()?.takeIf { it.isNotBlank() }?.let {
-                builder.append(it).append(' ')
+            if (node.isPassword) passwordField = true
+            val cls = node.className?.toString().orEmpty()
+            if (node.isEditable || cls.contains("EditText") || cls.contains("TextField")) {
+                editableField = true
             }
-            node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let {
-                builder.append(it).append(' ')
+            if (builder.length < MAX_TEXT_LENGTH) {
+                node.text?.toString()?.takeIf { it.isNotBlank() }?.let {
+                    builder.append(it).append(' ')
+                }
+                node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let {
+                    builder.append(it).append(' ')
+                }
             }
 
             for (i in 0 until node.childCount) {
@@ -46,7 +70,11 @@ object ScreenTextReader {
 
         return try {
             traverse(root)
-            builder.toString().trim().takeIf { it.isNotBlank() }
+            ScreenInfo(
+                text = builder.toString().trim(),
+                hasPasswordField = passwordField,
+                hasEditableField = editableField
+            )
         } catch (e: Exception) {
             null
         } finally {

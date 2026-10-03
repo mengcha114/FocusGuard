@@ -218,8 +218,8 @@ fun SettingsScreen(
                 onCheckedChange = { textOnlyUpload = it }
             )
             TokenSavingToggle(
-                title = "浏览器内隐私优先",
-                subtitle = "浏览器读不到屏幕文字时不截图上传（网页版网银/支付都在浏览器里）",
+                title = "浏览器严格隐私模式",
+                subtitle = "浏览器页面读不到文字时不截图上传；会导致网页小游戏等纯图形页面无法识别（默认关，网银已由密码框/敏感词判定拦住）",
                 icon = Icons.Default.Language,
                 checked = browserPrivacyFirst,
                 onCheckedChange = { browserPrivacyFirst = it }

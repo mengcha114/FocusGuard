@@ -175,9 +175,21 @@ class DetectionPipeline(
             settings.contentPrivacyCheck ||
             settings.textOnlyUpload
         if (needText) {
-            ScreenTextReader.readCurrentScreenText()?.let { text ->
-                screenText = text
-                // 内容级隐私兜底：屏幕文字里出现身份证/银行卡/验证码这类内容时，
+            ScreenTextReader.readScreenInfo()?.let { info ->
+                val text = info.text
+                screenText = text.takeIf { it.isNotBlank() }
+                // 内容级隐私兜底之一：页面里有**密码输入框**（isPassword=true）。
+                // 这是「用户正在输入密码」的强信号，且不依赖页面是否有文字——
+                // 因此纯图形的网页小游戏不会被误判（它们没有密码框）。
+                if (settings.contentPrivacyCheck && info.hasPasswordField) {
+                    com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "检测到密码输入框")
+                    return DetectionOutcome(
+                        "NEUTRAL", 1f,
+                        "隐私保护：页面正在输入密码，本轮已跳过上传",
+                        DetectionSource.PRIVACY_SKIP, pkg, label
+                    )
+                }
+                // 内容级隐私兜底之二：屏幕文字里出现身份证/银行卡/验证码这类内容时，
                 // 无论前台是哪个应用（浏览器里的网银、政务 H5、聊天里的证件照），
                 // 本轮都不上传。仅本地正则判断，不联网。
                 if (settings.contentPrivacyCheck) {
