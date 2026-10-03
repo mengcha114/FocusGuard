@@ -535,6 +535,25 @@ class LockGuardService : Service() {
             }
         }
 
+        // 封锁结束的挂起回收：应用封锁期间「用户离开就停掉它」会留下挂起记录，
+        // 封锁到期/答题解封后必须放掉，否则应用会一直被冻着（~10 秒一次，低频）
+        if (tickCount % 33 == 0) {
+            Thread {
+                runCatching {
+                    val pkg = com.focusguard.app.data.AppBlockStore(applicationContext)
+                    com.focusguard.app.enhance.LockPolicies.blockFrozen(applicationContext).forEach { frozen ->
+                        val rule = usageRuleStore.getRule(frozen)
+                        val overLimit = rule?.hardBlockMinutes?.let {
+                            (usageRuleStore.getTodaySeconds(frozen) / 60).toInt() >= it
+                        } ?: false
+                        if (pkg.blockedUntil(frozen) <= 0L && !overLimit) {
+                            com.focusguard.app.enhance.LockPolicies.releaseBlock(applicationContext, frozen)
+                        }
+                    }
+                }
+            }.start()
+        }
+
         // 锁机中的定期补设：加固/限制上次没设置成功的这里重试（~20 秒一次，后台线程）
         if (lockedNow && tickCount % 66 == 33) {
             Thread {

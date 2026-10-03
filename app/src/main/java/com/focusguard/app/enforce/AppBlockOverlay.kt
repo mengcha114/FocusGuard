@@ -127,9 +127,9 @@ object AppBlockOverlay {
         return true
     }
 
-    /** 撤下悬浮窗（封锁解除时调用）。 */
+    /** 撤下悬浮窗（答题解封 / 封锁到期 / 锁机接管时调用，会解除应用的挂起）。 */
     fun hide() {
-        uiHandler.post { hideOnMain() }
+        uiHandler.post { hideOnMain(stopApp = false) }
     }
 
     private fun showOnMain(
@@ -146,8 +146,9 @@ object AppBlockOverlay {
         untilState.value = blockUntil
         usedState.value = usedMinutes
         limitState.value = limitMinutes
-        // 真正停掉被锁应用（后台声音/画中画/分屏随之结束）；工具不可用时只是盖住
-        Thread { runCatching { com.focusguard.app.enhance.LockPolicies.suspendBlock(context, pkg) } }.start()
+        // 注意：**显示时不要挂起应用**。挂起会让系统把前台应用直接停掉/压到后台，
+        // 用户看到的就是「打开后几秒被强制退出」（实测反馈）。挂起只在
+        // 「用户离开该应用」时做——那时要停掉它的后台声音/画中画（见 hideOnMain(stopApp)）。
 
         val existing = root
         if (existing != null && showing == pkg) {
@@ -178,17 +179,24 @@ object AppBlockOverlay {
         return true
     }
 
-    private fun hideOnMain() {
+    private fun hideOnMain(stopApp: Boolean = false) {
         val pkg = currentPkg
         removeViewInternal()
         stopSelfCheck()
-        if (pkg != null) {
-            val app = appContext
-            if (app != null) {
-                Thread { runCatching { com.focusguard.app.enhance.LockPolicies.releaseBlock(app, pkg) } }.start()
-            }
+        val app = appContext
+        if (pkg != null && app != null) {
+            Thread {
+                runCatching {
+                    if (stopApp) {
+                        // 用户离开被锁应用：真正停掉它（后台声音、画中画、分屏随之结束）
+                        com.focusguard.app.enhance.LockPolicies.suspendBlock(app, pkg)
+                    } else {
+                        com.focusguard.app.enhance.LockPolicies.releaseBlock(app, pkg)
+                    }
+                }
+            }.start()
         }
-        Log.d(TAG, "封锁悬浮窗已撤下")
+        Log.d(TAG, "封锁悬浮窗已撤下（保留挂起=$stopApp）")
     }
 
     private fun removeViewInternal() {
@@ -214,16 +222,23 @@ object AppBlockOverlay {
                 val app = appContext
                 val pkg = currentPkg
                 if (app == null || pkg == null) {
-                    hideOnMain()
+                    hideOnMain(stopApp = false)
                     return
                 }
                 val lockActive = runCatching {
                     val state = com.focusguard.app.data.LockState(app)
                     state.isLocked && state.shouldBlockNow
                 }.getOrDefault(false)
-                if (lockActive || !isStillBlocked(app, pkg) || hasLeftApp(app, pkg)) {
+                if (lockActive || !isStillBlocked(app, pkg)) {
+                    // 锁机接管 / 封锁到期 / 已答题解封：撤下并解除挂起
                     Log.d(TAG, "封锁条件变化，撤下：$pkg（锁机中=$lockActive）")
-                    hideOnMain()
+                    hideOnMain(stopApp = false)
+                    return
+                }
+                if (hasLeftApp(app, pkg)) {
+                    // 用户离开：撤下并**停掉应用**（否则它还在后台放视频/声音）
+                    Log.d(TAG, "用户已离开 $pkg，撤下并停掉该应用")
+                    hideOnMain(stopApp = true)
                     return
                 }
                 uiHandler.postDelayed(this, CHECK_INTERVAL_MS)
@@ -255,14 +270,21 @@ object AppBlockOverlay {
      * ② 单次采样可能抖动，要求**连续两次**都判定离开才撤。
      */
     private fun hasLeftApp(context: Context, pkg: String): Boolean {
+        // 实时活动窗口优先：悬浮窗盖着的时候它就是我们的窗口（说明还在被锁应用之上），
+        // 事件流（UsageStats）有 1~2 秒延迟，只看它会把「刚打开」误判成「已回桌面」。
+        val live = com.focusguard.app.access.GuardAccessibilityService.instance
+            ?.liveWindowPackage()
+        if (live == pkg || live == context.packageName) {
+            leftStrikes = 0
+            return false
+        }
         val fg = com.focusguard.app.service.ForegroundAppDetector.current(context) ?: return false
         if (fg == pkg || fg == context.packageName) {
             leftStrikes = 0
             return false
         }
-        // 前台是桌面 = 用户主动回桌面（或按了返回桌面）：明确「已离开」，立即撤下，
-        // 不然悬浮窗会一直盖在桌面上（用户反馈的「卡在那个页面」）
-        if (isHomePackage(context, fg)) return true
+        // 两个来源都指向桌面：明确「已离开」，立即撤下（否则悬浮窗会盖在桌面上）
+        if (isHomePackage(context, live ?: fg)) return true
         val category = runCatching {
             com.focusguard.app.detection.AppClassifier.classifyPackage(
                 context, fg, com.focusguard.app.detection.AppCategoryStore.shared(context)
