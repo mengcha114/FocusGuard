@@ -134,11 +134,12 @@ fun GradeSettingCard() {
             Text((grade?.label ?: "未选择") + streamSuffix, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             // 该学段可用题量（题量偏少的学段让学生心里有数，避免误判为出错）。
             // 题库首次加载要解压解析，放到副作用里做，避免阻塞组合。
-            var count by remember(grade) { mutableStateOf(-1) }
-            LaunchedEffect(grade) {
-                count = if (grade == null) 0 else runCatching {
+            val current = grade
+            var count by remember(current) { mutableStateOf(-1) }
+            LaunchedEffect(current) {
+                count = if (current == null) 0 else runCatching {
                     com.focusguard.app.challenge.QuestionBank
-                        .find(context, grade, store.stream).size
+                        .find(context, current, store.stream).size
                 }.getOrDefault(-1)
             }
             if (grade != null) {
