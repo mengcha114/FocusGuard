@@ -267,8 +267,14 @@ object AppBlockOverlay {
                 if (small) {
                     Log.d(TAG, "被锁应用 $pkg 处于小窗/分屏/画中画，停掉它")
                     Thread {
-                        runCatching {
+                        val ok = runCatching {
                             com.focusguard.app.enhance.LockPolicies.suspendBlock(app, pkg)
+                        }.getOrDefault(false)
+                        if (!ok && com.focusguard.app.data.Settings(app).forceStopUnlocked) {
+                            // 未授权：用系统「强行停止」把它真停掉（小窗也随之消失）
+                            runCatching {
+                                com.focusguard.app.enforce.ForceStopHelper.requestStop(app, pkg)
+                            }
                         }
                     }.start()
                 }

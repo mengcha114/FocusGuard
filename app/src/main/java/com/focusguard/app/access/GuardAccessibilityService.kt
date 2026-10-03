@@ -200,7 +200,11 @@ class GuardAccessibilityService : AccessibilityService() {
                         }
                     } ?: false
                 }.getOrDefault(false)
-                if (clicked) Log.d(TAG, "已代点强行停止：$target")
+                if (clicked) {
+                    Log.d(TAG, "已代点强行停止：$target")
+                    // 把「应用信息」页收掉：否则用户回到桌面时会看到它（封锁页仍盖在最上层）
+                    runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
+                }
             }
         }
 
@@ -228,8 +232,16 @@ class GuardAccessibilityService : AccessibilityService() {
                 // 正常全屏使用时不会走到这里，所以不会出现「打开就被强制退出」。
                 Log.d(TAG, "被锁应用 $blocked 处于小窗/分屏/画中画，停掉它")
                 Thread {
-                    runCatching {
-                        com.focusguard.app.enhance.LockPolicies.suspendBlock(this@GuardAccessibilityService, blocked)
+                    val ok = runCatching {
+                        com.focusguard.app.enhance.LockPolicies
+                            .suspendBlock(this@GuardAccessibilityService, blocked)
+                    }.getOrDefault(false)
+                    if (!ok && com.focusguard.app.data.Settings(this@GuardAccessibilityService).forceStopUnlocked) {
+                        // 未授权（不能冻结）：用系统「强行停止」把它真停掉
+                        runCatching {
+                            com.focusguard.app.enforce.ForceStopHelper
+                                .requestStop(this@GuardAccessibilityService, blocked)
+                        }
                     }
                 }.start()
             }
