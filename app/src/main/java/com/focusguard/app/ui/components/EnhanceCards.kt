@@ -63,7 +63,7 @@ fun LockHardeningCard() {
         HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
 
         Text(
-            "锁机期间的系统加固（逐项可关，全部只在锁机期间生效，锁机结束自动撤销）",
+            "锁机期间的系统加固（逐项即时保存、**不需要答题**；只在锁机期间生效，锁机结束自动撤销）",
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
@@ -86,6 +86,11 @@ fun LockHardeningCard() {
             ) { value ->
                 on = value
                 LockPolicies.setHardeningEnabled(context, item, value)
+                // 加固/防破解开关都是**收紧**方向：即时生效、不需要答题
+                // （此前没有任何反馈，用户以为没保存）
+                android.widget.Toast.makeText(
+                    context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+                ).show()
             }
         }
         Text(
@@ -106,6 +111,11 @@ fun LockHardeningCard() {
             ) { value ->
                 on = value
                 LockPolicies.setHardeningEnabled(context, item, value)
+                // 加固/防破解开关都是**收紧**方向：即时生效、不需要答题
+                // （此前没有任何反馈，用户以为没保存）
+                android.widget.Toast.makeText(
+                    context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }

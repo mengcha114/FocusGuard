@@ -15,6 +15,9 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import android.widget.ProgressBar
 import android.widget.TextView
 
@@ -311,9 +314,9 @@ object AppBlockOverlay {
         val owner = OverlayComposeOwner()
         owner.start()
         composeOwner = owner
-        androidx.lifecycle.setViewTreeLifecycleOwner(view, owner)
-        androidx.savedstate.setViewTreeSavedStateRegistryOwner(view, owner)
-        androidx.lifecycle.setViewTreeViewModelStoreOwner(view, owner)
+        view.setViewTreeLifecycleOwner(owner)
+        view.setViewTreeSavedStateRegistryOwner(owner)
+        view.setViewTreeViewModelStoreOwner(owner)
     }
 
     /** Compose 在悬浮窗里需要的 Lifecycle / SavedState / ViewModelStore 三件套。 */
