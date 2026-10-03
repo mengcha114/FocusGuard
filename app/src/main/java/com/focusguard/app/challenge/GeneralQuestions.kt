@@ -99,9 +99,9 @@ object GeneralQuestions {
         val base = if (hard) r(1000, 9999) * 100 else r(100, 999) * 100
         val ans = base * (p + qq) / 100
         return q(
-            "某数 $base，先取它的 $p%，再加上它的 $qq%，结果是多少？",
+            "计算：$base × $p% + $base × $qq% = ?",
             ans,
-            "$base × ($p+$qq)% = $base × ${p + qq} ÷ 100 = $ans",
+            "$base × $p% = ${base * p / 100}；$base × $qq% = ${base * qq / 100}；相加得 $ans",
             if (hard) 200 else 150
         )
     }
