@@ -369,7 +369,13 @@ class MonitorService : Service() {
         settings.serviceRunning = false
         isRunning = false
 
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        // 通知位与锁机守护共用：守护还在跑就交接（DETACH 保留通知），
+        // 否则守护会变成「前台服务但没有通知」，很快被系统回收
+        if (LockGuardService.isRunning) {
+            stopForeground(STOP_FOREGROUND_DETACH)
+        } else {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        }
         stopSelf()
         Log.d(TAG, "守护已停止")
     }

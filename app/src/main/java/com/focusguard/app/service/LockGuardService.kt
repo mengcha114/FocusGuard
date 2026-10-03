@@ -52,7 +52,11 @@ class LockGuardService : Service() {
 
     companion object {
         private const val TAG = "LockGuardService"
-        private const val NOTIFICATION_ID = 1003
+        /**
+         * 通知位与检测服务共用（FocusGuardApp.NOTIFICATION_ID）。
+         * 两个前台服务各发一条通知会在通知栏看到两条，共用后只显示一条。
+         */
+        private const val NOTIFICATION_ID = FocusGuardApp.NOTIFICATION_ID
         private const val ACTION_START = "com.focusguard.app.LOCK_GUARD_START"
         private const val ACTION_STOP = "com.focusguard.app.LOCK_GUARD_STOP"
 
@@ -216,6 +220,11 @@ class LockGuardService : Service() {
             if (!lockState.isLocked && !hasBlockRule) {
                 Log.d(TAG, "无锁机也无封锁规则，停止守护")
                 stoppedByUser = true
+                // 通知位是共用的：检测服务还在跑时用 DETACH 把通知留给它，
+                // 否则它会变成「前台服务但没有通知」，很快被系统回收
+                if (MonitorService.isRunning) {
+                    stopForeground(STOP_FOREGROUND_DETACH)
+                }
                 stopSelf()
                 return START_NOT_STICKY
             }
