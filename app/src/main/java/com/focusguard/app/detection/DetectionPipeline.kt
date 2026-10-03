@@ -274,7 +274,7 @@ class DetectionPipeline(
         // 浏览器（网页版网银 / 支付 / 政务）无法靠包名识别内容，如果连屏幕文字都拿不到，
         // 截图里可能有卡号密码——宁可这一轮不检测，也不把它发给 AI。
         if (settings.browserPrivacyFirst &&
-            com.focusguard.app.privacy.PrivacyGuard.isBrowser(pkg) &&
+            com.focusguard.app.privacy.PrivacyGuard.isBrowserApp(context, pkg) &&
             screenText.isNullOrBlank()
         ) {
             com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "浏览器内未取到文字")

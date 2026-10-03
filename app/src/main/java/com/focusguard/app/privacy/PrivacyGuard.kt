@@ -1,5 +1,9 @@
 package com.focusguard.app.privacy
 
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.util.Log
 
 /**
@@ -67,18 +71,57 @@ object PrivacyGuard {
         "云盘", "有道云", "印象笔记", "石墨", "腾讯文档"
     )
 
-    /** 浏览器类包名特征：网页版网银/政务都在浏览器里，隐私上要更保守。 */
+    /**
+     * 浏览器类包名特征（兜底用）。
+     * 仅靠包名会漏掉厂商/小众浏览器（360、QQ、vivo、华为、Alook、Yandex…），
+     * 主判据是系统级检查 [isBrowserApp]，这里只作为快速路径与补充。
+     */
     private val browserPackageHints = listOf(
         "chrome", "firefox", "edge", "browser", "quark", "ucmobile", "ucweb",
         "mqqbrowser", "sogou", "opera", "brave", "vivaldi", "samsung.android.app.sbrowser",
-        "miui.browser", "heytap.browser", "baidu.searchbox", "viayoo"
+        "miui.browser", "heytap.browser", "baidu.searchbox", "viayoo",
+        "tencent.mtt", "qihoo", "360", "vivo.browser", "huawei.browser", "alook",
+        "yandex", "duckduckgo", "kiwi", "xbrowser", "fennec",
+        "lenovo.browser", "sony.browser", "meizu.browser", "smartisan.browser"
     )
 
-    /** 是否是浏览器类应用。 */
-    fun isBrowser(packageName: String): Boolean {
+    /** 浏览器判定缓存：包名 → (到期时间, 结论)。 */
+    private val browserCache = HashMap<String, Pair<Long, Boolean>>()
+
+    /** 纯包名快速判断（不查系统）。 */
+    fun isBrowserByPackageName(packageName: String): Boolean {
         if (packageName.isBlank()) return false
         val pkg = packageName.lowercase()
         return browserPackageHints.any { pkg.contains(it) }
+    }
+
+    /**
+     * 是否是浏览器类应用（主判据，需要 Context）。
+     *
+     * 不靠猜包名，而是问系统两件事：
+     * 1. 该应用是否声明了 `CATEGORY_APP_BROWSER`；
+     * 2. 该应用能否打开**两个不同的公网域名**——真正的浏览器两个都能处理，
+     *    只处理自家域名的应用（淘宝、知乎等）两个都匹配不上，因此不会误判。
+     * 结果缓存 10 分钟，避免每次检测都查 PackageManager。
+     */
+    fun isBrowserApp(context: Context, packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        if (isBrowserByPackageName(packageName)) return true
+        val now = System.currentTimeMillis()
+        browserCache[packageName]?.let { (expireAt, value) -> if (expireAt > now) return value }
+        val value = runCatching {
+            val pm = context.packageManager
+            val browserCategory = pm.queryIntentActivities(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_BROWSER), 0
+            ).any { it.activityInfo?.packageName == packageName }
+            if (browserCategory) return@runCatching true
+            fun canOpen(url: String): Boolean = pm.queryIntentActivities(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url)), PackageManager.MATCH_DEFAULT_ONLY
+            ).any { it.activityInfo?.packageName == packageName }
+            canOpen("https://example.com/") && canOpen("https://www.wikipedia.org/")
+        }.getOrDefault(false)
+        browserCache[packageName] = now + 10 * 60_000L to value
+        return value
     }
 
     /**
