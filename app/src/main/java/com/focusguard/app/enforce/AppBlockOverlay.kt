@@ -46,15 +46,17 @@ object AppBlockOverlay {
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private var root: View? = null
-    private var infoText: TextView? = null
-    private var countdownText: TextView? = null
     private var appContext: Context? = null
     private var currentPkg: String? = null
-    private var currentLabel: String = ""
-    private var currentUntil: Long = 0L
-    private var currentUsed: Int = 0
-    private var currentLimit: Int = 0
+    // 界面读取的值用 Compose 状态包装：数值变化时悬浮窗内会自动重绘
+    private val labelState = androidx.compose.runtime.mutableStateOf("")
+    private val untilState = androidx.compose.runtime.mutableStateOf(0L)
+    private val usedState = androidx.compose.runtime.mutableIntStateOf(0)
+    private val limitState = androidx.compose.runtime.mutableIntStateOf(0)
     private var checkRunnable: Runnable? = null
+
+    /** 悬浮窗里 Compose 的 owner（移除窗口时销毁，避免泄漏）。 */
+    private var composeOwner: OverlayComposeOwner? = null
 
     /** 连续判定「用户已离开应用」的次数（防抖：单次采样不算）。 */
     private var leftStrikes = 0
@@ -129,22 +131,21 @@ object AppBlockOverlay {
     ): Boolean {
         appContext = context
         currentPkg = pkg
-        currentLabel = label
-        currentUntil = blockUntil
-        currentUsed = usedMinutes
-        currentLimit = limitMinutes
+        labelState.value = label
+        untilState.value = blockUntil
+        usedState.value = usedMinutes
+        limitState.value = limitMinutes
         // 真正停掉被锁应用（后台声音/画中画/分屏随之结束）；工具不可用时只是盖住
         Thread { runCatching { com.focusguard.app.enhance.LockPolicies.suspendBlock(context, pkg) } }.start()
 
         val existing = root
         if (existing != null && showing == pkg) {
-            refreshTexts()
             startSelfCheck()
             return true
         }
         removeViewInternal()
         val view = try {
-            buildContent(context)
+            buildContent(context, pkg)
         } catch (e: Exception) {
             lastError = "构建失败：${e.message}"
             Log.e(TAG, lastError, e)
@@ -161,7 +162,6 @@ object AppBlockOverlay {
         showing = pkg
         leftStrikes = 0
         lastError = ""
-        refreshTexts()
         startSelfCheck()
         Log.d(TAG, "已用悬浮窗遮盖 $pkg（$label）")
         return true
@@ -188,10 +188,10 @@ object AppBlockOverlay {
             Log.w(TAG, "移除封锁悬浮窗失败：${e.message}")
         }
         root = null
-        infoText = null
-        countdownText = null
         showing = null
         currentPkg = null
+        composeOwner?.destroy()
+        composeOwner = null
     }
 
     // ── 自查：每秒核对封锁条件与用户位置 ─────────────────────
@@ -215,7 +215,6 @@ object AppBlockOverlay {
                     hideOnMain()
                     return
                 }
-                refreshTexts()
                 uiHandler.postDelayed(this, CHECK_INTERVAL_MS)
             }
         }
@@ -266,138 +265,79 @@ object AppBlockOverlay {
 
     // ── 界面 ─────────────────────────────────────────────
 
-    private fun refreshTexts() {
-        val until = currentUntil
-        if (until > 0L) {
-            val left = ((until - System.currentTimeMillis()) / 1000).coerceAtLeast(0)
-            countdownText?.text = "还剩 %d:%02d".format(left / 60, left % 60)
-            infoText?.text = "「$currentLabel」已被锁定，时间到自动解除"
-        } else {
-            countdownText?.text = "今日已用 $currentUsed 分钟 / 上限 $currentLimit 分钟"
-            infoText?.text = "「$currentLabel」今日已达使用上限，明天 0 点自动重置"
-        }
-    }
-
-    private fun buildContent(context: Context): View {
-        val palette = com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
-            com.focusguard.app.data.Settings(context).themeMode,
-            context
-        )
-        // palette 里的字段是 Compose Color，FocusColors.hex(...) 转成 #RRGGBB 字符串，
-        // 再交给 android.graphics.Color.parseColor 得到传统 View 用的颜色
-        fun color(value: androidx.compose.ui.graphics.Color) =
-            Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(value))
-
-        val column = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(context, 28), dp(context, 28), dp(context, 28), dp(context, 28))
-            setBackgroundColor(color(palette.bg))
-            isFocusableInTouchMode = true
-            isFocusable = true
-            // 吞掉返回键：悬浮窗不属于任何 Task，返回键到这里就结束
-            setOnKeyListener { _, keyCode, event ->
-                event.action == KeyEvent.ACTION_DOWN &&
-                    (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE ||
-                        keyCode == KeyEvent.KEYCODE_MENU)
+    private fun buildContent(context: Context, pkg: String): View {
+        // 复用与封锁 Activity 完全相同的 Compose 界面（含内嵌答题）：
+        // 1) 视觉与锁机页一致，不再是手写的简陋 View；
+        // 2) 点「答题解封」不用再跳 Activity，全程留在悬浮窗里。
+        val view = androidx.compose.ui.platform.ComposeView(context)
+        attachOwners(view)
+        view.setContent {
+            com.focusguard.app.ui.theme.FocusGuardTheme(
+                themeMode = com.focusguard.app.ui.theme.ThemeState.mode,
+                accentOverride = com.focusguard.app.ui.theme.ThemeState.accent
+            ) {
+                AppBlockContent(
+                    appLabel = labelState.value,
+                    usedMinutes = usedState.value,
+                    limitMinutes = limitState.value,
+                    blockUntil = untilState.value,
+                    onUnlocked = {
+                        val app = appContext ?: return@AppBlockContent
+                        Thread {
+                            runCatching {
+                                AppLockToolExecutor.grantExtraTime(
+                                    app, pkg, com.focusguard.app.data.Settings(app).appBlockMinutes
+                                )
+                            }
+                        }.start()
+                        hide()
+                    },
+                    onGoHome = {
+                        val app = appContext ?: return@AppBlockContent
+                        val home = Intent(Intent.ACTION_MAIN).apply {
+                            addCategory(Intent.CATEGORY_HOME)
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        runCatching { app.startActivity(home) }
+                    }
+                )
             }
         }
+        return view
+    }
 
-        column.addView(
-            TextView(context).apply {
-                text = if (currentUntil > 0L) "🔒 应用已锁定" else "已达使用上限"
-                textSize = 24f
-                setTextColor(color(palette.text))
-                gravity = Gravity.CENTER
-            },
-            wrap()
-        )
-        column.addView(
-            TextView(context).apply {
-                text = currentLabel
-                textSize = 17f
-                setTextColor(color(palette.haze))
-                gravity = Gravity.CENTER
-            },
-            wrap().apply { topMargin = dp(context, 10) }
-        )
-        column.addView(
-            TextView(context).apply {
-                textSize = 30f
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-                setTextColor(color(palette.accent))
-                gravity = Gravity.CENTER
-                countdownText = this
-            },
-            wrap().apply { topMargin = dp(context, 18) }
-        )
-        column.addView(
-            ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
-                max = 100
-                progress = if (currentLimit > 0) {
-                    (currentUsed * 100 / currentLimit).coerceIn(0, 100)
-                } else {
-                    100
-                }
-            },
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 6)
-            ).apply { topMargin = dp(context, 14) }
-        )
-        column.addView(
-            TextView(context).apply {
-                textSize = 12f
-                setTextColor(color(palette.haze))
-                gravity = Gravity.CENTER
-                infoText = this
-            },
-            wrap().apply { topMargin = dp(context, 12) }
-        )
+    /** 悬浮窗里的 ComposeView 不在 Activity 里，必须自己挂上三个 owner 才能渲染。 */
+    private fun attachOwners(view: androidx.compose.ui.platform.ComposeView) {
+        val owner = OverlayComposeOwner()
+        owner.start()
+        composeOwner = owner
+        androidx.lifecycle.setViewTreeLifecycleOwner(view, owner)
+        androidx.savedstate.setViewTreeSavedStateRegistryOwner(view, owner)
+        androidx.lifecycle.setViewTreeViewModelStoreOwner(view, owner)
+    }
 
-        column.addView(
-            Button(context).apply {
-                text = "答题解封（答对可再用一会）"
-                textSize = 15f
-                setBackgroundColor(color(palette.accent))
-                setTextColor(color(palette.bg))
-                setOnClickListener {
-                    val app = appContext ?: return@setOnClickListener
-                    val pkg = currentPkg ?: return@setOnClickListener
-                    // 先撤下悬浮窗，再打开答题页（那里有现成的本地题库与判分）
-                    val label = currentLabel
-                    hideOnMain()
-                    AppBlockActivity.show(
-                        context = app,
-                        packageName = pkg,
-                        appLabel = label,
-                        usedMinutes = currentUsed,
-                        limitMinutes = currentLimit,
-                        blockUntil = currentUntil
-                    )
-                }
-            },
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 52)
-            ).apply { topMargin = dp(context, 26) }
-        )
-        column.addView(
-            Button(context).apply {
-                text = "返回桌面"
-                textSize = 15f
-                setOnClickListener {
-                    val app = appContext ?: return@setOnClickListener
-                    val home = Intent(Intent.ACTION_MAIN).apply {
-                        addCategory(Intent.CATEGORY_HOME)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    runCatching { app.startActivity(home) }
-                }
-            },
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 48)
-            ).apply { topMargin = dp(context, 10) }
-        )
-        return column
+    /** Compose 在悬浮窗里需要的 Lifecycle / SavedState / ViewModelStore 三件套。 */
+    private class OverlayComposeOwner : androidx.lifecycle.LifecycleOwner,
+        androidx.savedstate.SavedStateRegistryOwner,
+        androidx.lifecycle.ViewModelStoreOwner {
+
+        private val lifecycleRegistry = androidx.lifecycle.LifecycleRegistry(this)
+        private val savedStateController = androidx.savedstate.SavedStateRegistryController.create(this)
+
+        override val lifecycle: androidx.lifecycle.Lifecycle get() = lifecycleRegistry
+        override val savedStateRegistry: androidx.savedstate.SavedStateRegistry
+            get() = savedStateController.savedStateRegistry
+        override val viewModelStore = androidx.lifecycle.ViewModelStore()
+
+        fun start() {
+            savedStateController.performRestore(null)
+            lifecycleRegistry.currentState = androidx.lifecycle.Lifecycle.State.RESUMED
+        }
+
+        fun destroy() {
+            lifecycleRegistry.currentState = androidx.lifecycle.Lifecycle.State.DESTROYED
+            viewModelStore.clear()
+        }
     }
 
     private fun buildLayoutParams(context: Context): WindowManager.LayoutParams {

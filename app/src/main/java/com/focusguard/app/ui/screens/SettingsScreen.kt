@@ -857,7 +857,7 @@ fun SettingsScreen(
             fun snap(
                 lockMin: Int, appBlock: Int, violations: Int, strength: Int,
                 mode: Settings.EnforcementMode, interval: Int, alertDelay: Int,
-                confidence: Int, callLimit: Int, smart: Boolean, alert: Boolean,
+                confidence: Int, smart: Boolean, alert: Boolean,
                 white: String, tokenOn: Boolean, hashOn: Boolean,
                 textOn: Boolean, cacheOn: Boolean, adaptiveOn: Boolean
             ) = com.focusguard.app.data.SettingsDiff.Snapshot(
@@ -869,7 +869,6 @@ fun SettingsScreen(
                 intervalMinutes = interval,
                 alertDelaySeconds = alertDelay,
                 confidencePercent = confidence,
-                dailyCallLimit = callLimit,
                 smartScheduleEnabled = smart,
                 alertEnabled = alert,
                 whitelist = white.lines().map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
@@ -881,7 +880,7 @@ fun SettingsScreen(
                 settings.consecutiveViolations, settings.aiLockStrength,
                 settings.enforcementMode, settings.intervalMinutes,
                 settings.aiAlertDelaySeconds, (settings.confidenceThreshold * 100).toInt(),
-                settings.dailyCallLimit, settings.smartScheduleEnabled, settings.aiAlertEnabled,
+                settings.smartScheduleEnabled, settings.aiAlertEnabled,
                 settings.whitelist, settings.tokenSavingEnabled, settings.screenHashDedupEnabled,
                 settings.screenTextPrefilterEnabled, settings.decisionCacheEnabled,
                 settings.adaptiveIntervalEnabled
@@ -892,7 +891,6 @@ fun SettingsScreen(
                 aiLockStrength, enforcementMode,
                 intervalMinutes.toIntOrNull() ?: settings.intervalMinutes,
                 aiAlertDelaySeconds.coerceIn(0, 120), (confidenceThreshold * 100).toInt(),
-                dailyCallLimit.toIntOrNull() ?: settings.dailyCallLimit,
                 smartScheduleEnabled, aiAlertEnabled, whitelist,
                 tokenSavingEnabled, screenHashDedup, screenTextPrefilter,
                 decisionCacheEnabled, adaptiveInterval
@@ -915,6 +913,8 @@ fun SettingsScreen(
                 apiFormat != settings.apiFormat ||
                 aiCustomPrompt != settings.aiCustomPrompt ||
                 privacyProtectEnabled != settings.privacyProtectEnabled ||
+                // 配额改小 = 等于关掉 AI 检测：锁机期间禁止改（平时自由改，不答题）
+                (dailyCallLimit.toIntOrNull() ?: settings.dailyCallLimit) != settings.dailyCallLimit ||
                 sensitiveApps != settings.sensitiveApps ||
                 lines(studyKeywords) != lines(settings.studyKeywords) ||
                 lines(entertainmentKeywords) != lines(settings.entertainmentKeywords) ||

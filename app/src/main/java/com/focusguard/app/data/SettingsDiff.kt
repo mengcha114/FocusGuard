@@ -20,7 +20,6 @@ object SettingsDiff {
         val intervalMinutes: Int,
         val alertDelaySeconds: Int,
         val confidencePercent: Int,
-        val dailyCallLimit: Int,
         val smartScheduleEnabled: Boolean,
         val alertEnabled: Boolean,
         val whitelist: Set<String>,
@@ -54,8 +53,9 @@ object SettingsDiff {
             new.enforceRank < old.enforceRank ||
             // 放行应用
             (new.whitelist - old.whitelist).isNotEmpty() ||
-            // 削弱 AI 检测：配额变小、开启省 token 系列
-            new.dailyCallLimit < old.dailyCallLimit ||
+            // 削弱 AI 检测：开启省 token 系列
+            // 注意：**调低每日调用次数不算放宽**（用户要求：调低不该逼着答题），
+            // 它由「锁机期间禁止修改检测相关配置」单独兜住（见 SettingsScreen.isBlockedDuringLock）
             (!old.tokenSaving && new.tokenSaving) ||
             (!old.hashDedup && new.hashDedup) ||
             (!old.textPrefilter && new.textPrefilter) ||
