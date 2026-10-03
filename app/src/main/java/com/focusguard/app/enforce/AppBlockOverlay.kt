@@ -236,6 +236,20 @@ object AppBlockOverlay {
                     hideOnMain(stopApp = false)
                     return
                 }
+                // 小窗/分屏/画中画会压在我们的悬浮窗之上：这种情况下直接停掉该应用
+                // （无障碍事件不一定会再来，所以每秒自查里也要看一次）
+                val small = runCatching {
+                    com.focusguard.app.access.GuardAccessibilityService.instance
+                        ?.isSmallWindowForBlocked(pkg)
+                }.getOrNull() ?: false
+                if (small) {
+                    Log.d(TAG, "被锁应用 $pkg 处于小窗/分屏/画中画，停掉它")
+                    Thread {
+                        runCatching {
+                            com.focusguard.app.enhance.LockPolicies.suspendBlock(app, pkg)
+                        }
+                    }.start()
+                }
                 if (hasLeftApp(app, pkg)) {
                     // 用户离开：撤下并**停掉应用**（否则它还在后台放视频/声音）
                     Log.d(TAG, "用户已离开 $pkg，撤下并停掉该应用")

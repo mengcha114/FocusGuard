@@ -203,9 +203,16 @@ class GuardAccessibilityService : AccessibilityService() {
                 dismissNotificationShade()
             }
             val blocked = com.focusguard.app.enforce.AppBlockOverlay.showingPackage()
-            if (blocked != null && windowCountOf(blocked) > 1) {
-                Log.d(TAG, "被锁应用 $blocked 处于画中画/分屏，顶回桌面")
-                performGlobalAction(GLOBAL_ACTION_HOME)
+            if (blocked != null && isSmallWindowForBlocked(blocked)) {
+                // 小窗/分屏/画中画的 z-order 可能压在我们的封锁悬浮窗之上（HOME 也顶不掉
+                // ROM 小窗）⇒ 这种情况下**直接停掉该应用**：小窗、后台声音一起结束。
+                // 正常全屏使用时不会走到这里，所以不会出现「打开就被强制退出」。
+                Log.d(TAG, "被锁应用 $blocked 处于小窗/分屏/画中画，停掉它")
+                Thread {
+                    runCatching {
+                        com.focusguard.app.enhance.LockPolicies.suspendBlock(this@GuardAccessibilityService, blocked)
+                    }
+                }.start()
             }
         }
 
@@ -409,6 +416,35 @@ class GuardAccessibilityService : AccessibilityService() {
         if (com.focusguard.app.data.AppBlockStore(this).blockedUntil(pkg) > 0L) return true
         val limit = ruleStore.getRule(pkg)?.hardBlockMinutes ?: return false
         return (ruleStore.getTodaySeconds(pkg) / 60).toInt() >= limit
+    }
+
+    private var lastSmallWindowCheckAt = 0L
+
+    /**
+     * [pkg] 是否处于小窗 / 分屏 / 画中画：它拥有一个**明显小于屏幕**的窗口。
+     *
+     * 判据用尺寸而不是窗口个数（ROM 小窗常常只有一个窗口，个数判不出来）；
+     * 阈值 0.85 足以区分分屏（约 0.5）与画中画（约 0.3），又不会把
+     * 正常全屏（扣掉状态栏约 0.93~0.98）误判进来。2 秒节流，避免频繁遍历。
+     */
+    fun isSmallWindowForBlocked(pkg: String): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastSmallWindowCheckAt < 2_000L) return false
+        lastSmallWindowCheckAt = now
+        return try {
+            val dm = resources.displayMetrics
+            val fullW = dm.widthPixels
+            val fullH = dm.heightPixels
+            windows.any { window ->
+                val owner = runCatching { window.root?.packageName?.toString() }.getOrNull()
+                if (owner != pkg) return@any false
+                val bounds = android.graphics.Rect()
+                window.getBoundsInScreen(bounds)
+                bounds.width() < fullW * 0.85f || bounds.height() < fullH * 0.85f
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /** [pkg] 当前拥有的窗口数：>1 说明它处于画中画/分屏（全屏应用只有一个活动窗口）。 */
