@@ -60,11 +60,7 @@ class LockState internal constructor(
         /** 连续答错多少次进入冷却（单一来源：AttemptGuard）。 */
         const val FREE_WRONG_ANSWERS = AttemptGuard.MAX_WRONG
         const val WRONG_COOLDOWN_MS = AttemptGuard.COOLDOWN_MS
-        private const val KEY_CHALLENGE_REFRESHES = "challenge_refreshes"
 
-        /** 连续答错多少次进入冷却（与 AttemptGuard.MAX_WRONG 一致）。 */
-        const val FREE_WRONG_ANSWERS = 2
-        const val WRONG_COOLDOWN_MS = 5 * 60_000L
         private const val MAX_CHALLENGE_REFRESHES = 5
 
         private const val KEY_LOCK_SOURCE = "lock_source"
@@ -398,65 +394,6 @@ class LockState internal constructor(
 
     /** 答对：连续错误计数清零。 */
     fun recordCorrectAnswer() = attemptGuard.recordCorrect()
-
-    // ── 锁机期间「换一题」次数（防破解） ──────────────
-    // 存 prefs 持久化：用户退出答题页再重进，次数不重置。锁机结束自动归零。
-
-    /** 本次锁机已使用的「换一题」次数。 */
-    var challengeRefreshCount: Int
-        get() = prefs.getInt(KEY_CHALLENGE_REFRESHES, 0)
-        set(value) = prefs.edit().putInt(KEY_CHALLENGE_REFRESHES, value.coerceAtLeast(0)).apply()
-
-    // ── 答错冷却（防暴力试答） ────────────────────────
-
-    /** 本轮锁机已答错（含超时）次数。 */
-    val wrongAnswerCount: Int
-        get() = prefs.getInt(KEY_WRONG_COUNT, 0)
-
-    /** 剩余免费答错次数。 */
-    val freeWrongLeft: Int
-        get() = (FREE_WRONG_ANSWERS - wrongAnswerCount).coerceAtLeast(0)
-
-    /** 冷却剩余毫秒（单调时钟：改系统时间、退出重进都不能缩短）。 */
-    val cooldownRemainingMs: Long
-        get() {
-            val base = long(KEY_COOLDOWN_BASE)
-            if (base <= 0L) return 0L
-            val left = WRONG_COOLDOWN_MS - (clock.elapsed() - base)
-            // 重启后单调时钟归零（base > now）：按整段冷却重新计时，而不是直接放行
-            if (left > WRONG_COOLDOWN_MS) {
-                prefs.edit().putLong(KEY_COOLDOWN_BASE, clock.elapsed()).apply()
-                return WRONG_COOLDOWN_MS
-            }
-            if (left <= 0L) {
-                prefs.edit().putLong(KEY_COOLDOWN_BASE, 0L).putInt(KEY_WRONG_COUNT, 0).commit()
-                return 0L
-            }
-            return left
-        }
-
-    val isInCooldown: Boolean
-        get() = cooldownRemainingMs > 0
-
-    /**
-     * 记录一次答错（或超时）。免费次数用完后，从这一次开始进入 5 分钟冷却。
-     * @return 是否因此进入冷却
-     */
-    fun recordWrongAnswer(): Boolean {
-        if (isInCooldown) return true
-        val n = wrongAnswerCount + 1
-        val editor = prefs.edit().putInt(KEY_WRONG_COUNT, n)
-        // 连续答错 FREE_WRONG_ANSWERS 次（第 2 次）即进入冷却
-        val cooldown = n >= FREE_WRONG_ANSWERS
-        if (cooldown) editor.putLong(KEY_COOLDOWN_BASE, clock.elapsed())
-        editor.commit()
-        return cooldown
-    }
-
-    /** 答对一题：连续错误计数清零。 */
-    fun recordCorrectAnswer() {
-        prefs.edit().putInt(KEY_WRONG_COUNT, 0).commit()
-    }
 
     /** 记录一次换题。返回是否已达上限（≥5 次）。 */
     fun recordChallengeRefresh(): Boolean {
