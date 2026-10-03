@@ -171,6 +171,13 @@ class GuardAccessibilityService : AccessibilityService() {
                 lastWindowPackageAt = System.currentTimeMillis()
                 if (winPkg != packageName && !isLockActive()) interceptIfBlocked(winPkg)
             }
+        } else if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            // 部分 ROM 会把 WINDOW_STATE_CHANGED 合并/延迟（用户报告「锁住应用后仍要等几秒」），
+            // 窗口列表变化时再给一次机会：只要当前活动窗口是被封应用就立刻拦。
+            val winPkg = freshWindowPackage().orEmpty()
+            if (winPkg.isNotBlank() && winPkg != packageName && !isLockActive()) {
+                interceptIfBlocked(winPkg)
+            }
         }
 
         val state = lockState ?: return
@@ -310,7 +317,8 @@ class GuardAccessibilityService : AccessibilityService() {
         // 补发：只发一次时系统可能把启动请求丢掉，实测要等下一次巡检才出现
         val token = ++burstToken
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        for (delayMs in longArrayOf(300L, 800L, 1600L)) {
+        // 补发要快：第一次启动请求被系统丢掉时，靠这几次尽快把封锁页压上去
+        for (delayMs in longArrayOf(150L, 400L, 900L, 1800L)) {
             handler.postDelayed({
                 // 用户可能已经退回桌面：只有在仍处于该应用时才补发，
                 // 否则封锁页会盖在桌面上（比"晚一点才挡"更烦人）
