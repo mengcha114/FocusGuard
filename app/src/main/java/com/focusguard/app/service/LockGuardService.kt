@@ -710,6 +710,12 @@ class LockGuardService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // 服务销毁时回收锁机限制与冻结（含用户主动「停止守护」的场景），
+        // 避免限制残留到下次启动才清理
+        runCatching {
+            com.focusguard.app.enhance.LockPolicies
+                .cleanupResidue(applicationContext, lockState.isLocked)
+        }
         try {
             LockGuardAlarm.cancel(applicationContext)
         } catch (e: Exception) {

@@ -149,6 +149,9 @@ object ShizukuEnhancer {
         return ok
     }
 
+    /** 读取当前「自动设置时间」的值（"0"/"1"），失败返回 null。 */
+    fun readAutoTime(): String? = runForOutput("settings", "get", "global", "auto_time")?.trim()
+
     /**
      * 锁机期间保持「自动设置时间」开启（改时间本身已有单调时钟防护，这里减少尝试）。
      * 原值由调用方在锁机开始时记录，锁机结束用 [restoreAutoTime] 还原，不擅自改用户偏好。

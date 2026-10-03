@@ -21,6 +21,7 @@ object LockPolicies {
     private const val KEY_RESTRICTED = "restricted"
     private const val KEY_SUSPENDED = "suspended_pkgs"
     private const val KEY_FREEZE_ENABLED = "freeze_enabled"
+    private const val KEY_AUTO_TIME_ORIGINAL = "auto_time_original"
     private const val KEY_BLOCK_RESET = "block_factory_reset"
 
     private val ENTERTAINMENT = setOf(AppCategory.GAME, AppCategory.SHORT_VIDEO, AppCategory.VIDEO)
@@ -67,6 +68,12 @@ object LockPolicies {
             restrictions(app).forEach { DhizukuEnhancer.setUserRestriction(app, it, true) }
             editor.putBoolean(KEY_RESTRICTED, true)
         }
+        // 锁机期间保持「自动设置时间」开启；先记下用户原值，锁机结束还原，
+        // 不擅自永久改掉用户「手动设置时间」的偏好（Shizuku 可用时才做）。
+        if (ShizukuEnhancer.isReady() && !p.contains(KEY_AUTO_TIME_ORIGINAL)) {
+            ShizukuEnhancer.readAutoTime()?.let { editor.putString(KEY_AUTO_TIME_ORIGINAL, it) }
+            ShizukuEnhancer.ensureAutoTime()
+        }
         if (isFreezeEnabled(app) && p.getStringSet(KEY_SUSPENDED, emptySet()).isNullOrEmpty()) {
             val pkgs = entertainmentPackages(app)
             val ok = pkgs.isNotEmpty() && (
@@ -87,6 +94,11 @@ object LockPolicies {
         if (p.getBoolean(KEY_RESTRICTED, false) && DhizukuEnhancer.ensureReady(app)) {
             ALL_RESTRICTIONS.forEach { DhizukuEnhancer.setUserRestriction(app, it, false) }
             editor.putBoolean(KEY_RESTRICTED, false)
+        }
+        val autoTimeOriginal = p.getString(KEY_AUTO_TIME_ORIGINAL, null)
+        if (autoTimeOriginal != null) {
+            ShizukuEnhancer.restoreAutoTime(autoTimeOriginal)
+            editor.remove(KEY_AUTO_TIME_ORIGINAL)
         }
         val suspended = p.getStringSet(KEY_SUSPENDED, emptySet()).orEmpty()
         if (suspended.isNotEmpty()) {
