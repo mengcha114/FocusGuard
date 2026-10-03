@@ -1134,7 +1134,6 @@ private fun SettingsGroupHeader(title: String) {
     )
 }
 
-@Composable
 /**
  * 设置分组卡片：**可折叠**（点标题栏切换，带展开/收起动画），展开状态记在本地偏好里。
  *
