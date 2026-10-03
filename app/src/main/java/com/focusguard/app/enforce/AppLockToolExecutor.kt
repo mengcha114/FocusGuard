@@ -68,7 +68,15 @@ object AppLockToolExecutor {
         com.focusguard.app.service.GuardWatchdogWorker.schedule(context)
         val shownNow = com.focusguard.app.service.ForegroundAppDetector.isForeground(context, pkg) ||
             com.focusguard.app.access.GuardAccessibilityService.instance?.liveWindowPackage() == pkg
-        if (shownNow) {
+        if (shownNow && !AppBlockOverlay.show(
+                context = context,
+                pkg = pkg,
+                label = label,
+                usedMinutes = 0,
+                limitMinutes = mins,
+                blockUntil = until
+            )
+        ) {
             AppBlockActivity.show(
                 context = context,
                 packageName = pkg,
@@ -88,6 +96,7 @@ object AppLockToolExecutor {
     fun grantExtraTime(context: Context, pkg: String, minutes: Int) {
         val store = UsageRuleStore.shared(context)
         AppBlockStore(context).clear(pkg)
+        AppBlockOverlay.hide()
         val back = minutes.coerceAtLeast(1) * 60L
         val used = store.getTodaySeconds(pkg)
         store.addSeconds(pkg, -minOf(used, back))

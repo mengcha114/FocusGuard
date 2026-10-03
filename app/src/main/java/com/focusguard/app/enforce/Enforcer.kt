@@ -100,6 +100,17 @@ class Enforcer(private val context: Context) {
                 return
             }
 
+            if (com.focusguard.app.enforce.AppBlockOverlay.show(
+                    context = context,
+                    pkg = packageName,
+                    label = appLabel,
+                    usedMinutes = 0,
+                    limitMinutes = minutes,
+                    blockUntil = until
+                )
+            ) {
+                return
+            }
             AppBlockActivity.show(
                 context = context,
                 packageName = packageName,

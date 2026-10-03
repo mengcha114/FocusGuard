@@ -182,6 +182,21 @@ class GuardAccessibilityService : AccessibilityService() {
             }
         }
 
+        // 封锁悬浮窗显示期间的两条旁路：
+        // ① 系统界面（通知栏/最近任务）一出现就收起 —— 否则能从通知内容偷看被锁应用；
+        // ② 被锁应用出现多个窗口（画中画/分屏）→ 直接顶回桌面（全屏应用只有一个活动窗口）。
+        if (com.focusguard.app.enforce.AppBlockOverlay.isShowing()) {
+            val uiPkg = event.packageName?.toString().orEmpty()
+            if (uiPkg == "com.android.systemui" || uiPkg in blockedSystemPackages) {
+                dismissNotificationShade()
+            }
+            val blocked = com.focusguard.app.enforce.AppBlockOverlay.showingPackage()
+            if (blocked != null && windowCountOf(blocked) > 1) {
+                Log.d(TAG, "被锁应用 $blocked 处于画中画/分屏，顶回桌面")
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            }
+        }
+
         val state = lockState ?: return
         if (!state.isLocked) return
 
@@ -346,16 +361,24 @@ class GuardAccessibilityService : AccessibilityService() {
             }.getOrDefault(pkg)
             val rule = ruleStore.getRule(pkg)
             val used = (ruleStore.getTodaySeconds(pkg) / 60).toInt()
-            // 封锁页是 Activity，冷启动要几百毫秒到几秒。判定命中就先立刻把用户踢出
-            // 被锁应用（用户报告「反复进出还有几秒延迟」），封锁页随后接管。
-            val inTarget = liveWindowPackage() == pkg
-            if (inTarget || !android.provider.Settings.canDrawOverlays(this)) {
-                performGlobalAction(GLOBAL_ACTION_HOME)
-            }
+            // 优先用悬浮窗遮盖：毫秒级、不可被手势销毁，而且**不用把人踢出应用**
+            // （用户反馈：以前会「直接强制退出」）。工具可用时同时真正挂起该应用。
+            val covered = com.focusguard.app.enforce.AppBlockOverlay.show(
+                context = this,
+                pkg = pkg,
+                label = label,
+                usedMinutes = used,
+                limitMinutes = rule?.hardBlockMinutes ?: 0,
+                blockUntil = until
+            )
             Log.d(
                 TAG,
-                "$pkg 拦截：事件→判定+踢出 ${android.os.SystemClock.elapsedRealtime() - eventAt}ms"
+                "$pkg 拦截：事件→${if (covered) "悬浮窗" else "兜底"} " +
+                    "${android.os.SystemClock.elapsedRealtime() - eventAt}ms"
             )
+            if (covered) return@runCatching
+            // 兜底（没有悬浮窗权限）：Activity 冷启动慢，先立刻把用户踢出被锁应用
+            if (liveWindowPackage() == pkg) performGlobalAction(GLOBAL_ACTION_HOME)
             com.focusguard.app.enforce.AppBlockActivity.show(
                 context = this,
                 packageName = pkg,
@@ -373,6 +396,15 @@ class GuardAccessibilityService : AccessibilityService() {
         if (com.focusguard.app.data.AppBlockStore(this).blockedUntil(pkg) > 0L) return true
         val limit = ruleStore.getRule(pkg)?.hardBlockMinutes ?: return false
         return (ruleStore.getTodaySeconds(pkg) / 60).toInt() >= limit
+    }
+
+    /** [pkg] 当前拥有的窗口数：>1 说明它处于画中画/分屏（全屏应用只有一个活动窗口）。 */
+    private fun windowCountOf(pkg: String): Int = try {
+        windows.count { window ->
+            runCatching { window.root?.packageName?.toString() }.getOrNull() == pkg
+        }
+    } catch (e: Exception) {
+        0
     }
 
     /** 当前是否处于「锁机中且应当拦截」的状态。 */

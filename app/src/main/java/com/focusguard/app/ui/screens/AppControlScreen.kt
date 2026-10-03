@@ -168,6 +168,7 @@ fun AppControlScreen() {
                 ruleStore.resetToday(app.packageName)
                 com.focusguard.app.enforce.AppBlockActivity
                     .dismissIfShowing(app.packageName)
+                com.focusguard.app.enforce.AppBlockOverlay.hide()
                 if (category == null) {
                     categoryStore.clearUserOverride(app.packageName)
                 } else {

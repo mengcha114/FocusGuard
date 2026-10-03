@@ -748,7 +748,18 @@ class LockGuardService : Service() {
         if (blockUntil > 0L) {
             if (now - lastBlockReassertAt > blockReassertCooldownMs) {
                 lastBlockReassertAt = now
-                Log.d(TAG, "$label 处于临时封锁期，拉起封锁页")
+                Log.d(TAG, "$label 处于临时封锁期，用悬浮窗遮盖")
+                if (com.focusguard.app.enforce.AppBlockOverlay.show(
+                        context = applicationContext,
+                        pkg = target,
+                        label = label,
+                        usedMinutes = 0,
+                        limitMinutes = 0,
+                        blockUntil = blockUntil
+                    )
+                ) {
+                    return true
+                }
                 AppBlockActivity.show(
                     context = applicationContext,
                     packageName = target,
@@ -768,7 +779,18 @@ class LockGuardService : Service() {
         if (now - lastBlockReassertAt <= blockReassertCooldownMs) return true
         lastBlockReassertAt = now
 
-        Log.d(TAG, "$label 今日已用 $usedMinutes 分钟，超过上限 $limit 分钟，拉起封锁页")
+        Log.d(TAG, "$label 今日已用 $usedMinutes 分钟，超过上限 $limit 分钟，用悬浮窗遮盖")
+        if (com.focusguard.app.enforce.AppBlockOverlay.show(
+                context = applicationContext,
+                pkg = target,
+                label = label,
+                usedMinutes = usedMinutes,
+                limitMinutes = limit,
+                blockUntil = 0L
+            )
+        ) {
+            return true
+        }
         AppBlockActivity.show(
             context = applicationContext,
             packageName = target,

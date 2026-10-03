@@ -33,6 +33,10 @@ object LockPolicies {
     /** 「自动设置时间」的用户原值（锁机结束还原）。 */
     private const val KEY_AUTOTIME_ORIGINAL = "autotime_original_bool"
 
+    /** 「应用封锁期间」的挂起记录（真正停掉被锁应用，计时结束/答题解封后解除）。 */
+    private const val KEY_BLOCK_FROZEN = "block_suspended_pkgs"
+    private const val KEY_BLOCK_FROZEN_BY = "block_suspended_by"
+
     /** AI 对话手动下达的长期冻结（不受锁机结束影响，解冻需答题）。 */
     private const val KEY_PERSIST = "persist_suspended_pkgs"
     private const val KEY_PERSIST_BY = "persist_suspended_by"
@@ -348,6 +352,8 @@ object LockPolicies {
     /** 锁机开始。幂等。 */
     fun onLockStart(context: Context) {
         val app = context.applicationContext
+        // 锁机优先：撤下应用封锁悬浮窗，避免两层自制窗口抢 z-order
+        runCatching { com.focusguard.app.enforce.AppBlockOverlay.hide() }
         val p = prefs(app)
         val editor = p.edit()
         if (!p.getBoolean(KEY_RESTRICTED, false) && DhizukuEnhancer.ensureReady(app)) {
@@ -471,6 +477,54 @@ object LockPolicies {
         }
     }
 
+    // ── 应用封锁期间的挂起（引用计数） ─────────────────────
+
+    /** 封锁挂起集合。 */
+    fun blockFrozen(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_BLOCK_FROZEN, emptySet()).orEmpty()
+
+    /**
+     * 应用被封锁期间**真正停掉它**（后台播放、画中画、分屏都会中止）。
+     *
+     * 只盖一层悬浮窗挡不住「后台还在放」；挂起需要 Dhizuku 或 Shizuku，
+     * 都没就绪时返回 false，调用方只做「盖住」。
+     */
+    fun suspendBlock(context: Context, pkg: String): Boolean {
+        val app = context.applicationContext
+        if (pkg.isBlank()) return false
+        val p = prefs(app)
+        val current = blockFrozen(app)
+        if (pkg in current) return true
+        if (pkg in suspendedPackages(app) || pkg in persistentFrozen(app)) {
+            // 已经被别的机制挂起了：只登记引用，不重复施加
+            p.edit().putStringSet(KEY_BLOCK_FROZEN, current + pkg).apply()
+            return true
+        }
+        val by = freeze(app, setOf(pkg)) ?: return false
+        p.edit()
+            .putStringSet(KEY_BLOCK_FROZEN, current + pkg)
+            .putString(KEY_BLOCK_FROZEN_BY, by)
+            .apply()
+        Log.d(TAG, "封锁期间已挂起 $pkg（途径=$by）")
+        return true
+    }
+
+    /**
+     * 解除封锁挂起。**引用计数**：锁机期冻结或 AI 手动冻结里还有这个包时，
+     * 只清本记录、不真解冻（否则会把别人的冻结一起解掉）。
+     */
+    fun releaseBlock(context: Context, pkg: String) {
+        val app = context.applicationContext
+        val p = prefs(app)
+        val current = blockFrozen(app)
+        if (pkg !in current) return
+        p.edit().putStringSet(KEY_BLOCK_FROZEN, current - pkg).apply()
+        if (pkg in suspendedPackages(app) || pkg in persistentFrozen(app)) return
+        DhizukuEnhancer.setPackagesSuspended(app, setOf(pkg), false)
+        ShizukuEnhancer.suspendPackages(setOf(pkg), false)
+        Log.d(TAG, "封锁结束已解除 $pkg 的挂起")
+    }
+
     // ── 手动（AI 对话）冻结 ─────────────────────────────
 
     /** 手动冻结集合（不受锁机结束影响）。 */
@@ -550,6 +604,7 @@ object LockPolicies {
             prefs(app).edit()
                 .putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "")
                 .putStringSet(KEY_PERSIST, emptySet()).putString(KEY_PERSIST_BY, "")
+                .putStringSet(KEY_BLOCK_FROZEN, emptySet()).putString(KEY_BLOCK_FROZEN_BY, "")
                 .apply()
             return 0 to 0
         }
@@ -560,6 +615,7 @@ object LockPolicies {
             prefs(app).edit()
                 .putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "")
                 .putStringSet(KEY_PERSIST, emptySet()).putString(KEY_PERSIST_BY, "")
+                .putStringSet(KEY_BLOCK_FROZEN, emptySet()).putString(KEY_BLOCK_FROZEN_BY, "")
                 .apply()
         }
         return (targets.size - left.size) to left.size

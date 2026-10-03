@@ -566,6 +566,17 @@ class MonitorService : Service() {
             "$label 已用 ${verdict.usedMinutes} 分钟，超过上限 ${verdict.limitMinutes} 分钟，执行封锁"
         )
 
+        if (com.focusguard.app.enforce.AppBlockOverlay.show(
+                context = this,
+                pkg = verdict.packageName,
+                label = label,
+                usedMinutes = verdict.usedMinutes,
+                limitMinutes = verdict.limitMinutes,
+                blockUntil = 0L
+            )
+        ) {
+            return
+        }
         AppBlockActivity.show(
             context = this,
             packageName = verdict.packageName,

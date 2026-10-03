@@ -197,6 +197,10 @@ class AppBlockActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (instance === this) instance = null
+        // 兜底路径（无悬浮窗权限）同样要解除「封锁挂起」，否则应用会一直被冻着
+        runCatching {
+            com.focusguard.app.enhance.LockPolicies.releaseBlock(applicationContext, blockedPackage)
+        }
     }
 
     /**
