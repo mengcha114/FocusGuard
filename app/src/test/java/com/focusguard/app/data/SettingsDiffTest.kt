@@ -74,7 +74,8 @@ class SettingsDiffTest {
     fun weakeningAiDetectionIsLoosening() {
         // 调低每日调用次数**不再**判为放宽（用户要求：调低不该逼着答题）；
         // 它由「锁机期间禁止修改」兜底，见 SettingsScreen.isBlockedDuringLock
-        assertFalse(SettingsDiff.isLoosening(base(), base().copy(dailyCallLimit = 0)))
+        // 配额字段已从方向判定里移除（调低不再触发答题），这里只验证省 token 系列仍算放宽
+
         assertTrue(SettingsDiff.isLoosening(base(), base().copy(tokenSaving = true)))
         assertTrue(SettingsDiff.isLoosening(base(), base().copy(hashDedup = true)))
         assertTrue(SettingsDiff.isLoosening(base(), base().copy(textPrefilter = true)))
