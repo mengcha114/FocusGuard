@@ -389,9 +389,9 @@ class GuardAccessibilityService : AccessibilityService() {
                     "${android.os.SystemClock.elapsedRealtime() - eventAt}ms"
             )
             if (covered) return@runCatching
-            // 兜底（没有悬浮窗权限）：先真正挂起应用（它会被系统压到后台，后台声音也停），
-            // 再拉封锁页；**不再主动 HOME 踢人**（用户反馈「点了就强制退出」）。
-            runCatching { com.focusguard.app.enhance.LockPolicies.suspendBlock(this, pkg) }
+            // 兜底（没有悬浮窗权限）：直接拉封锁页把界面盖住。
+            // 既不要 HOME 踢人、也不要挂起应用 —— 两者都会让用户感觉「被强制退出」
+            // （挂起会让系统直接停掉前台应用）。挂起只留给「用户离开应用」的时机。
             com.focusguard.app.enforce.AppBlockActivity.show(
                 context = this,
                 packageName = pkg,

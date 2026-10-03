@@ -30,8 +30,9 @@ import android.widget.TextView
  *
  * ## 三重保险（用户要求：计时结束前没有任何使用/查看/操作的机会）
  * 1. **盖住**：全屏悬浮窗（含状态栏区域），focusable 吞掉返回键；
- * 2. **停掉**：通知 [com.focusguard.app.enhance.LockPolicies.suspendBlock] 真正挂起被锁应用
- *    （后台播放/画中画/分屏随之中止）；工具不可用时降级为只盖住；
+ * 2. **停掉**：**用户离开被锁应用时**才挂起它（[com.focusguard.app.enhance.LockPolicies.suspendBlock]）
+ *    —— 后台播放/画中画/分屏随之结束。显示期间**不挂起**：挂起会让系统直接停掉
+ *    前台应用，用户看到的就是「打开后几秒被强制退出」；
  * 3. **堵旁路**：自己每秒自查——封锁条件不再成立、用户已离开该应用、或锁机开始，都会自动撤下；
  *    通知栏与画中画由守护/无障碍侧配合处理（见 GuardAccessibilityService）。
  *
