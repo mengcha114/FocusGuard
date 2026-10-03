@@ -29,14 +29,17 @@ object AdminEnhancer {
     }.getOrDefault(false)
 
     /** 立即锁屏（激活为设备管理员即可用，不需要 Dhizuku）。 */
-    fun lockNow(context: Context): Boolean = try {
+    fun lockNow(context: Context): Boolean {
         val manager = dpm(context) ?: return false
-        if (!manager.isAdminActive(component(context))) return false
-        manager.lockNow()
-        Log.d(TAG, "设备管理员 lockNow 成功")
-        true
-    } catch (e: Throwable) {
-        Log.w(TAG, "设备管理员 lockNow 失败：${e.message}")
-        false
+        val active = runCatching { manager.isAdminActive(component(context)) }.getOrDefault(false)
+        if (!active) return false
+        return try {
+            manager.lockNow()
+            Log.d(TAG, "设备管理员 lockNow 成功")
+            true
+        } catch (e: Throwable) {
+            Log.w(TAG, "设备管理员 lockNow 失败：${e.message}")
+            false
+        }
     }
 }
