@@ -4,6 +4,7 @@ import com.focusguard.app.data.GradeStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class ChallengeGeneratorTest {
@@ -13,6 +14,30 @@ class ChallengeGeneratorTest {
         "add", "sub", "chainAdd", "chainSub", "mixAddSub", "mul", "div", "rem", "mixOp",
         "paren", "square", "percent", "multiples", "story", "unit"
     )
+
+    @Before
+    fun setUp() {
+        // 下面这些断言针对学段版（题库 + 程序题型池）；通用版行为由 generalMode 测试单独覆盖
+        ChallengeMode.setForTest(ChallengeMode.EDU)
+    }
+
+    @Test
+    fun generalModeProducesMultiStepArithmetic() {
+        ChallengeMode.setForTest(ChallengeMode.GENERAL)
+        try {
+            val g = ChallengeGenerator()
+            repeat(200) {
+                val q = g.generate(3)
+                assertEquals("general", q.kind)
+                assertTrue("${q.answer} / ${q.question}", q.answer.matches(Regex("-?\\d+")))
+                assertTrue(q.options.isEmpty())
+                // 至少两个运算符，避免退化成一眼出答案的题
+                assertTrue(q.question, Regex("[×÷+−]").findAll(q.question).count() >= 2)
+            }
+        } finally {
+            ChallengeMode.setForTest(ChallengeMode.EDU)
+        }
+    }
 
     @Test
     fun everyAnswerIsAnIntegerTypableOnKeypad() {
