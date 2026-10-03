@@ -62,6 +62,22 @@ fun LockHardeningCard() {
 
         HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
 
+        // 没有 Shizuku/Dhizuku 的用户：用系统「强行停止」把被锁应用真正停掉
+        var forceStop by remember { mutableStateOf(settings.forceStopUnlocked) }
+        SwitchRow(
+            title = "无授权时用「强行停止」停掉被锁应用",
+            hint = "没有 Shizuku/Dhizuku 授权时（也无法冻结应用），由无障碍代点系统的" +
+                "「强行停止」把被锁应用真停掉；过程在封锁页后面完成。有授权时优先冻结。默认开",
+            checked = forceStop,
+            enabled = true
+        ) { value ->
+            forceStop = value
+            settings.forceStopUnlocked = value
+            android.widget.Toast.makeText(
+                context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+
         // 重启后不必手动授权录屏：由无障碍替用户点掉系统授权弹窗
         val settings = remember { com.focusguard.app.data.Settings(context) }
         var autoGrant by remember { mutableStateOf(settings.autoGrantProjection) }

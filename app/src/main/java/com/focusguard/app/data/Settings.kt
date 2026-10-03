@@ -467,6 +467,14 @@ gacha
         set(value) = prefs.edit().putBoolean(KEY_SERVICE_RUNNING, value).apply()
     
     // Permission states
+    /**
+     * 没有 Shizuku/Dhizuku 授权时，用无障碍代点系统「强行停止」把被锁应用真正停掉。
+     * 默认开（这类用户没有冻结能力，只能靠这个）；会短暂跳一下应用信息页（被封锁页盖住）。
+     */
+    var forceStopUnlocked: Boolean
+        get() = prefs.getBoolean("force_stop_unlocked", true)
+        set(value) = prefs.edit().putBoolean("force_stop_unlocked", value).apply()
+
     /** 重启后自动点掉「屏幕录制」授权弹窗（无障碍代点）；默认开，可关。 */
     var autoGrantProjection: Boolean
         get() = prefs.getBoolean("auto_grant_projection", true)

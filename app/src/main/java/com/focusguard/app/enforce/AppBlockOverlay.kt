@@ -156,8 +156,14 @@ object AppBlockOverlay {
         // 用户看到的是封锁页而不是桌面 —— 既不会有「强制退出」的感觉，
         // 又一次性结束小窗/画中画/分屏/后台声音。
         Thread {
-            runCatching {
-                appSuspended = com.focusguard.app.enhance.LockPolicies.suspendBlock(context, pkg)
+            val suspended = runCatching {
+                com.focusguard.app.enhance.LockPolicies.suspendBlock(context, pkg)
+            }.getOrDefault(false)
+            appSuspended = suspended
+            if (!suspended && com.focusguard.app.data.Settings(context).forceStopUnlocked) {
+                // 没有 Shizuku/Dhizuku（非技术用户）：用系统「强行停止」把应用真停掉，
+                // 同样是在封锁悬浮窗后面完成，用户只看到封锁页
+                runCatching { com.focusguard.app.enforce.ForceStopHelper.requestStop(context, pkg) }
             }
         }.start()
 

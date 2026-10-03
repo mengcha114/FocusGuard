@@ -185,6 +185,25 @@ class GuardAccessibilityService : AccessibilityService() {
         // 封锁悬浮窗显示期间的两条旁路：
         // ① 系统界面（通知栏/最近任务）一出现就收起 —— 否则能从通知内容偷看被锁应用；
         // ② 被锁应用出现多个窗口（画中画/分屏）→ 直接顶回桌面（全屏应用只有一个活动窗口）。
+        // 无授权时的「停止应用」：已布置就找应用信息页里的「强行停止」代点
+        if (com.focusguard.app.enforce.ForceStopHelper.isArmed()) {
+            val host = event.packageName?.toString().orEmpty()
+            if (com.focusguard.app.enforce.ForceStopHelper.isAppDetailHost(host)) {
+                val target = com.focusguard.app.enforce.ForceStopHelper.armedPackage()
+                val clicked = runCatching {
+                    windows.firstNotNullOfOrNull { w ->
+                        val owner = w.root?.packageName?.toString() ?: return@firstNotNullOfOrNull null
+                        if (com.focusguard.app.enforce.ForceStopHelper.isAppDetailHost(owner)) {
+                            if (com.focusguard.app.enforce.ForceStopHelper.clickForceStop(w.root)) true else null
+                        } else {
+                            null
+                        }
+                    } ?: false
+                }.getOrDefault(false)
+                if (clicked) Log.d(TAG, "已代点强行停止：$target")
+            }
+        }
+
         // 屏幕录制授权弹窗：被 arm 过（我们刚主动拉起）时替他点「立即开始」
         if (com.focusguard.app.enforce.ProjectionConsent.isArmed()) {
             val consentPkg = event.packageName?.toString().orEmpty()
