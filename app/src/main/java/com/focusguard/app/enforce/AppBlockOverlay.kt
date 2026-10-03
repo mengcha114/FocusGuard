@@ -30,9 +30,9 @@ import android.widget.TextView
  *
  * ## 三重保险（用户要求：计时结束前没有任何使用/查看/操作的机会）
  * 1. **盖住**：全屏悬浮窗（含状态栏区域），focusable 吞掉返回键；
- * 2. **停掉**：**用户离开被锁应用时**才挂起它（[com.focusguard.app.enhance.LockPolicies.suspendBlock]）
- *    —— 后台播放/画中画/分屏随之结束。显示期间**不挂起**：挂起会让系统直接停掉
- *    前台应用，用户看到的就是「打开后几秒被强制退出」；
+ * 2. **停掉**：显示封锁的同时挂起被锁应用（[com.focusguard.app.enhance.LockPolicies.suspendBlock]）
+ *    —— 小窗/画中画/分屏/后台声音一次全停。挂起后桌面会到前台，但**悬浮窗仍在最上层**，
+ *    用户看到的是封锁页而不是桌面，所以不会再有「强制退出」的观感；
  * 3. **堵旁路**：自己每秒自查——封锁条件不再成立、用户已离开该应用、或锁机开始，都会自动撤下；
  *    通知栏与画中画由守护/无障碍侧配合处理（见 GuardAccessibilityService）。
  *
@@ -69,6 +69,10 @@ object AppBlockOverlay {
             intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
         )?.activityInfo?.packageName == pkg
     }.getOrDefault(false)
+
+    /** 本次封锁是否已把应用真正停掉（停掉后不走「离开就撤下」逻辑）。 */
+    @Volatile
+    private var appSuspended = false
 
     /** 连续判定「用户已离开应用」的次数（防抖：单次采样不算）。 */
     private var leftStrikes = 0
@@ -147,9 +151,15 @@ object AppBlockOverlay {
         untilState.value = blockUntil
         usedState.value = usedMinutes
         limitState.value = limitMinutes
-        // 注意：**显示时不要挂起应用**。挂起会让系统把前台应用直接停掉/压到后台，
-        // 用户看到的就是「打开后几秒被强制退出」（实测反馈）。挂起只在
-        // 「用户离开该应用」时做——那时要停掉它的后台声音/画中画（见 hideOnMain(stopApp)）。
+        // 冻结 + 覆盖**同时做**（用户要求的组合）：
+        // 挂起会让系统把前台应用停掉、桌面到前台，但我们的悬浮窗始终在最上层，
+        // 用户看到的是封锁页而不是桌面 —— 既不会有「强制退出」的感觉，
+        // 又一次性结束小窗/画中画/分屏/后台声音。
+        Thread {
+            runCatching {
+                appSuspended = com.focusguard.app.enhance.LockPolicies.suspendBlock(context, pkg)
+            }
+        }.start()
 
         val existing = root
         if (existing != null && showing == pkg) {
@@ -209,6 +219,7 @@ object AppBlockOverlay {
         }
         root = null
         showing = null
+        appSuspended = false
         currentPkg = null
         composeOwner?.destroy()
         composeOwner = null
@@ -250,8 +261,8 @@ object AppBlockOverlay {
                         }
                     }.start()
                 }
-                if (hasLeftApp(app, pkg)) {
-                    // 用户离开：撤下并**停掉应用**（否则它还在后台放视频/声音）
+                if (hasLeftApp(app, pkg) && !appSuspended) {
+                    // 没能停掉应用时（无 Shizuku/Dhizuku）：用户离开就撤下并顺手停掉它
                     Log.d(TAG, "用户已离开 $pkg，撤下并停掉该应用")
                     hideOnMain(stopApp = true)
                     return
