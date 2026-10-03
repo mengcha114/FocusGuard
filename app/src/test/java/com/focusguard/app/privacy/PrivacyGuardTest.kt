@@ -12,7 +12,9 @@ class PrivacyGuardTest {
         assertTrue(PrivacyGuard.isSensitive("com.eg.android.AlipayGphone", "支付宝", ""))
         assertTrue(PrivacyGuard.isSensitive("com.bitwarden.mobile", "Bitwarden", ""))
         assertTrue(PrivacyGuard.isSensitive("com.xiaomi.gallery", "相册", ""))
-        assertTrue(PrivacyGuard.isSensitive("com.tencent.mm", "微信", ""))
+        // 社交类不在内置特征里：它们是常见的“该被管”的应用，留给用户自行加入列表
+        assertFalse(PrivacyGuard.isSensitive("com.tencent.mm", "微信", ""))
+        assertTrue(PrivacyGuard.isSensitive("com.tencent.mm", "微信", "微信"))
     }
 
     @Test
