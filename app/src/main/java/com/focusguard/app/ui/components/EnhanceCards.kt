@@ -56,7 +56,7 @@ fun LockHardeningCard() {
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
         )
         LockPolicies.Hardening.entries.forEach { item ->
-            var on by remember(item.key, tick) {
+            var on by remember(item.key) {
                 mutableStateOf(LockPolicies.isHardeningEnabled(context, item))
             }
             SwitchRow(
