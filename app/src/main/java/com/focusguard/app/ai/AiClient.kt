@@ -23,7 +23,13 @@ data class AiResult(
     /** 内部标记：响应解析失败（200 但格式异常），需要降级重试。 */
     var parseFailed: Boolean = false,
     /** 内部标记：网络请求失败（超时/断连），需要换最简请求重试一次。 */
-    var networkFailed: Boolean = false
+    var networkFailed: Boolean = false,
+    /**
+     * 模型判定这是隐私敏感画面（网银/支付/证件/密码/私人聊天/相册照片等）。
+     * 命中时本轮不执行任何执法，并把该应用记入「疑似敏感」名单，
+     * 之后遇到同一应用直接本地跳过截图，不再上传。
+     */
+    val sensitive: Boolean = false
 )
 
 /** 对话消息（AI 对话页用）。role: system/user/assistant。 */
@@ -826,11 +832,16 @@ class AiClient {
         // 导致解析兜底把垃圾塞进原因。直接要求输出 JSON 最稳。
         return """判断手机截图中用户在做什么，直接输出 JSON（不要代码块、不要解释、不要任何其他文字）：
 
-{"c":"分类","p":置信度,"r":"提醒语"}
+{"c":"分类","p":置信度,"r":"提醒语","s":是否隐私敏感}
 
 分类 c 只能是三者之一：STUDY_WORK（学习、工作、编程、阅读文档、网课、教程、办公）、ENTERTAINMENT（游戏、娱乐短视频、直播、漫画、社交闲逛、购物）、NEUTRAL（锁屏、桌面、设置、通话、导航）。
 
 p 是置信度，0 到 1 之间的小数。
+
+s 是隐私敏感标记，true / false：
+- 画面包含网银、支付、转账、余额、身份证/证件、密码输入、私密聊天、私人相册照片、医疗或政务办事内容时，s 为 true
+- 普通学习、办公、游戏、视频、社交首页等，s 为 false
+- s 为 true 时分类请给 NEUTRAL，提醒语写"（隐私画面，已跳过）"
 
 r 是给用户看的简短提醒语（10-30字）：
 - 面向用户、有实际内容，例如"主人~ 你已经在看短视频啦，休息一下喵！"
@@ -969,12 +980,20 @@ r 是给用户看的简短提醒语（10-30字）：
             .take(120)
 
         val totalTokens = rawJson.optJSONObject("usage")?.optInt("total_tokens", 0) ?: 0
+        // 隐私敏感标记：模型可返回布尔或字符串
+        val sensitive = when {
+            result.has("s") -> result.optBoolean("s", false) || result.optString("s").equals("true", true)
+            result.has("sensitive") -> result.optBoolean("sensitive", false) ||
+                result.optString("sensitive").equals("true", true)
+            else -> false
+        }
 
         return AiResult(
             classification = normalizeClassification(classification),
             confidence = confidence.coerceIn(0f, 1f),
             reason = reason,
-            totalTokens = totalTokens
+            totalTokens = totalTokens,
+            sensitive = sensitive
         )
     }
 
@@ -1044,13 +1063,15 @@ r 是给用户看的简短提醒语（10-30字）：
         val c = match.groupValues[1]
         val p = match.groupValues[2].toFloatOrNull() ?: 0.6f
         val r = match.groupValues[3].trim()
+        val sensitive = Regex("""s\s*=\s*"?true"?""", RegexOption.IGNORE_CASE).containsMatchIn(text)
 
-        Log.d(TAG, "函数调用文本解析成功：$c $p")
+        Log.d(TAG, "函数调用文本解析成功：$c $p 敏感=$sensitive")
         return AiResult(
             classification = normalizeClassification(c),
             confidence = p.coerceIn(0f, 1f),
             reason = r,
-            totalTokens = totalTokens
+            totalTokens = totalTokens,
+            sensitive = sensitive
         )
     }
 

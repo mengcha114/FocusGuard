@@ -32,6 +32,21 @@ fun PrivacyStatsRow() {
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            val marked = remember(tick) { com.focusguard.app.privacy.SensitiveLearning.packages(context) }
+            if (marked.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "AI 标记的敏感应用 ${marked.size} 个：${marked.joinToString("、").take(60)}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = androidx.compose.ui.Modifier.weight(1f)
+                    )
+                    TextButton(onClick = {
+                        com.focusguard.app.privacy.SensitiveLearning.clear(context)
+                        tick++
+                    }) { Text("清空", fontSize = 12.sp) }
+                }
+            }
             if (snap.lastSkip.isNotBlank()) {
                 Text(
                     "最近跳过：${snap.lastSkip}",

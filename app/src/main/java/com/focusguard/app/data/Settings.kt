@@ -138,6 +138,7 @@ gacha
         private const val KEY_REDACT_LOGS = "redact_logs"
         private const val KEY_BUILTIN_HINTS = "builtin_privacy_hints"
         private const val KEY_BROWSER_PRIVACY = "browser_privacy_first"
+        private const val KEY_AI_PRIVACY = "ai_privacy_learning"
         // 用户自定义敏感应用列表（逗号/换行分隔，按包名或应用名片段匹配）。
         private const val KEY_SENSITIVE_APPS = "sensitive_apps"
     }
@@ -513,6 +514,14 @@ gacha
     var browserPrivacyFirst: Boolean
         get() = prefs.getBoolean(KEY_BROWSER_PRIVACY, false)
         set(value) = prefs.edit().putBoolean(KEY_BROWSER_PRIVACY, value).apply()
+
+    /**
+     * AI 参与隐私识别（默认开）：应用类型识别时让模型额外标记"是否隐私敏感"，
+     * 命中即记入疑似敏感名单，此后该应用直接本地跳过截图。
+     */
+    var aiPrivacyLearning: Boolean
+        get() = prefs.getBoolean(KEY_AI_PRIVACY, true)
+        set(value) = prefs.edit().putBoolean(KEY_AI_PRIVACY, value).apply()
 
     /** 上传前内容级隐私兜底（识别身份证/银行卡/验证码等，默认开）。 */
     var contentPrivacyCheck: Boolean

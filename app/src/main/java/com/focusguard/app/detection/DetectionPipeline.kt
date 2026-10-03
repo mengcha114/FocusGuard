@@ -120,6 +120,20 @@ class DetectionPipeline(
                     DetectionSource.PRIVACY_SKIP, pkg, label
                 )
             }
+            // AI 曾经标记过的疑似敏感应用：直接本地跳过，不再截图
+            val learned = if (settings.aiPrivacyLearning) {
+                candidates.firstOrNull {
+                    com.focusguard.app.privacy.SensitiveLearning.isMarked(context, it)
+                }
+            } else null
+            if (learned != null) {
+                com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "AI 标记的敏感应用：$learned")
+                return DetectionOutcome(
+                    "NEUTRAL", 1f,
+                    "隐私保护：$label 已被标记为敏感应用，本轮直接跳过（未截图）",
+                    DetectionSource.PRIVACY_SKIP, learned, label
+                )
+            }
             val hit = candidates.firstOrNull { candidate ->
                 com.focusguard.app.privacy.PrivacyGuard.isSensitive(
                     candidate,
@@ -391,6 +405,20 @@ class DetectionPipeline(
             tokenBudget.recordCall()
 
             com.focusguard.app.privacy.PrivacyStats.recordUpload(context)
+
+            // 模型判定这是隐私画面：不执法、不当成娱乐，记入疑似敏感名单，
+            // 之后同一应用直接本地跳过截图（不再上传）
+            if (aiResult.sensitive && settings.aiPrivacyLearning) {
+                com.focusguard.app.privacy.SensitiveLearning.mark(context, pkg)
+                com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "AI 判定隐私敏感：$label")
+                Log.d(TAG, "AI 判定 $pkg 为隐私敏感，已加入本地跳过名单")
+                return DetectionOutcome(
+                    "NEUTRAL", 1f,
+                    "隐私保护：AI 判定为隐私敏感画面，已跳过并记住该应用",
+                    DetectionSource.PRIVACY_SKIP, pkg, label
+                )
+            }
+
             val rawReason = aiResult.reason.ifBlank { "AI 视觉识别" }
             val reason = if (settings.redactLogs) {
                 com.focusguard.app.privacy.Redactor.redact(rawReason)
