@@ -23,6 +23,10 @@ object LockPolicies {
 
     /** 冻结是由谁施加的（dhizuku / shizuku）：解冻必须用同一个施加者。 */
     private const val KEY_SUSPENDED_BY = "suspended_by"
+
+    /** AI 对话手动下达的长期冻结（不受锁机结束影响，解冻需答题）。 */
+    private const val KEY_PERSIST = "persist_suspended_pkgs"
+    private const val KEY_PERSIST_BY = "persist_suspended_by"
     private const val KEY_FREEZE_ENABLED = "freeze_enabled"
     private const val KEY_AUTO_TIME_ORIGINAL = "auto_time_original"
     private const val KEY_BLOCK_RESET = "block_factory_reset"
@@ -192,6 +196,49 @@ object LockPolicies {
         }
     }
 
+    // ── 手动（AI 对话）冻结 ─────────────────────────────
+
+    /** 手动冻结集合（不受锁机结束影响）。 */
+    fun persistentFrozen(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_PERSIST, emptySet()).orEmpty()
+
+    /** 锁机期冻结 ∪ 手动冻结：设置页展示与「强制解冻」用。 */
+    fun allFrozen(context: Context): Set<String> =
+        suspendedPackages(context) + persistentFrozen(context)
+
+    /** 手动冻结指定应用（需 Dhizuku 或 Shizuku），返回生效途径，失败返回 null。 */
+    fun freezePersistent(context: Context, pkgs: Set<String>): String? {
+        val app = context.applicationContext
+        if (pkgs.isEmpty()) return null
+        val p = prefs(app)
+        val target = persistentFrozen(app) + pkgs
+        val by = freeze(app, target) ?: return null
+        p.edit().putStringSet(KEY_PERSIST, target).putString(KEY_PERSIST_BY, by).apply()
+        return by
+    }
+
+    /**
+     * 解除手动冻结（答题通过后调用），逐包验证。
+     * 仍在「锁机期冻结」集合里的包不动（那是锁机管的，锁机结束才会解）。
+     */
+    fun unfreezePersistent(context: Context, pkgs: Set<String>): Boolean {
+        val app = context.applicationContext
+        val p = prefs(app)
+        val current = persistentFrozen(app)
+        val release = pkgs.intersect(current) - suspendedPackages(app)
+        if (release.isNotEmpty()) {
+            DhizukuEnhancer.setPackagesSuspended(app, release, false)
+            ShizukuEnhancer.suspendPackages(release, false)
+        }
+        val ok = !stillSuspended(app, release)
+        val left = current - pkgs
+        p.edit()
+            .putStringSet(KEY_PERSIST, left)
+            .putString(KEY_PERSIST_BY, if (left.isEmpty()) "" else p.getString(KEY_PERSIST_BY, "").orEmpty())
+            .apply()
+        return ok
+    }
+
     /**
      * 设置页的「强制解冻」，由用户自己选路径。
      *
@@ -205,7 +252,8 @@ object LockPolicies {
     fun forceUnfreeze(context: Context, by: String? = null): Boolean {
         val app = context.applicationContext
         val p = prefs(app)
-        val suspended = p.getStringSet(KEY_SUSPENDED, emptySet()).orEmpty()
+        // 强制解冻要连手动冻结一起解开
+        val suspended = allFrozen(app)
         if (suspended.isEmpty()) return true
         val only: String? = when (by) {
             "dhizuku", "shizuku" -> by
@@ -226,7 +274,10 @@ object LockPolicies {
             if (ok) p.edit().putString(KEY_SUSPENDED_BY, other).commit()
         }
         if (ok) {
-            p.edit().putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "").commit()
+            p.edit()
+                .putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "")
+                .putStringSet(KEY_PERSIST, emptySet()).putString(KEY_PERSIST_BY, "")
+                .commit()
         }
         return ok
     }

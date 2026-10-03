@@ -85,7 +85,8 @@ fun ShizukuStatusCard() {
     val dzReady = remember(tick) { DhizukuEnhancer.isReady() }
     val a11y = remember(tick) { com.focusguard.app.util.PermissionChecker.isAccessibilityEnabled(context) }
     val usage = remember(tick) { com.focusguard.app.util.PermissionChecker.isUsageStatsGranted(context) }
-    val frozen = remember(tick) { LockPolicies.suspendedPackages(context).size }
+    // 锁机期冻结 + AI 对话手动冻结一起显示
+    val frozen = remember(tick) { LockPolicies.allFrozen(context).size }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         StatusRow("Shizuku 服务", online, if (online) "已连接" else "未安装或未启动")

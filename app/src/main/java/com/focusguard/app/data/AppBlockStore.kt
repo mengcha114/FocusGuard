@@ -45,6 +45,15 @@ class AppBlockStore(context: Context) {
         return until
     }
 
+    /** 当前仍在封锁期内的应用 → 截止时间戳（AI 对话里回答「我封了哪些应用」用）。 */
+    fun activeBlocks(): Map<String, Long> {
+        val now = System.currentTimeMillis()
+        return prefs.all
+            .filter { (key, value) -> key.startsWith(KEY_PREFIX) && (value as? Long ?: 0L) > now }
+            .mapKeys { (key, _) -> key.removePrefix(KEY_PREFIX) }
+            .mapValues { (_, value) -> value as? Long ?: 0L }
+    }
+
     /** 是否有任何应用仍在封锁期内（重启恢复判定用）。 */
     fun anyBlocked(): Boolean {
         val now = System.currentTimeMillis()

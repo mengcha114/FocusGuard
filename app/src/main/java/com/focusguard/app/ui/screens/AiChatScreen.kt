@@ -43,6 +43,14 @@ private data class ChatMsg(
     val fromLog: Boolean = false
 )
 
+/** 需要答题才能执行的放宽类操作（解冻 / 解除应用封锁 / 放大每日上限）。 */
+private data class PendingVerify(
+    val description: String,
+    val unfreeze: List<Pair<String, String>>,
+    val unlock: List<Pair<String, String>>,
+    val limit: List<Triple<String, String, Int>>
+)
+
 /**
  * AI 对话页。
  *
@@ -51,6 +59,8 @@ private data class ChatMsg(
  *    - **流式输出**：回复逐字显示（ChatGPT 式），Markdown 渲染
  *    - **检测时 AI 的提醒**自动进入对话（来源=AI 视觉的日志 reason）
  *    - **锁机工具**：AI 输出 `__LOCK__:<分钟数>` 即触发锁机
+ *    - **冻结/解冻工具**：AI 输出 `__FREEZE__:<应用名>` / `__UNFREEZE__:<应用名>`；
+ *      解冻必须先答对一道题才生效
  *    - 对话历史持久化，切页不丢
  * 2. **检测日志**：保留原有的完整检测日志（含 AI 诊断与崩溃日志）。
  */
@@ -82,6 +92,18 @@ fun AiChatScreen() {
             chatHistory.getMessages()
                 .map { ChatMsg(it.role, it.text, it.time, it.thinking) } + loadAiReminders()
         )
+    }
+
+    // 放宽类操作（解冻 / 解除封锁 / 放大上限）：AI 请求后必须答题验证，通过才执行
+    var pendingVerify by remember { mutableStateOf<PendingVerify?>(null) }
+
+    /** 把一条系统说明追加到最后一条 AI 气泡（工具执行结果用）。 */
+    fun appendSystemNote(note: String) {
+        val last = messages.lastOrNull() ?: return
+        if (last.role != "ai") return
+        val updated = last.copy(text = last.text + "\n\n" + note)
+        messages = messages.dropLast(1) + updated
+        chatHistory.updateLastMessage(updated.text, updated.thinking)
     }
 
     // 进入页面时清理：上次对话中途退出可能留下占位"…"（流式被取消，
@@ -308,6 +330,21 @@ fun AiChatScreen() {
                                         com.focusguard.app.enforce.MemoToolExecutor
                                             .toolInstruction()
                                     )
+                                    // 冻结 / 解冻应用工具（解冻需答题）
+                                    append(
+                                        com.focusguard.app.enforce.AppFreezeToolExecutor
+                                            .toolInstruction(context)
+                                    )
+                                    // 应用管控工具（锁住 / 解除封锁 / 每日上限）
+                                    append(
+                                        com.focusguard.app.enforce.AppLockToolExecutor
+                                            .toolInstruction()
+                                    )
+                                    // 当前状态：锁机 / 冻结 / 锁住 / 上限，便于回答「我现在被锁了什么」
+                                    append(
+                                        com.focusguard.app.enforce.AppLockToolExecutor
+                                            .statusSummary(context)
+                                    )
                                     if (memoSummary.isNotBlank()) {
                                         append("\n用户当前的待办事项（询问待办时据此回答）：\n")
                                         append(memoSummary)
@@ -362,6 +399,59 @@ fun AiChatScreen() {
                                 val memoResult =
                                     com.focusguard.app.enforce.MemoToolExecutor
                                         .tryExecute(context, reply)
+                                // 3) 冻结 / 解冻应用工具（解冻只登记，等答题通过再执行）
+                                val freezeNotes = mutableListOf<String>()
+                                val unfreezeTargets = mutableListOf<Pair<String, String>>()
+                                val unlockTargets = mutableListOf<Pair<String, String>>()
+                                val limitTargets = mutableListOf<Triple<String, String, Int>>()
+                                com.focusguard.app.enforce.AppFreezeToolExecutor
+                                    .parse(reply)
+                                    .forEach { req ->
+                                        val target = com.focusguard.app.enforce
+                                            .AppFreezeToolExecutor.resolve(context, req.query)
+                                        when {
+                                            target == null ->
+                                                freezeNotes += "没找到应用「${req.query}」"
+                                            req.unfreeze -> unfreezeTargets += target
+                                            com.focusguard.app.enforce.AppFreezeToolExecutor
+                                                .freeze(context, target.first) != null ->
+                                                freezeNotes += "已冻住「${target.second}」（解冻需要答题）"
+                                            else ->
+                                                freezeNotes += "冻结「${target.second}」失败：需要先授权 Dhizuku 或 Shizuku"
+                                        }
+                                    }
+                                // 4) 应用管控工具：锁住（立即生效）/ 解除封锁（答题）/ 每日上限（调小立即，调大答题）
+                                com.focusguard.app.enforce.AppLockToolExecutor
+                                    .parse(reply)
+                                    .forEach { req ->
+                                        val target = com.focusguard.app.enforce
+                                            .AppFreezeToolExecutor.resolve(context, req.query)
+                                        if (target == null) {
+                                            freezeNotes += "没找到应用「${req.query}」"
+                                        } else when (req.kind) {
+                                            "lock" -> {
+                                                val (label, mins) = com.focusguard.app.enforce
+                                                    .AppLockToolExecutor
+                                                    .lockApp(context, target.first, req.minutes)
+                                                freezeNotes += "已锁住「$label」$mins 分钟（打开即被挡住）"
+                                            }
+                                            "unlock" -> unlockTargets += target
+                                            "limit" -> {
+                                                val mins = req.minutes ?: 0
+                                                if (mins <= 0) {
+                                                    freezeNotes += "「${target.second}」的上限分钟数没给对"
+                                                } else if (com.focusguard.app.enforce.AppLockToolExecutor
+                                                        .isLimitTightening(context, target.first, mins)
+                                                ) {
+                                                    com.focusguard.app.enforce.AppLockToolExecutor
+                                                        .applyLimit(context, target.first, mins)
+                                                    freezeNotes += "已把「${target.second}」每日上限设为 $mins 分钟"
+                                                } else {
+                                                    limitTargets += Triple(target.first, target.second, mins)
+                                                }
+                                            }
+                                        }
+                                    }
 
                                 // 去掉协议标记，再把执行结果作为系统提示追加到气泡
                                 var displayReply = com.focusguard.app.enforce
@@ -369,6 +459,15 @@ fun AiChatScreen() {
                                     .stripMarkers(
                                         com.focusguard.app.ai.AiClient.stripThinking(reply)
                                     )
+                                    // 冻结/解冻、锁住/上限标记也从气泡里隐藏（结果由下面 notes 说明）
+                                    .let {
+                                        com.focusguard.app.enforce.AppFreezeToolExecutor
+                                            .stripMarkers(it)
+                                    }
+                                    .let {
+                                        com.focusguard.app.enforce.AppLockToolExecutor
+                                            .stripMarkers(it)
+                                    }
                                     .replace(Regex("""__LOCK__:\d+"""), "")
                                     // 过滤模型输出的 function calling JSON（lock_phone 行）
                                     .replace(
@@ -381,6 +480,30 @@ fun AiChatScreen() {
                                 }
                                 if (lockResult != null) {
                                     displayReply += "\n\n🔒 已执行锁机 $lockResult 分钟"
+                                }
+                                if (freezeNotes.isNotEmpty()) {
+                                    displayReply += "\n\n❄️ " + freezeNotes.joinToString("；")
+                                }
+                                if (unfreezeTargets.isNotEmpty() || unlockTargets.isNotEmpty() ||
+                                    limitTargets.isNotEmpty()
+                                ) {
+                                    val parts = mutableListOf<String>()
+                                    if (unfreezeTargets.isNotEmpty()) {
+                                        parts += "解冻「" + unfreezeTargets.joinToString("、") { it.second } + "」"
+                                    }
+                                    if (unlockTargets.isNotEmpty()) {
+                                        parts += "解除「" + unlockTargets.joinToString("、") { it.second } + "」的应用封锁"
+                                    }
+                                    if (limitTargets.isNotEmpty()) {
+                                        parts += "把「" + limitTargets.joinToString("、") { it.second } + "」的每日上限放宽"
+                                    }
+                                    displayReply += "\n\n🔐 " + parts.joinToString("；") + " 需要先答题验证"
+                                    pendingVerify = PendingVerify(
+                                        description = "你正在" + parts.joinToString("；") + "，请先答对一道题。",
+                                        unfreeze = unfreezeTargets.toList(),
+                                        unlock = unlockTargets.toList(),
+                                        limit = limitTargets.toList()
+                                    )
                                 }
 
                                 // 流结束后：把最后一条 AI 消息（占位/增量）替换为完整回复，
@@ -424,6 +547,42 @@ fun AiChatScreen() {
                 }
             }
         }
+    }
+
+    // 放宽类操作验证：解冻 / 解除封锁 / 放大上限都必须先答题（与「放宽限制」同一套规则）
+    pendingVerify?.let { pending ->
+        com.focusguard.app.ui.components.VerifyDialog(
+            title = "放宽限制需先答题",
+            description = pending.description,
+            confirmText = "验证并执行",
+            onPassed = {
+                pendingVerify = null
+                val app = context.applicationContext
+                Thread {
+                    val notes = mutableListOf<String>()
+                    pending.unfreeze.forEach { (pkg, label) ->
+                        notes += if (com.focusguard.app.enforce.AppFreezeToolExecutor
+                                .unfreeze(app, setOf(pkg))
+                        ) "🔓 已解冻「$label」" else "解冻「$label」未完成：请确认 Dhizuku / Shizuku 可用"
+                    }
+                    pending.unlock.forEach { (pkg, label) ->
+                        com.focusguard.app.enforce.AppLockToolExecutor.unlockApp(app, pkg)
+                        notes += "🔓 已解除「$label」的应用封锁"
+                    }
+                    pending.limit.forEach { (pkg, label, mins) ->
+                        com.focusguard.app.enforce.AppLockToolExecutor.applyLimit(app, pkg, mins)
+                        notes += "已把「$label」的每日上限放宽到 $mins 分钟"
+                    }
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        appendSystemNote(notes.joinToString("\n"))
+                    }
+                }.start()
+            },
+            onCancel = {
+                pendingVerify = null
+                appendSystemNote("已取消本次操作（未放宽任何限制）")
+            }
+        )
     }
 }
 
