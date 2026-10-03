@@ -55,7 +55,31 @@ fun LockHardeningCard() {
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
         )
-        LockPolicies.Hardening.entries.forEach { item ->
+        Text(
+            "默认开启",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+        )
+        LockPolicies.Hardening.entries.filter { it.defaultOn }.forEach { item ->
+            var on by remember(item.key) {
+                mutableStateOf(LockPolicies.isHardeningEnabled(context, item))
+            }
+            SwitchRow(
+                title = item.label,
+                hint = item.hint,
+                checked = on,
+                enabled = true
+            ) { value ->
+                on = value
+                LockPolicies.setHardeningEnabled(context, item, value)
+            }
+        }
+        Text(
+            "可选加固（默认关闭，按需打开）",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+        )
+        LockPolicies.Hardening.entries.filterNot { it.defaultOn }.forEach { item ->
             var on by remember(item.key) {
                 mutableStateOf(LockPolicies.isHardeningEnabled(context, item))
             }

@@ -6,6 +6,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -251,7 +259,12 @@ fun SettingsScreen(
         }
 
         // ── 检测设置 ──────────────────────────────────────────────
-        SettingsSection(title = "检测设置", icon = Icons.Default.Search) {
+        SettingsSection(
+            title = "检测设置",
+            icon = Icons.Default.Search,
+            defaultExpanded = false,
+            summary = "间隔 / 置信度 / 次数"
+        ) {
             OutlinedTextField(
                 value = intervalMinutes, onValueChange = { intervalMinutes = it },
                 label = { Text("基础检测间隔（分钟）") },
@@ -273,7 +286,12 @@ fun SettingsScreen(
 
         // ── Token 节约系统 ────────────────────────────────────────
         // ── 智能检测调度 ──────────────────────────────────────────
-        SettingsSection(title = "智能检测调度", icon = Icons.Default.AutoAwesome) {
+        SettingsSection(
+            title = "智能检测调度",
+            icon = Icons.Default.AutoAwesome,
+            defaultExpanded = false,
+            summary = "秒级动态间隔"
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -310,7 +328,12 @@ fun SettingsScreen(
             }
         }
 
-        SettingsSection(title = "Token 节约", icon = Icons.Default.Savings) {
+        SettingsSection(
+            title = "Token 节约",
+            icon = Icons.Default.Savings,
+            defaultExpanded = false,
+            summary = "省 token 开关与统计"
+        ) {
             // 今日统计摘要
             val callsToday = tokenBudget.callsToday
             val savedToday = tokenBudget.savedCallsToday
@@ -411,7 +434,12 @@ fun SettingsScreen(
         }
 
         // ── 屏幕文字特征关键词（自定义） ──────────────────────────
-        SettingsSection(title = "屏幕文字特征词", icon = Icons.Default.TextFields) {
+        SettingsSection(
+            title = "屏幕文字特征词",
+            icon = Icons.Default.TextFields,
+            defaultExpanded = false,
+            summary = "学习 / 娱乐特征词"
+        ) {
             Text(
                 text = "「屏幕文字预过滤」命中这些词时直接判定（不截图、不调 AI）。\n" +
                     "完整词表（默认内置，可增删改）在独立页面编辑，避免占用本页空间。",
@@ -444,11 +472,21 @@ fun SettingsScreen(
             }
         }
 
-        SettingsSection(title = "锁机加固", icon = Icons.Default.Lock) {
+        SettingsSection(
+            title = "锁机加固",
+            icon = Icons.Default.Lock,
+            defaultExpanded = false,
+            summary = "加固逐项开关"
+        ) {
             com.focusguard.app.ui.components.LockHardeningCard()
         }
 
-        SettingsSection(title = "Shizuku / Dhizuku 增强", icon = Icons.Default.Security) {
+        SettingsSection(
+            title = "Shizuku / Dhizuku 增强",
+            icon = Icons.Default.Security,
+            defaultExpanded = false,
+            summary = "状态 / 一键修复"
+        ) {
             com.focusguard.app.ui.components.ShizukuStatusCard()
         }
 
@@ -459,7 +497,12 @@ fun SettingsScreen(
 
         // ── AI 检出娱乐后的锁机设置 ────────────────────────────────
         // ── 系统级锁机（Dhizuku Lock Task）状态 ──────────────
-        SettingsSection(title = "系统级锁机（Lock Task）", icon = Icons.Default.Security) {
+        SettingsSection(
+            title = "系统级锁机（Lock Task）",
+            icon = Icons.Default.Security,
+            defaultExpanded = false,
+            summary = "锁定任务模式"
+        ) {
             val dhizukuReady = com.focusguard.app.enhance.DhizukuEnhancer.isReady()
             val lockTaskOn = com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
             Row(
@@ -593,7 +636,12 @@ fun SettingsScreen(
 
         // ── 仅锁该软件时长（只在「仅锁该软件」模式下显示） ────────
         if (enforcementMode == Settings.EnforcementMode.APP_BLOCK)
-        SettingsSection(title = "仅锁该软件时长", icon = Icons.Default.Block) {
+        SettingsSection(
+            title = "仅锁该软件时长",
+            icon = Icons.Default.Block,
+            defaultExpanded = false,
+            summary = "临时封锁时长"
+        ) {
             Text(
                 text = "判定娱乐后该应用封锁 $appBlockMinutes 分钟",
                 fontSize = 12.sp,
@@ -614,7 +662,12 @@ fun SettingsScreen(
         }
 
         if (enforcementMode == Settings.EnforcementMode.WARN) {
-            SettingsSection(title = "仅提醒模式", icon = Icons.Default.Notifications) {
+            SettingsSection(
+            title = "仅提醒模式",
+            icon = Icons.Default.Notifications,
+            defaultExpanded = false,
+            summary = "提醒与延迟"
+        ) {
                 Text(
                     "当前只在检测到娱乐时弹一条横幅提醒，不封锁应用、不锁机。",
                     fontSize = 12.sp,
@@ -624,7 +677,12 @@ fun SettingsScreen(
         }
 
         // ── 自定义锁机箴言 ────────────────────────────────────────
-        SettingsSection(title = "自定义锁机箴言", icon = Icons.Default.FormatQuote) {
+        SettingsSection(
+            title = "自定义锁机箴言",
+            icon = Icons.Default.FormatQuote,
+            defaultExpanded = false,
+            summary = "自定义文案"
+        ) {
             OutlinedTextField(
                 value = customMottos,
                 onValueChange = { customMottos = it },
@@ -652,7 +710,12 @@ fun SettingsScreen(
         }
 
         // ── 白名单 ────────────────────────────────────────────────
-        SettingsSection(title = "白名单", icon = Icons.Default.PlaylistAdd) {
+        SettingsSection(
+            title = "白名单",
+            icon = Icons.Default.PlaylistAdd,
+            defaultExpanded = false,
+            summary = "放行的应用"
+        ) {
             OutlinedTextField(
                 value = whitelist, onValueChange = { whitelist = it },
                 label = { Text("白名单应用/场景（逗号分隔）") },
@@ -668,7 +731,12 @@ fun SettingsScreen(
 
 
         // ── 调试与导出 ────────────────────────────────────────────
-        SettingsSection(title = "调试", icon = Icons.Default.BugReport) {
+        SettingsSection(
+            title = "调试",
+            icon = Icons.Default.BugReport,
+            defaultExpanded = false,
+            summary = "日志与诊断"
+        ) {
             var exportMsg by remember { mutableStateOf<String?>(null) }
             Button(
                 onClick = {
@@ -1066,24 +1134,57 @@ private fun SettingsGroupHeader(title: String) {
 }
 
 @Composable
+/**
+ * 设置分组卡片：**可折叠**（点标题栏切换，带展开/收起动画），展开状态记在本地偏好里。
+ *
+ * 设置项越来越多（20 多个分组），全部平铺后要滚很久、也难找；冷门分组默认收起，
+ * 收起时在标题右侧显示一行摘要，既能一眼看状态，又不占地方。
+ */
+@Composable
 fun SettingsSection(
     title: String,
     icon: ImageVector,
+    defaultExpanded: Boolean = true,
+    summary: String? = null,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
+    val uiPrefs = remember {
+        context.getSharedPreferences("focus_guard_settings_ui", android.content.Context.MODE_PRIVATE)
+    }
+    val prefKey = "expanded_$title"
+    var expanded by remember(title) {
+        mutableStateOf(uiPrefs.getBoolean(prefKey, defaultExpanded))
+    }
+    val arrow = animateFloatAsState(
+        targetValue = if (expanded) 0f else -90f,
+        animationSpec = tween(durationMillis = 200),
+        label = "settingsArrow"
+    )
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+        colors = CardDefaults.cardColors(
             containerColor = com.focusguard.app.ui.theme.cardContainer()
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        expanded = !expanded
+                        uiPrefs.edit().putBoolean(prefKey, expanded).apply()
+                    }
+            ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
@@ -1097,9 +1198,35 @@ fun SettingsSection(
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
+                Spacer(modifier = Modifier.weight(1f))
+                if (!expanded && summary != null) {
+                    Text(
+                        text = summary,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+                Icon(
+                    imageVector = Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "收起" else "展开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .androidx.compose.ui.draw.rotate(arrow.value)
+                )
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            content()
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(animationSpec = tween(220)) + fadeIn(tween(180)),
+                exit = shrinkVertically(animationSpec = tween(200)) + fadeOut(tween(120))
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    content()
+                }
+            }
         }
     }
 }
