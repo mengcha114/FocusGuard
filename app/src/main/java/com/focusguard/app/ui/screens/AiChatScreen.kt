@@ -511,12 +511,13 @@ fun AiChatScreen() {
                                 }
                                 // 诊断：模型只是嘴上说「已解冻/已解除」却没输出标记时，明确提示，
                                 // 免得用户以为操作成功了（用户报告「AI 封锁应用后没弹出答题」）。
+                                // 注意 freezeNotes 是 val（IO 块里算好的不可变列表），这里单独追加。
                                 if (unfreezeTargets.isEmpty() && unlockTargets.isEmpty() &&
                                     limitTargets.isEmpty() &&
                                     (reply.contains("解冻") || reply.contains("解除封锁")) &&
                                     !reply.contains("__")
                                 ) {
-                                    freezeNotes += "没有识别到解冻指令（模型未输出标记）：" +
+                                    displayReply += "\n\n⚠️ 没有识别到解冻指令（模型未输出标记）：" +
                                         "请再说一次「解冻 XX」；也可以到设置页用「强制解冻」"
                                 }
                                 if (unfreezeTargets.isNotEmpty() || unlockTargets.isNotEmpty() ||
