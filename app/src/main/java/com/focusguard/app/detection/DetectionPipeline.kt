@@ -113,6 +113,7 @@ class DetectionPipeline(
             val candidates = listOf(usagePkg, windowPkg).filter { it.isNotBlank() }.distinct()
             if (candidates.isEmpty()) {
                 // 两个来源都认不出前台应用：宁可少检测一次，也不冒险上传
+                com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "无法识别前台应用")
                 return DetectionOutcome(
                     "NEUTRAL", 1f,
                     "隐私保护：无法识别前台应用，本轮已跳过截屏与内容读取",
@@ -123,10 +124,14 @@ class DetectionPipeline(
                 com.focusguard.app.privacy.PrivacyGuard.isSensitive(
                     candidate,
                     if (candidate == usagePkg) label else "",
-                    settings.sensitiveApps
+                    settings.sensitiveApps,
+                    useBuiltin = settings.builtinPrivacyHints
                 )
             }
             if (hit != null) {
+                com.focusguard.app.privacy.PrivacyStats.recordSkip(
+                    context, "敏感应用：${if (hit == usagePkg) label else hit}"
+                )
                 return DetectionOutcome(
                     "NEUTRAL", 1f,
                     "隐私保护：${if (hit == usagePkg) label else hit} 属于敏感应用，本轮已跳过截屏与内容读取",
@@ -160,9 +165,31 @@ class DetectionPipeline(
             }
         }
 
-        // ── L3 屏幕文字（可关闭）──────────────────────
-        if (textPrefilterOn) {
+        // ── L3 屏幕文字 ──────────────────────────────
+        // 读取时机与「省 token 的文字预过滤」解耦：
+        // - textPrefilterOn：命中关键词就直接判定（省一次 AI 调用，省 token 用）
+        // - contentPrivacyCheck / textOnlyUpload：需要文字做隐私兜底或纯文字判定
+        // 读取文字本身是本地无障碍操作，没有任何网络开销。
+        var screenText: String? = null
+        val needText = textPrefilterOn ||
+            settings.contentPrivacyCheck ||
+            settings.textOnlyUpload
+        if (needText) {
             ScreenTextReader.readCurrentScreenText()?.let { text ->
+                screenText = text
+                // 内容级隐私兜底：屏幕文字里出现身份证/银行卡/验证码这类内容时，
+                // 无论前台是哪个应用（浏览器里的网银、政务 H5、聊天里的证件照），
+                // 本轮都不上传。仅本地正则判断，不联网。
+                if (settings.contentPrivacyCheck) {
+                    com.focusguard.app.privacy.ContentPrivacy.inspect(text)?.let { hit ->
+                        com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "内容兜底：$hit")
+                        return DetectionOutcome(
+                            "NEUTRAL", 1f,
+                            "隐私保护：屏幕内容$hit，本轮已跳过上传",
+                            DetectionSource.PRIVACY_SKIP, pkg, label
+                        )
+                    }
+                }
                 // 完整词表（内置默认 + 用户编辑，设置页可查看/修改）
                 val settings = com.focusguard.app.data.Settings(context)
                 val textVerdict = AppClassifier.classifyByScreenText(
@@ -170,7 +197,9 @@ class DetectionPipeline(
                     settings.studyKeywordList(),
                     settings.entertainmentKeywordList()
                 )
-                if (textVerdict == "STUDY_WORK" || textVerdict == "ENTERTAINMENT") {
+                if (textPrefilterOn &&
+                    (textVerdict == "STUDY_WORK" || textVerdict == "ENTERTAINMENT")
+                ) {
                     val reason = if (textVerdict == "STUDY_WORK") {
                         "屏幕文字含学习/工作特征（$label）"
                     } else {
@@ -181,6 +210,52 @@ class DetectionPipeline(
                     )
                 }
             }
+        }
+
+        // ── 纯文字模式（隐私选项）：不截图、不上传画面，只用屏幕文字判定 ──
+        if (settings.textOnlyUpload) {
+            val text = screenText
+            if (text.isNullOrBlank()) {
+                return DetectionOutcome(
+                    "NEUTRAL", 0f,
+                    "仅上传文字模式：本次拿不到屏幕文字，已跳过",
+                    DetectionSource.PRIVACY_SKIP, pkg, label
+                )
+            }
+            val currentKey = settings.apiKey
+            if (currentKey.isBlank()) {
+                return DetectionOutcome(
+                    "NEUTRAL", 0f, "未配置 API 密钥，请在设置中填写并保存",
+                    DetectionSource.ERROR, pkg, label
+                )
+            }
+            if (!tokenBudget.canCallAi()) {
+                return DetectionOutcome(
+                    "NEUTRAL", 0.3f,
+                    "今日 AI 配额已用尽（${tokenBudget.dailyCallLimit} 次），仅做本地判定",
+                    DetectionSource.BUDGET_EXCEEDED, pkg, label
+                )
+            }
+            val textResult = aiClient.analyzeText(
+                screenText = text,
+                baseUrl = settings.apiBaseUrl,
+                apiKey = currentKey,
+                modelName = settings.modelName,
+                whitelist = settings.whitelist,
+                customPrompt = settings.aiCustomPrompt,
+                apiFormat = settings.apiFormat
+            )
+            tokenBudget.recordCall()
+            com.focusguard.app.privacy.PrivacyStats.recordUpload(context)
+            val rawReason = textResult.reason.ifBlank { "AI 文字识别" }
+            val reason = if (settings.redactLogs) {
+                com.focusguard.app.privacy.Redactor.redact(rawReason)
+            } else rawReason
+            Log.d(TAG, "文字判定 ${textResult.classification} ${textResult.confidence}")
+            return DetectionOutcome(
+                textResult.classification, textResult.confidence, reason,
+                DetectionSource.AI_VISION, pkg, label
+            )
         }
 
         // 以下步骤需要画面，先确认前置条件
@@ -286,7 +361,11 @@ class DetectionPipeline(
             )
             tokenBudget.recordCall()
 
-            val reason = aiResult.reason.ifBlank { "AI 视觉识别" }
+            com.focusguard.app.privacy.PrivacyStats.recordUpload(context)
+            val rawReason = aiResult.reason.ifBlank { "AI 视觉识别" }
+            val reason = if (settings.redactLogs) {
+                com.focusguard.app.privacy.Redactor.redact(rawReason)
+            } else rawReason
             // 只有缓存开启时才写入缓存，关闭时用户期望每次都新鲜判定
             if (cacheOn) {
                 decisionCache.put(pkg, hash, aiResult.classification, aiResult.confidence, reason)

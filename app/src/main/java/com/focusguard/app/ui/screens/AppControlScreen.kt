@@ -384,6 +384,44 @@ private fun AppEditSheet(
                 }
             }
 
+            Spacer(Modifier.height(4.dp))
+            // 敏感标记改动后强制重算（同一弹窗内连续切换）
+            var settingsRevision by remember { mutableIntStateOf(0) }
+            // ── 标为敏感（写回敏感应用列表，检测时跳过截屏与内容上传）──
+            val sensitiveNow = remember(app.packageName, settingsRevision) {
+                runCatching {
+                    com.focusguard.app.data.Settings(context).sensitiveApps
+                        .split(',', '，', ';', '；', '、', '\n')
+                        .map { it.trim().lowercase() }
+                        .filter { it.isNotEmpty() }
+                        .any { app.packageName.lowercase().contains(it) || (app.label.isNotBlank() && app.label.lowercase().contains(it)) }
+                }.getOrDefault(false)
+            }
+            var marked by remember(app.packageName, settingsRevision) { mutableStateOf(sensitiveNow) }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("标为敏感应用", fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
+                    Text(
+                        "检测到此应用时不截图、不读屏幕内容、不上传",
+                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                    )
+                }
+                Switch(checked = marked, onCheckedChange = { on ->
+                    marked = on
+                    val store = com.focusguard.app.data.Settings(context)
+                    val cur = store.sensitiveApps
+                        .split(',', '，', ';', '；', '、', '\n')
+                        .map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+                    if (on) {
+                        if (cur.none { it.equals(app.packageName, true) }) cur.add(app.packageName)
+                    } else {
+                        cur.removeAll { it.equals(app.packageName, true) }
+                    }
+                    store.sensitiveApps = cur.joinToString(",")
+                    settingsRevision++
+                })
+            }
+
             HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
 
             // ── 使用时长 ──────────────────────────────

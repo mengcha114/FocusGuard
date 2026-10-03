@@ -133,6 +133,10 @@ gacha
         // 敏感应用隐私保护（默认开启）：检测到银行/支付/密码管理等
         // 敏感应用时，本轮不截屏、不读屏幕文字、不上传任何内容。
         private const val KEY_PRIVACY_PROTECT = "privacy_protect"
+        private const val KEY_CONTENT_PRIVACY = "content_privacy_check"
+        private const val KEY_TEXT_ONLY_UPLOAD = "text_only_upload"
+        private const val KEY_REDACT_LOGS = "redact_logs"
+        private const val KEY_BUILTIN_HINTS = "builtin_privacy_hints"
         // 用户自定义敏感应用列表（逗号/换行分隔，按包名或应用名片段匹配）。
         private const val KEY_SENSITIVE_APPS = "sensitive_apps"
     }
@@ -407,7 +411,7 @@ gacha
      * 不做任何本地过滤。默认开启。
      */
     var tokenSavingEnabled: Boolean
-        get() = prefs.getBoolean(KEY_TOKEN_SAVING_ENABLED, true)
+        get() = prefs.getBoolean(KEY_TOKEN_SAVING_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_TOKEN_SAVING_ENABLED, value).apply()
 
     /**
@@ -415,7 +419,7 @@ gacha
      * 不截图、不调用 AI。默认开启。
      */
     var screenHashDedupEnabled: Boolean
-        get() = tokenSavingEnabled && prefs.getBoolean(KEY_SCREEN_HASH_DEDUP, true)
+        get() = tokenSavingEnabled && prefs.getBoolean(KEY_SCREEN_HASH_DEDUP, false)
         set(value) = prefs.edit().putBoolean(KEY_SCREEN_HASH_DEDUP, value).apply()
 
     /**
@@ -423,7 +427,7 @@ gacha
      * 不消耗 token 直接定论。默认开启（需要无障碍权限）。
      */
     var screenTextPrefilterEnabled: Boolean
-        get() = tokenSavingEnabled && prefs.getBoolean(KEY_SCREEN_TEXT_PREFILTER, true)
+        get() = tokenSavingEnabled && prefs.getBoolean(KEY_SCREEN_TEXT_PREFILTER, false)
         set(value) = prefs.edit().putBoolean(KEY_SCREEN_TEXT_PREFILTER, value).apply()
 
     /**
@@ -431,7 +435,7 @@ gacha
      * TTL 6 小时，避免同一内容反复付费。默认开启。
      */
     var decisionCacheEnabled: Boolean
-        get() = tokenSavingEnabled && prefs.getBoolean(KEY_DECISION_CACHE_ENABLED, true)
+        get() = tokenSavingEnabled && prefs.getBoolean(KEY_DECISION_CACHE_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_DECISION_CACHE_ENABLED, value).apply()
 
     /**
@@ -439,7 +443,7 @@ gacha
      * 发现娱乐迹象时立刻缩短到最小值。默认开启。
      */
     var adaptiveIntervalEnabled: Boolean
-        get() = tokenSavingEnabled && prefs.getBoolean(KEY_ADAPTIVE_INTERVAL, true)
+        get() = tokenSavingEnabled && prefs.getBoolean(KEY_ADAPTIVE_INTERVAL, false)
         set(value) = prefs.edit().putBoolean(KEY_ADAPTIVE_INTERVAL, value).apply()
 
     /**
@@ -482,6 +486,26 @@ gacha
      * 本轮直接跳过：不截屏、不通过无障碍读屏幕文字、不发任何网络请求，
      * 只记录一条「隐私保护」日志。判定为中性，不会触发执法。
      */
+    /** 上传前内容级隐私兜底（识别身份证/银行卡/验证码等，默认开）。 */
+    var contentPrivacyCheck: Boolean
+        get() = prefs.getBoolean(KEY_CONTENT_PRIVACY, true)
+        set(value) = prefs.edit().putBoolean(KEY_CONTENT_PRIVACY, value).apply()
+
+    /** 仅上传屏幕文字、不上传截图（默认关，准确率会下降）。 */
+    var textOnlyUpload: Boolean
+        get() = prefs.getBoolean(KEY_TEXT_ONLY_UPLOAD, false)
+        set(value) = prefs.edit().putBoolean(KEY_TEXT_ONLY_UPLOAD, value).apply()
+
+    /** 日志与导出脱敏：长数字串打码并截断（默认开）。 */
+    var redactLogs: Boolean
+        get() = prefs.getBoolean(KEY_REDACT_LOGS, true)
+        set(value) = prefs.edit().putBoolean(KEY_REDACT_LOGS, value).apply()
+
+    /** 内置敏感应用兜底（默认开；关闭后只用用户自定义列表）。 */
+    var builtinPrivacyHints: Boolean
+        get() = prefs.getBoolean(KEY_BUILTIN_HINTS, true)
+        set(value) = prefs.edit().putBoolean(KEY_BUILTIN_HINTS, value).apply()
+
     var privacyProtectEnabled: Boolean
         get() = prefs.getBoolean(KEY_PRIVACY_PROTECT, true)
         set(value) = prefs.edit().putBoolean(KEY_PRIVACY_PROTECT, value).apply()

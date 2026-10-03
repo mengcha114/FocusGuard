@@ -50,7 +50,9 @@ object PrivacyGuard {
         // ── 私密相册 / 图库 ────────────────────────────
         "gallery", "photos",
         // ── 身份 / 证件 / 社保 / 税务 ──────────────────
-        "idcard", "eid", "gov", "tax", "socialsecurity", "shebao", "gjj"
+        "idcard", "eid", "gov", "tax", "socialsecurity", "shebao", "gjj",
+        // ── 文件管理 / 云盘 / 笔记（能翻到私密内容）──────
+        "documentsui", "filemanager", "notability", "evernote", "onenote", "notion"
     )
 
     /** 内置敏感应用名特征（小写匹配，中文应用名）。 */
@@ -61,7 +63,8 @@ object PrivacyGuard {
         "相册", "图库", "云盘照片", "身份验证", "动态口令",
         // 证件 / 社保 / 税务 / 政务，以及密码本类
         "身份证", "证件", "社保", "公积金", "税务", "个税", "所得税", "政务", "办事",
-        "加密", "密语", "私密", "保险箱", "笔记锁"
+        "加密", "密语", "私密", "保险箱", "笔记锁", "文件管理", "我的文件",
+        "云盘", "有道云", "印象笔记", "石墨", "腾讯文档"
     )
 
     /**
@@ -71,16 +74,21 @@ object PrivacyGuard {
      * @param label 前台应用显示名
      * @param userList 用户自定义敏感应用列表（逗号/换行分隔，可为空）
      */
-    fun isSensitive(packageName: String, label: String, userList: String): Boolean {
+    fun isSensitive(
+        packageName: String,
+        label: String,
+        userList: String,
+        useBuiltin: Boolean = true
+    ): Boolean {
         if (packageName.isBlank() && label.isBlank()) return false
         val pkg = packageName.lowercase()
         val lab = label.lowercase()
 
-        if (builtinPackageHints.any { pkg.contains(it) }) {
+        if (useBuiltin && builtinPackageHints.any { pkg.contains(it) }) {
             Log.d(TAG, "$packageName 命中内置敏感特征，隐私保护跳过")
             return true
         }
-        if (builtinLabelHints.any { lab.contains(it) }) {
+        if (useBuiltin && builtinLabelHints.any { lab.contains(it) }) {
             Log.d(TAG, "$label 命中内置敏感特征，隐私保护跳过")
             return true
         }

@@ -60,7 +60,9 @@
         android:theme="@style/Theme.FocusGuard"
         tools:targetApi="34">
 
-        <!-- Shizuku：binder 接收与授权回调（Shizuku API 必需） -->
+        <!-- Shizuku：binder 接收与授权回调（Shizuku API 必需）。
+             INTERACT_ACROSS_USERS_FULL 是 Shizuku 官方要求的 provider 权限声明
+             （含义是"调用方需持有该权限"），删掉会导致 Shizuku 不可用，故保留。 -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

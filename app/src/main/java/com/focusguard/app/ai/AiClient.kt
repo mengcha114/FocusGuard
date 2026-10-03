@@ -309,6 +309,63 @@ class AiClient {
      * 复用当前配置的模型与协议（openai / anthropic / gemini），
      * 发送纯文本消息，返回 AI 回复文本。失败时返回错误说明（供直接展示）。
      */
+    /**
+     * 纯文字判定（隐私模式）：只把屏幕文字发给模型，不上传截图。
+     * 复用 [chat] 的三种协议实现，返回 (分类, 理由)；解析失败返回 NEUTRAL。
+     */
+    suspend fun analyzeText(
+        screenText: String,
+        baseUrl: String,
+        apiKey: String,
+        modelName: String,
+        whitelist: String,
+        customPrompt: String = "",
+        apiFormat: String = "openai"
+    ): AiResult = withContext(Dispatchers.IO) {
+        val instruction = buildString {
+            append("下面是一段手机屏幕上的文字。请判断用户正在学习工作、娱乐还是中性。\n")
+            append("只回复一行 JSON：{\"c\":\"STUDY_WORK|ENTERTAINMENT|NEUTRAL\",\"p\":0-1,\"r\":\"简短中文理由\"}\n")
+            if (customPrompt.isNotBlank()) append("额外要求：$customPrompt\n")
+            if (whitelist.isNotBlank()) append("以下场景视为学习/工作：$whitelist\n")
+            append("\n屏幕文字：\n")
+            append(screenText.take(2000))
+        }
+        try {
+            val reply = chat(
+                messages = listOf(
+                    ChatMessage("system", "你是屏幕内容分类器，只输出一行 JSON。"),
+                    ChatMessage("user", instruction)
+                ),
+                baseUrl = baseUrl, apiKey = apiKey, modelName = modelName, apiFormat = apiFormat
+            )
+            parseClassification(reply)
+        } catch (e: Exception) {
+            Log.e(TAG, "文字识别失败", e)
+            AiResult(classification = "NEUTRAL", reason = "请求失败：${e.message}").also {
+                it.retryable = false
+            }
+        }
+    }
+
+    /** 从模型回复里解析分类与理由（容错：允许 JSON 前后有说明文字）。 */
+    fun parseClassification(reply: String): AiResult {
+        val text = reply.trim()
+        val json = runCatching {
+            val start = text.indexOf('{')
+            val end = text.lastIndexOf('}')
+            if (start >= 0 && end > start) JSONObject(text.substring(start, end + 1)) else null
+        }.getOrNull()
+        val cls = (json?.optString("c")
+            ?: Regex("STUDY_WORK|ENTERTAINMENT|NEUTRAL").find(text)?.value
+            ?: "")
+            .uppercase()
+            .takeIf { it in setOf("STUDY_WORK", "ENTERTAINMENT", "NEUTRAL") }
+            ?: "NEUTRAL"
+        val conf = json?.optDouble("p", 0.7)?.toFloat()?.coerceIn(0f, 1f) ?: 0.7f
+        val reason = json?.optString("r").orEmpty().ifBlank { "文字识别：$cls" }
+        return AiResult(classification = cls, confidence = conf, reason = reason)
+    }
+
     suspend fun chat(
         messages: List<ChatMessage>,
         baseUrl: String,

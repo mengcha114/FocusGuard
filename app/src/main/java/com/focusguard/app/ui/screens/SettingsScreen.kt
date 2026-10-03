@@ -71,6 +71,10 @@ fun SettingsScreen(
 
     // 隐私保护（敏感应用跳过截屏/文字读取/上传）
     var privacyProtectEnabled by remember { mutableStateOf(settings.privacyProtectEnabled) }
+    var contentPrivacyCheck by remember { mutableStateOf(settings.contentPrivacyCheck) }
+    var textOnlyUpload by remember { mutableStateOf(settings.textOnlyUpload) }
+    var redactLogs by remember { mutableStateOf(settings.redactLogs) }
+    var builtinPrivacyHints by remember { mutableStateOf(settings.builtinPrivacyHints) }
     var sensitiveApps by remember { mutableStateOf(settings.sensitiveApps) }
 
     Column(
@@ -196,12 +200,38 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
                 minLines = 2
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "命中敏感应用时仅记录一条「隐私保护」日志，判定为中性、不触发任何执法。",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
+            Spacer(Modifier.height(10.dp))
+            // ── 可选的隐私加固项（都可在设置里开关） ──
+            TokenSavingToggle(
+                title = "上传前内容检查",
+                subtitle = "屏幕文字里识别到身份证号 / 银行卡号 / 验证码时，本轮不上传（浏览器里的网银也拦得住）",
+                icon = Icons.Default.Search,
+                checked = contentPrivacyCheck,
+                onCheckedChange = { contentPrivacyCheck = it }
             )
+            TokenSavingToggle(
+                title = "仅上传屏幕文字",
+                subtitle = "完全不上传截图，只把屏幕文字发给 AI；判定准确率会下降",
+                icon = Icons.Default.TextFields,
+                checked = textOnlyUpload,
+                onCheckedChange = { textOnlyUpload = it }
+            )
+            TokenSavingToggle(
+                title = "日志与导出脱敏",
+                subtitle = "检测理由里的长数字串打码、超长截断，导出诊断信息时同样处理",
+                icon = Icons.Default.Lock,
+                checked = redactLogs,
+                onCheckedChange = { redactLogs = it }
+            )
+            TokenSavingToggle(
+                title = "内置敏感应用兜底",
+                subtitle = "除你自己的列表外，再用内置特征识别银行 / 支付 / 证件 / 文件管理 / 云盘等",
+                icon = Icons.Default.Shield,
+                checked = builtinPrivacyHints,
+                onCheckedChange = { builtinPrivacyHints = it }
+            )
+            Spacer(Modifier.height(10.dp))
+            com.focusguard.app.ui.components.PrivacyStatsRow()
         }
 
         // ── 检测设置 ──────────────────────────────────────────────
@@ -707,6 +737,10 @@ fun SettingsScreen(
             settings.customMottos = customMottos
             // 隐私保护
             settings.privacyProtectEnabled = privacyProtectEnabled
+            settings.contentPrivacyCheck = contentPrivacyCheck
+            settings.textOnlyUpload = textOnlyUpload
+            settings.redactLogs = redactLogs
+            settings.builtinPrivacyHints = builtinPrivacyHints
             settings.sensitiveApps = sensitiveApps
         }
 
@@ -718,58 +752,73 @@ fun SettingsScreen(
         // 白名单 / 敏感应用 / 置信度 / API 配置 / 提示词 / 调用上限等，
         // 改这些即可让 AI 检测失效。
         fun isLoosening(): Boolean {
-            val newInterval = intervalMinutes.toIntOrNull() ?: settings.intervalMinutes
-            val newViolations = consecutiveViolations.toIntOrNull() ?: settings.consecutiveViolations
-            val newCallLimit = dailyCallLimit.toIntOrNull() ?: settings.dailyCallLimit
-            val newAlertDelay = aiAlertDelaySeconds.coerceIn(0, 120)
-            val enforceRank = mapOf(
-                Settings.EnforcementMode.WARN to 0,
-                Settings.EnforcementMode.APP_BLOCK to 1,
-                Settings.EnforcementMode.LOCK to 2
+            fun snap(
+                lockMin: Int, appBlock: Int, violations: Int, strength: Int,
+                mode: Settings.EnforcementMode, interval: Int, alertDelay: Int,
+                confidence: Int, callLimit: Int, smart: Boolean, alert: Boolean,
+                white: String, tokenOn: Boolean, hashOn: Boolean,
+                textOn: Boolean, cacheOn: Boolean, adaptiveOn: Boolean
+            ) = com.focusguard.app.data.SettingsDiff.Snapshot(
+                lockMinutes = lockMin,
+                appBlockMinutes = appBlock,
+                consecutiveViolations = violations,
+                lockStrength = strength,
+                enforceRank = com.focusguard.app.data.SettingsDiff.enforceRank(mode),
+                intervalMinutes = interval,
+                alertDelaySeconds = alertDelay,
+                confidencePercent = confidence,
+                dailyCallLimit = callLimit,
+                smartScheduleEnabled = smart,
+                alertEnabled = alert,
+                whitelist = white.lines().map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
+                tokenSaving = tokenOn, hashDedup = hashOn, textPrefilter = textOn,
+                decisionCache = cacheOn, adaptiveInterval = adaptiveOn
             )
-            fun lines(s: String) = s.lines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            val old = snap(
+                settings.lockMinutesOnViolation, settings.appBlockMinutes,
+                settings.consecutiveViolations, settings.aiLockStrength,
+                settings.enforcementMode, settings.intervalMinutes,
+                settings.aiAlertDelaySeconds, (settings.confidenceThreshold * 100).toInt(),
+                settings.dailyCallLimit, settings.smartScheduleEnabled, settings.aiAlertEnabled,
+                settings.whitelist, settings.tokenSavingEnabled, settings.screenHashDedupEnabled,
+                settings.screenTextPrefilterEnabled, settings.decisionCacheEnabled,
+                settings.adaptiveIntervalEnabled
+            )
+            val new = snap(
+                aiLockMinutes, appBlockMinutes,
+                consecutiveViolations.toIntOrNull() ?: settings.consecutiveViolations,
+                aiLockStrength, enforcementMode,
+                intervalMinutes.toIntOrNull() ?: settings.intervalMinutes,
+                aiAlertDelaySeconds.coerceIn(0, 120), (confidenceThreshold * 100).toInt(),
+                dailyCallLimit.toIntOrNull() ?: settings.dailyCallLimit,
+                smartScheduleEnabled, aiAlertEnabled, whitelist,
+                tokenSavingEnabled, screenHashDedup, screenTextPrefilter,
+                decisionCacheEnabled, adaptiveInterval
+            )
+            return com.focusguard.app.data.SettingsDiff.isLoosening(old, new)
+        }
 
-            // 数值类：只允许朝「更严」方向变化
-            val numericOk =
-                aiLockMinutes >= settings.lockMinutesOnViolation &&
-                    appBlockMinutes >= settings.appBlockMinutes &&
-                    newViolations <= settings.consecutiveViolations &&
-                    aiLockStrength >= settings.aiLockStrength &&
-                    (enforceRank[enforcementMode] ?: 2) >= (enforceRank[settings.enforcementMode] ?: 2) &&
-                    newInterval <= settings.intervalMinutes &&
-                    newAlertDelay <= settings.aiAlertDelaySeconds &&
-                    confidenceThreshold <= settings.confidenceThreshold &&
-                    newCallLimit >= settings.dailyCallLimit &&
-                    (smartScheduleEnabled || !settings.smartScheduleEnabled) &&
-                    // 开启「先提醒再锁机」= 多一段宽限 = 放宽
-                    (!aiAlertEnabled || settings.aiAlertEnabled)
-
-            // 列表类：白名单 / 敏感应用只能删、不能加；娱乐词只能加、学习词只能删
-            val listsOk =
-                lines(settings.whitelist).containsAll(lines(whitelist)) &&
-                    lines(settings.sensitiveApps).containsAll(lines(sensitiveApps)) &&
-                    lines(entertainmentKeywords).containsAll(lines(settings.entertainmentKeywords)) &&
-                    lines(settings.studyKeywords).containsAll(lines(studyKeywords))
-
-            // 开关类：关闭隐私保护 = 更严；开启省 token 系列 = 检测变少 = 放宽
-            val togglesOk =
-                (!privacyProtectEnabled || settings.privacyProtectEnabled) &&
-                    (!tokenSavingEnabled || settings.tokenSavingEnabled) &&
-                    (!screenHashDedup || settings.screenHashDedupEnabled) &&
-                    (!screenTextPrefilter || settings.screenTextPrefilterEnabled) &&
-                    (!decisionCacheEnabled || settings.decisionCacheEnabled) &&
-                    (!adaptiveInterval || settings.adaptiveIntervalEnabled)
-
-            // 检测通道：任何改动都可能让检测失效，一律需答题
-            val channelOk =
-                apiBaseUrl == settings.apiBaseUrl &&
-                    apiKey == settings.apiKey &&
-                    modelName == settings.modelName &&
-                    apiFormat == settings.apiFormat &&
-                    aiCustomPrompt == settings.aiCustomPrompt
-
-            // 主题 / 箴言属于外观，不影响限制
-            return !(numericOk && listsOk && togglesOk && channelOk)
+        /**
+         * 锁机期间禁止修改的「检测相关配置」。
+         *
+         * 这些项本身不算放宽（改提示词、换模型、调隐私开关都是正常操作，不需要答题），
+         * 但它们都能让检测失效或用来绕过（例如把娱乐应用加进敏感列表就不再检测），
+         * 所以只在锁机期间拒绝修改，锁机结束后随便改。
+         */
+        fun isBlockedDuringLock(): Boolean {
+            val lines = { s: String -> s.lines().map { it.trim() }.filter { it.isNotEmpty() }.toSet() }
+            return apiBaseUrl != settings.apiBaseUrl ||
+                apiKey != settings.apiKey ||
+                modelName != settings.modelName ||
+                apiFormat != settings.apiFormat ||
+                aiCustomPrompt != settings.aiCustomPrompt ||
+                privacyProtectEnabled != settings.privacyProtectEnabled ||
+                sensitiveApps != settings.sensitiveApps ||
+                lines(studyKeywords) != lines(settings.studyKeywords) ||
+                lines(entertainmentKeywords) != lines(settings.entertainmentKeywords) ||
+                contentPrivacyCheck != settings.contentPrivacyCheck ||
+                textOnlyUpload != settings.textOnlyUpload ||
+                !settings.builtinPrivacyHints || builtinPrivacyHints != settings.builtinPrivacyHints
         }
 
         /** 放宽验证被取消：界面值回滚到已保存的设置（旧实现不回滚，界面显示与实际不符）。 */
@@ -800,6 +849,10 @@ fun SettingsScreen(
             appBlockMinutes = settings.appBlockMinutes
             privacyProtectEnabled = settings.privacyProtectEnabled
             sensitiveApps = settings.sensitiveApps
+            contentPrivacyCheck = settings.contentPrivacyCheck
+            textOnlyUpload = settings.textOnlyUpload
+            redactLogs = settings.redactLogs
+            builtinPrivacyHints = settings.builtinPrivacyHints
         }
 
         // ── 自动保存 ─────────────────────────────────────────────
@@ -815,7 +868,8 @@ fun SettingsScreen(
             aiLockMinutes, aiLockStrength, aiAlertEnabled, aiAlertDelaySeconds,
             appBlockMinutes, customMottos, smartScheduleEnabled,
             studyKeywords, entertainmentKeywords,
-            privacyProtectEnabled, sensitiveApps
+            privacyProtectEnabled, sensitiveApps,
+            contentPrivacyCheck, textOnlyUpload, redactLogs, builtinPrivacyHints
         ) {
             if (isFirstSave) {
                 // 首次组合：只保存不提示（避免一进页面就弹"已保存"）
@@ -825,7 +879,11 @@ fun SettingsScreen(
             }
             // 防抖：状态变化后等 2 秒（期间再变化会取消重启），无变化才处理
             kotlinx.coroutines.delay(2000)
-            if (isLoosening() && com.focusguard.app.data.LockState(context).isLocked) {
+            if (isBlockedDuringLock() && com.focusguard.app.data.LockState(context).isLocked) {
+                revertUnsaved()
+                saveAll()
+                Toast.makeText(context, "锁机期间不能修改检测与隐私配置，锁机结束后再改", Toast.LENGTH_LONG).show()
+            } else if (isLoosening() && com.focusguard.app.data.LockState(context).isLocked) {
                 // 锁机中（含暂停）：放宽类改动一律拒绝，答题也不行
                 revertUnsaved()
                 saveAll()

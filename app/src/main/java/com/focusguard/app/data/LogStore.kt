@@ -56,12 +56,18 @@ class LogStore(context: Context) {
         private const val FILE_NAME = "detection_logs.json"
     }
 
-    private val logFile = File(context.filesDir, FILE_NAME)
+    private val appContext = context.applicationContext
+    private val logFile = File(appContext.filesDir, FILE_NAME)
     private val lock = Any()
 
     fun addLog(log: DetectionLog) = synchronized(lock) {
         val logs = readLogs().toMutableList()
-        logs.add(0, log)
+        // 理由可能被 AI 写成引用屏幕内容（如"尾号 6225 的银行卡"），按设置脱敏后落盘
+        val redact = runCatching { Settings(appContext).redactLogs }.getOrDefault(true)
+        val safe = if (redact) {
+            log.copy(reason = com.focusguard.app.privacy.Redactor.redact(log.reason))
+        } else log
+        logs.add(0, safe)
         if (logs.size > MAX_LOGS) {
             logs.subList(MAX_LOGS, logs.size).clear()
         }
@@ -113,6 +119,7 @@ class LogStore(context: Context) {
         sb.append("专注卫士检测日志（共 ${logs.size} 条）\n")
         sb.append("导出时间：${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}\n")
         sb.append("========================================\n")
+        val redact = runCatching { Settings(appContext).redactLogs }.getOrDefault(true)
         logs.forEach { log ->
             sb.append("[${log.getDateFormatted()} ${log.getTimeFormatted()}] ")
                 .append(log.classification)
@@ -120,7 +127,9 @@ class LogStore(context: Context) {
                 .append(" 动作=${log.action}")
                 .append(" 来源=${log.source}")
                 .append(" 应用=${log.appLabel.ifBlank { "-" }}")
-                .append("\n  原因：${log.reason}\n")
+                .append("\n  原因：${
+                    if (redact) com.focusguard.app.privacy.Redactor.redact(log.reason) else log.reason
+                }\n")
         }
         sb.toString()
     }
