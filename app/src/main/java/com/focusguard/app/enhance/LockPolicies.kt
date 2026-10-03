@@ -24,7 +24,16 @@ object LockPolicies {
     private const val KEY_AUTO_TIME_ORIGINAL = "auto_time_original"
     private const val KEY_BLOCK_RESET = "block_factory_reset"
 
-    private val ENTERTAINMENT = setOf(AppCategory.GAME, AppCategory.SHORT_VIDEO, AppCategory.VIDEO)
+    /**
+     * 「娱乐」类目：游戏、短视频、长视频、社交——即锁机期间应当被冻结的对象。
+     * （此前只含游戏/视频，漏掉了社交这类同样消耗时间的应用。）
+     */
+    private val ENTERTAINMENT = setOf(
+        AppCategory.GAME,
+        AppCategory.SHORT_VIDEO,
+        AppCategory.VIDEO,
+        AppCategory.SOCIAL
+    )
 
     private fun prefs(c: Context) =
         c.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -55,9 +64,18 @@ object LockPolicies {
         UserManager.DISALLOW_FACTORY_RESET
     )
 
-    /** 用户在「应用管控」中标记为游戏 / 视频 / 短视频的应用。 */
-    private fun entertainmentPackages(c: Context): Set<String> =
-        AppCategoryStore(c).allUserOverrides().filterValues { it in ENTERTAINMENT }.keys - c.packageName
+    /**
+     * 需要冻结的娱乐应用：**用户手动标记的** ∪ **AI 学习到的**分类。
+     * 只用手动标记的话，绝大多数用户不会去一个个标，功能等于没用；
+     * 学习结果里只取娱乐四类，学习/办公/系统不冻。用户标记优先级更高。
+     */
+    private fun entertainmentPackages(c: Context): Set<String> {
+        val store = AppCategoryStore(c)
+        val merged = HashMap<String, AppCategory>()
+        merged.putAll(store.allLearned())
+        merged.putAll(store.allUserOverrides())
+        return merged.filterValues { it in ENTERTAINMENT }.keys - c.packageName
+    }
 
     /** 锁机开始。幂等。 */
     fun onLockStart(context: Context) {

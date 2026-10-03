@@ -32,7 +32,7 @@ fun LockHardeningCard() {
         SwitchRow(
             title = "锁机期间冻结娱乐应用",
             hint = if (canFreeze) {
-                "冻结「应用管控」里标为游戏/视频的应用，解锁后自动解冻"
+                "锁机时冻结游戏与娱乐类应用（含 AI 判定与你手动标记的），解锁后自动解冻"
             } else {
                 "需要 Dhizuku 或 Shizuku 授权后才能使用"
             },
