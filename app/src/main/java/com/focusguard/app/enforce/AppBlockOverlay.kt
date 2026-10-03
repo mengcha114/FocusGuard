@@ -70,9 +70,13 @@ object AppBlockOverlay {
         )?.activityInfo?.packageName == pkg
     }.getOrDefault(false)
 
-    /** 本次封锁是否已把应用真正停掉（停掉后不走「离开就撤下」逻辑）。 */
+    /** 本次封锁是否已把应用真正停掉（冻结或强行停止都算）。 */
     @Volatile
     private var appSuspended = false
+
+    /** 是否已请求「强行停止」（未授权用户的路径）。 */
+    @Volatile
+    private var forceStopRequested = false
 
     /** 本次封锁开始显示的时刻（用于区分「冻结导致桌面露出」与「用户主动回桌面」）。 */
     @Volatile
@@ -109,6 +113,8 @@ object AppBlockOverlay {
     ): Boolean {
         val app = context.applicationContext
         if (pkg.isBlank()) return false
+        // 冲突防护：绝不遮盖/停止本应用自己（用户若在应用管控里误选了自己）
+        if (pkg == app.packageName) return false
         if (!android.provider.Settings.canDrawOverlays(app)) {
             lastError = "没有悬浮窗权限"
             return false
@@ -168,6 +174,7 @@ object AppBlockOverlay {
                 // 没有 Shizuku/Dhizuku（非技术用户）：用系统「强行停止」把应用真停掉，
                 // 同样是在封锁悬浮窗后面完成，用户只看到封锁页
                 runCatching { com.focusguard.app.enforce.ForceStopHelper.requestStop(context, pkg) }
+                forceStopRequested = true
             }
         }.start()
 
@@ -231,6 +238,7 @@ object AppBlockOverlay {
         root = null
         showing = null
         appSuspended = false
+        forceStopRequested = false
         currentPkg = null
         composeOwner?.destroy()
         composeOwner = null
@@ -285,8 +293,11 @@ object AppBlockOverlay {
                 //   3 秒之后仍判定离开，说明是用户主动回桌面（系统手势）→ 撤下并解冻。
                 val left = hasLeftApp(app, pkg)
                 val settled = System.currentTimeMillis() - shownAt > 3_000L
-                if (left && (!appSuspended || settled)) {
-                    Log.d(TAG, "用户已离开 $pkg（已停掉=$appSuspended），撤下并解冻")
+                // 冻结与「强行停止」都会让应用消失、桌面露出来，那不算用户离开；
+                // 3 秒后仍判定离开才当作「用户主动回桌面」
+                val stopped = appSuspended || forceStopRequested
+                if (left && (!stopped || settled)) {
+                    Log.d(TAG, "用户已离开 $pkg（已停掉=$stopped），撤下并解冻")
                     hideOnMain(stopApp = false)
                     return
                 }

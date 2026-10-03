@@ -62,6 +62,8 @@ fun LockHardeningCard() {
 
         HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
 
+        val settings = remember { com.focusguard.app.data.Settings(context) }
+
         // 没有 Shizuku/Dhizuku 的用户：用系统「强行停止」把被锁应用真正停掉
         var forceStop by remember { mutableStateOf(settings.forceStopUnlocked) }
         SwitchRow(
@@ -79,7 +81,6 @@ fun LockHardeningCard() {
         }
 
         // 重启后不必手动授权录屏：由无障碍替用户点掉系统授权弹窗
-        val settings = remember { com.focusguard.app.data.Settings(context) }
         var autoGrant by remember { mutableStateOf(settings.autoGrantProjection) }
         SwitchRow(
             title = "重启后自动授权屏幕录制",
