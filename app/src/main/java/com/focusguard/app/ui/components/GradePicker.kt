@@ -56,12 +56,12 @@ fun GradePickerDialog(mandatory: Boolean, onDone: () -> Unit, onDismiss: () -> U
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    "解锁、暂停与修改设置时需答题。以高思维量数学题为主，辅以选科真题。",
+                    "解锁与修改设置时需要答题。",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 FxNotice(
-                    text = "确认后学段只能调高不能调低，锁机中不可更改。杜绝一眼出答案，请认真作答。",
+                    text = "确认后只能调高，锁机期间不可更改。",
                     tone = MaterialTheme.colorScheme.error,
                     icon = Icons.Default.Warning
                 )
@@ -145,7 +145,7 @@ fun GradeSettingCard() {
             if (grade != null) {
                 Text(
                     if (count < 0) "正在统计可出题量…"
-                    else "可出题量：约 $count 题（不足时自动借用低一年级的偏难题）",
+                    else "可出题量：约 $count 题",
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -153,7 +153,7 @@ fun GradeSettingCard() {
                 when {
                     locked -> "锁机中不能修改"
                     grade == GradeStore.Grade.COLLEGE -> "已是最高学段，高思维量题目为主"
-                    else -> "只能调高，不可调低；杜绝低龄秒答题"
+                    else -> "只能调高"
                 },
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

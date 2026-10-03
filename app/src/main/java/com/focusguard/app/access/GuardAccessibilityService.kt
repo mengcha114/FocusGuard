@@ -70,6 +70,34 @@ class GuardAccessibilityService : AccessibilityService() {
             "com.hihonor.assistant"
         )
 
+        /**
+         * 锁机期间禁止的「卸载 / 关闭权限」入口。
+         *
+         * 安全模式下第三方应用全部被禁用，本应用无法运行，用户可能借机卸载应用来破解；
+         * 有 Dhizuku 时靠 setUninstallBlocked（设备策略，安全模式下同样生效）拦截，
+         * 没有 Dhizuku 时只能拦界面入口：系统设置（应用信息/卸载）、安装器、各应用商店。
+         */
+        private val uninstallEntryPackages = listOf(
+            "com.android.settings",                  // 应用信息 → 卸载 / 强行停止 / 关无障碍
+            "com.android.packageinstaller",          // 卸载确认界面
+            "com.google.android.packageinstaller",
+            "com.android.permissioncontroller",      // 应用权限页
+            "com.miui.packageinstaller",
+            "com.miui.securitycenter",               // 小米安全中心（应用管理）
+            "com.coloros.safecenter",                // OPPO / 一加
+            "com.oplus.safecenter",
+            "com.vivo.permissionmanager",            // vivo
+            "com.iqoo.secure",
+            "com.huawei.systemmanager",              // 华为
+            "com.hihonor.systemmanager",             // 荣耀
+            "com.samsung.android.lool",              // 三星
+            "com.android.vending",                   // Google Play（可卸载）
+            "com.xiaomi.market",                     // 小米应用商店
+            "com.heytap.market",                     // OPPO 应用商店
+            "com.bbk.appstore",                      // vivo 应用商店
+            "com.huawei.appmarket"                   // 华为应用市场
+        )
+
         /** 命中即"侧边栏/悬浮类"系统界面：不止收起，还要顶回锁机页。 */
         private fun isSideBarPackage(pkg: String): Boolean =
             pkg.contains("smartwindow", ignoreCase = true) ||
@@ -202,6 +230,11 @@ class GuardAccessibilityService : AccessibilityService() {
         }
     }
 
+    /** 当前是否处于「锁机中且应当拦截」的状态。 */
+    private fun isLockActive(): Boolean = runCatching {
+        com.focusguard.app.data.LockState(this).shouldBlockNow
+    }.getOrDefault(false)
+
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString() ?: return
         // 自身界面（锁屏页/答题页/应用主界面）不拦截
@@ -211,6 +244,17 @@ class GuardAccessibilityService : AccessibilityService() {
         val isAssistant = pkg in voiceAssistantPackages
         val now = System.currentTimeMillis()
         if (!isAssistant && now - lastStateReassertAt < 300L) return
+
+        // 卸载 / 关权限入口：锁机期间一律顶回锁机页（没有 Dhizuku 时唯一手段）
+        if (pkg in uninstallEntryPackages && isLockActive()) {
+            Log.d(TAG, "锁机中检测到卸载/权限入口 $pkg，立即顶回")
+            try {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            } catch (e: Exception) {
+                Log.w(TAG, "顶回失败：${e.message}")
+            }
+            return
+        }
 
         // 系统界面：收起通知栏；侧边栏类（智慧多窗等）额外顶回
         if (pkg in blockedSystemPackages) {

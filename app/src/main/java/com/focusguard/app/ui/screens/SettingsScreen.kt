@@ -198,7 +198,7 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "命中敏感应用时仅记录一条「隐私保护」日志，判定为中性、不触发任何执法。API 密钥已使用系统级 AES 加密存储，不会以明文写入应用数据。",
+                text = "命中敏感应用时仅记录一条「隐私保护」日志，判定为中性、不触发任何执法。",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
@@ -610,9 +610,6 @@ fun SettingsScreen(
         // ═══════ 分组四：系统与调试 ═══════
         SettingsGroupHeader("系统与调试")
 
-        SettingsSection(title = "关于与题库出处", icon = Icons.Default.Info) {
-            com.focusguard.app.ui.components.AboutCard()
-        }
 
         // ── 调试与导出 ────────────────────────────────────────────
         SettingsSection(title = "调试", icon = Icons.Default.BugReport) {
@@ -849,8 +846,8 @@ fun SettingsScreen(
         // ── 降低限制的答题验证对话框（答错即换题、错 2 次冷却 5 分钟、换题 5 次） ──
         if (showVerifyDialog) {
             com.focusguard.app.ui.components.VerifyDialog(
-                title = "降低限制需先答题",
-                description = "你正在降低对自己的限制（如缩短锁机、调大间隔、修改白名单或检测配置）。为防止限制被随意解除，请先答对一道题。",
+                title = "放宽限制需先答题",
+                description = "你正在放宽限制，请先答对一道题。",
                 confirmText = "验证并保存",
                 onPassed = {
                     showVerifyDialog = false

@@ -151,18 +151,15 @@ class LockGuardService : Service() {
      */
     private fun checkForceStopped() {
         try {
-            val chargeOff = runCatching {
-                com.focusguard.app.data.Settings(applicationContext).countOffTimeInLock
-            }.getOrDefault(true)
-            val compensated = lockState.compensateGuardGap(chargeOff)
+            val compensated = lockState.compensateGuardGap()
             if (compensated > 0L && lockState.isLocked) {
                 Log.w(TAG, "检测到锁机期间守护曾中断（被杀 / 关机 / 安全模式），已补回 ${compensated / 1000}s")
                 val notification = android.app.Notification.Builder(
                     this, com.focusguard.app.FocusGuardApp.CHANNEL_ID
                 )
                     .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
-                    .setContentTitle("锁机期间守护曾中断，现已恢复")
-                    .setContentText("锁机中断的 ${compensated / 60_000 + 1} 分钟已补回锁机时长")
+                    .setContentTitle("守护曾被强制停止，现已恢复")
+                    .setContentText("被停止的 ${compensated / 60_000 + 1} 分钟已补回锁机时长")
                     .setAutoCancel(true)
                     .build()
                 getSystemService(NotificationManager::class.java).notify(1007, notification)
@@ -453,6 +450,11 @@ class LockGuardService : Service() {
         if (lockState.isLocked && com.focusguard.app.enhance.DhizukuUpgrade.pending) {
             com.focusguard.app.enhance.DhizukuUpgrade.tick(applicationContext) {
                 Log.d(TAG, "Dhizuku 已就绪，升级回系统级锁机")
+                // 重启后 Dhizuku 未就绪的这段空窗里「禁止卸载」是空的，就绪后立刻补上，
+                // 堵住「进安全模式卸载应用」的窗口期
+                com.focusguard.app.enhance.DhizukuEnhancer.setUninstallBlocked(applicationContext, true)
+                com.focusguard.app.enhance.DhizukuEnhancer.setUserControlDisabled(applicationContext, true)
+                uninstallBlocked = true
                 LockScreenActivity.show(applicationContext, forceActivity = true)
             }
         }

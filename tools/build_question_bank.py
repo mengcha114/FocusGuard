@@ -9,8 +9,8 @@ import collections, gzip, json, os, random, re, sys, urllib.request
 
 CACHE = sys.argv[1] if len(sys.argv) > 1 else "/tmp/qb"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "app/src/main/assets/question_bank.json.gz")
-LIC = os.path.join(ROOT, "app/src/main/assets/question_bank_LICENSE.txt")
+OUT = os.path.join(ROOT, "app/src/edu/assets/question_bank.json")
+LIC = os.path.join(ROOT, "app/src/edu/assets/question_bank_LICENSE.txt")
 TAL = "https://raw.githubusercontent.com/math-eval/TAL-SCQ5K/main/ch_single_choice_constructed_5K/"
 AGI = "https://raw.githubusercontent.com/ruixiangcui/AGIEval/main/data/v1/"
 os.makedirs(CACHE, exist_ok=True)
@@ -316,7 +316,9 @@ def main():
         drop["hard_cap"] += len(hard) - len(keep_hard)
         final += [x for x in rows if x["d"] < 3] + keep_hard
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with gzip.open(OUT, "wt", encoding="utf-8") as fp:
+    # 直接写未压缩 JSON：aapt 会把 .gz 资源改名（question_bank.json.gz -> question_bank.json），
+    # 曾因此导致运行时按原名打开失败、静默回退到计算题。
+    with open(OUT, "w", encoding="utf-8") as fp:
         json.dump(final, fp, ensure_ascii=False, separators=(",", ":"))
     open(LIC, "w", encoding="utf-8").write(
         "本应用答题题库整理自以下开源数据集（MIT License）：\n"

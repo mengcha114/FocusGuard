@@ -6,7 +6,8 @@ import org.json.JSONArray
 import java.util.zip.GZIPInputStream
 
 /**
- * 本地题库（assets/question_bank.json.gz，由 tools/build_question_bank.py 生成）。
+ * 本地题库（assets/question_bank.json，由 tools/build_question_bank.py 生成）。
+ * 注意：资源名不能带 .gz 后缀——aapt 会把它改名成 question_bank.json，导致按原名打开失败。
  *
  * 来源：TAL-SCQ5K（好未来）、AGIEval 高考部分（微软），均为 MIT 许可，
  * 出处见 assets/question_bank_LICENSE.txt。年级按题目真实来源判定，难度已筛除过易与过难。
@@ -50,10 +51,34 @@ object QuestionBank {
         }
     }
 
+    /** 题库资源名：优先未压缩 JSON；旧包名兼容 .gz（早期的构建产物）。 */
+    private val ASSET_NAMES = listOf("question_bank.json", "question_bank.json.gz")
+
+    /** 最近一次加载失败原因（设置页展示，避免「题库没生效」无从排查）。 */
+    @Volatile
+    var lastLoadError: String = ""
+        private set
+
     private fun load(context: Context): List<Item> {
-        val text = context.applicationContext.assets.open("question_bank.json.gz").use { raw ->
-            GZIPInputStream(raw).bufferedReader(Charsets.UTF_8).readText()
+        val assets = context.applicationContext.assets
+        var text: String? = null
+        var lastError: Throwable? = null
+        for (name in ASSET_NAMES) {
+            text = runCatching {
+                assets.open(name).use { raw ->
+                    val stream = if (name.endsWith(".gz")) GZIPInputStream(raw) else raw
+                    stream.bufferedReader(Charsets.UTF_8).readText()
+                }
+            }.onFailure { lastError = it }.getOrNull()
+            if (text != null) break
         }
+        if (text == null) {
+            lastLoadError = lastError?.message ?: "题库资源缺失"
+            android.util.Log.w("QuestionBank", "题库加载失败：$lastLoadError")
+            throw lastError ?: IllegalStateException("题库资源缺失")
+        }
+        lastLoadError = ""
+        val arr = JSONArray(text)
         val arr = JSONArray(text)
         return List(arr.length()) { i ->
             val o = arr.getJSONObject(i)

@@ -133,8 +133,6 @@ gacha
         // 敏感应用隐私保护（默认开启）：检测到银行/支付/密码管理等
         // 敏感应用时，本轮不截屏、不读屏幕文字、不上传任何内容。
         private const val KEY_PRIVACY_PROTECT = "privacy_protect"
-        /** 关机 / 安全模式期间是否补足锁机时长（默认开）。 */
-        private const val KEY_COUNT_OFF_TIME = "count_off_time_in_lock"
         // 用户自定义敏感应用列表（逗号/换行分隔，按包名或应用名片段匹配）。
         private const val KEY_SENSITIVE_APPS = "sensitive_apps"
     }
@@ -484,14 +482,6 @@ gacha
      * 本轮直接跳过：不截屏、不通过无障碍读屏幕文字、不发任何网络请求，
      * 只记录一条「隐私保护」日志。判定为中性，不会触发执法。
      */
-    /**
-     * 关机 / 安全模式期间是否把这段时间补回锁机（默认开启）。
-     * 关闭后：重启期间不计入，锁机时长按快照恢复。
-     */
-    var countOffTimeInLock: Boolean
-        get() = prefs.getBoolean(KEY_COUNT_OFF_TIME, true)
-        set(value) = prefs.edit().putBoolean(KEY_COUNT_OFF_TIME, value).apply()
-
     var privacyProtectEnabled: Boolean
         get() = prefs.getBoolean(KEY_PRIVACY_PROTECT, true)
         set(value) = prefs.edit().putBoolean(KEY_PRIVACY_PROTECT, value).apply()

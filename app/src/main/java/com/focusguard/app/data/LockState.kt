@@ -39,14 +39,10 @@ class LockState internal constructor(
         private const val KEY_SNAP_ELAPSED = "snap_elapsed"
         private const val KEY_SNAP_UPTIME = "snap_uptime"
 
-        /** 快照时刻的墙钟：跨重启（关机 / 安全模式往返）只能靠它测量时间差。 */
-        private const val KEY_SNAP_WALL = "snap_wall"
 
         /** 墙钟与单调钟偏差超过此值（毫秒）判定为时间篡改。 */
         const val TIME_TAMPER_THRESHOLD_MS = 3 * 60_000L
 
-        /** 跨重启补足的判定门限：墙钟差小于此值视为正常重启抖动，不补。 */
-        private const val OFF_GAP_THRESHOLD_MS = 60_000L
 
         /** 守护中断（按设备清醒时间计）超过此值才视为被杀并补回。 */
         const val KILL_GAP_THRESHOLD_MS = 10_000L
@@ -300,12 +296,10 @@ class LockState internal constructor(
                 .putLong(KEY_SNAP_PHASE_REMAINING, pomodoroPhaseRemainingMs)
                 .putLong(KEY_SNAP_ELAPSED, clock.elapsed())
                 .putLong(KEY_SNAP_UPTIME, clock.uptime())
-                .putLong(KEY_SNAP_WALL, clock.wall())
         } else {
             editor.putLong(KEY_SNAP_REMAINING, 0L)
                 .putLong(KEY_SNAP_ELAPSED, 0L)
                 .putLong(KEY_SNAP_UPTIME, 0L)
-                .putLong(KEY_SNAP_WALL, 0L)
         }
         editor.apply()
     }
@@ -317,32 +311,11 @@ class LockState internal constructor(
      *
      * @return 补回的毫秒数，0 表示无需补回
      */
-    fun compensateGuardGap(chargeOffTime: Boolean = true): Long {
+    fun compensateGuardGap(): Long {
         val snapElapsed = long(KEY_SNAP_ELAPSED)
         val snapRemaining = long(KEY_SNAP_REMAINING)
         if (snapElapsed <= 0L || snapRemaining <= 0L) return 0L
         val elapsedGap = clock.elapsed() - snapElapsed
-        // ── 跨重启：单调时钟归零，改用墙钟差补足 ──
-        // 覆盖两条路径：① 正常关机重启；② 进安全模式（第三方应用全部禁用，
-        // 本应用无法运行，回来时已是新的一次启动）。两者都让用户在锁机期间
-        // 白用了手机，因此回来后把这段时间补回锁机剩余时长——只会让锁更久，
-        // 改系统时间最多把补足量放大，不会缩短锁机（无安全风险）。
-        if (elapsedGap <= 0L || isStaleBoot(snapElapsed)) {
-            if (!chargeOffTime) return 0L
-            val snapWall = long(KEY_SNAP_WALL)
-            if (snapWall <= 0L) return 0L
-            val wallGap = clock.wall() - snapWall
-            if (wallGap < OFF_GAP_THRESHOLD_MS) return 0L
-            val extend = wallGap.coerceAtMost(MAX_EXTEND_MS)
-            val base = remainingMs
-            extendRemainingTo(base + extend)
-            if (pomodoroRunning) {
-                prefs.edit().putLong(KEY_POMODORO_PHASE_BASE,
-                    long(KEY_POMODORO_PHASE_BASE) + extend).apply()
-            }
-            writeSnapshot()
-            return extend
-        }
         val awakeGap = clock.uptime() - long(KEY_SNAP_UPTIME)
         if (awakeGap < KILL_GAP_THRESHOLD_MS) return 0L
         val extend = awakeGap.coerceAtMost(minOf(elapsedGap, MAX_EXTEND_MS))
