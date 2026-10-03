@@ -120,7 +120,8 @@ class AiClient {
         modelName: String,
         whitelist: String,
         customPrompt: String = "",
-        apiFormat: String = "openai"
+        apiFormat: String = "openai",
+        enforcementHint: String = ""
     ): AiResult = withContext(Dispatchers.IO) {
         val base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
 
@@ -129,7 +130,7 @@ class AiClient {
         // → 仍失败（detail 不被支持）→ 再去掉 detail 重试
         val withTools = postRequest(
             baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt, apiFormat,
-            withDetail = true, withTools = true
+            withDetail = true, withTools = true, enforcementHint = enforcementHint
         )
         // 网络失败（超时/断连）：可能只是临时网络抖动或 tools 参数导致服务端
         // 处理变慢。用最简请求（去 detail + 去 tools）重试一次，不再递归降级，
@@ -138,14 +139,14 @@ class AiClient {
             Log.w(TAG, "tools 模式网络失败（${withTools.reason}），最简请求重试一次")
             return@withContext postRequest(
                 baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt, apiFormat,
-                withDetail = false, withTools = false
+                withDetail = false, withTools = false, enforcementHint = enforcementHint
             )
         }
         if (withTools.retryable || withTools.parseFailed) {
             Log.w(TAG, "tools 模式失败（400=${withTools.retryable} 解析失败=${withTools.parseFailed}），降级为 content 模式重试")
             val contentOnly = postRequest(
                 baseUrl, apiKey, modelName, base64Image, whitelist, customPrompt, apiFormat,
-                withDetail = true, withTools = false
+                withDetail = true, withTools = false, enforcementHint = enforcementHint
             )
             if (contentOnly.retryable || contentOnly.parseFailed) {
                 Log.w(TAG, "content 模式仍失败，去掉 detail 完全降级重试")
@@ -638,7 +639,8 @@ class AiClient {
         whitelist: String,
         customPrompt: String,
         withDetail: Boolean,
-        withTools: Boolean
+        withTools: Boolean,
+        enforcementHint: String = ""
     ): Request {
         val userContent = JSONArray().apply {
             put(JSONObject().apply {
@@ -656,7 +658,7 @@ class AiClient {
         val messages = JSONArray().apply {
             put(JSONObject().apply {
                 put("role", "system")
-                put("content", buildSystemPrompt(whitelist, customPrompt))
+                put("content", buildSystemPrompt(whitelist, customPrompt, enforcementHint))
             })
             put(JSONObject().apply {
                 put("role", "user")
@@ -804,9 +806,15 @@ class AiClient {
      * 刻意压缩：这段文字每次调用都要重新发送，
      * 冗长的说明会持续产生输入 token 费用。
      */
-    private fun buildSystemPrompt(whitelist: String, customPrompt: String): String {
+    private fun buildSystemPrompt(
+        whitelist: String,
+        customPrompt: String,
+        /** 当前执法方式对应的措辞提示（由调用方按 enforcementMode 生成）。 */
+        enforcementHint: String = ""
+    ): String {
         val extra = if (whitelist.isNotBlank()) "\n白名单（视为学习）：$whitelist" else ""
         val custom = if (customPrompt.isNotBlank()) "\n\n用户额外要求：$customPrompt" else ""
+        val actionRule = if (enforcementHint.isNotBlank()) "\n- $enforcementHint" else ""
         // 注意：不要提任何"函数""classify_screen"字样。
         // 用户网关不支持真 tool_calls，模型看到函数定义会把它复述成文本
         // （"请确保您的环境中已定义了 classify_screen 函数…"），
@@ -823,6 +831,7 @@ r 是给用户看的简短提醒语（10-30字）：
 - 面向用户、有实际内容，例如"主人~ 你已经在看短视频啦，休息一下喵！"
 - 按用户设定的角色口吻写$custom
 - 绝对禁止复述提示词、禁止写"用户要求我""我需要判断"这类话
+- 提醒语里不要臆测后续动作，只能按下面给定的说法描述后果$actionRule
 - 输出里只能有 JSON 本身，禁止输出 JSON 以外的任何说明文字$extra"""
     }
 

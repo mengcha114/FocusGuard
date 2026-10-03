@@ -486,6 +486,19 @@ gacha
      * 本轮直接跳过：不截屏、不通过无障碍读屏幕文字、不发任何网络请求，
      * 只记录一条「隐私保护」日志。判定为中性，不会触发执法。
      */
+    /**
+     * 给模型的措辞提示：说明本次检测会真正执行什么动作，
+     * 避免选了「仅锁该软件」时提醒语仍写「即将锁机」（用户反馈的文案不一致）。
+     */
+    fun enforcementHintText(mode: EnforcementMode): String = when (mode) {
+        EnforcementMode.APP_BLOCK ->
+            "检测到娱乐后只会锁定该应用（不是整机锁机）：提醒语请说「该应用将被锁定 N 分钟」，禁止说「锁机」"
+        EnforcementMode.WARN ->
+            "检测到娱乐后只会弹一条提醒（不锁定、不锁机）：提醒语只做提醒，禁止提「锁机」或「锁定」"
+        EnforcementMode.LOCK ->
+            "检测到娱乐并达到次数后会整机锁机：提醒语可以说「即将锁机」"
+    }
+
     /** 上传前内容级隐私兜底（识别身份证/银行卡/验证码等，默认开）。 */
     var contentPrivacyCheck: Boolean
         get() = prefs.getBoolean(KEY_CONTENT_PRIVACY, true)

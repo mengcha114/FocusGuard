@@ -357,7 +357,9 @@ class DetectionPipeline(
                 modelName = settings.modelName,
                 whitelist = settings.whitelist,
                 customPrompt = effectivePrompt,
-                apiFormat = settings.apiFormat
+                apiFormat = settings.apiFormat,
+                // 告诉模型本次会真正执行什么，避免选了「仅锁该软件」却写成「锁机」
+                enforcementHint = com.focusguard.app.data.Settings.enforcementHintText(settings.enforcementMode)
             )
             tokenBudget.recordCall()
 

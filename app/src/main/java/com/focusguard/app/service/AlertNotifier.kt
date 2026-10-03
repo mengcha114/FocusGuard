@@ -34,13 +34,15 @@ object AlertNotifier {
      *
      * @param title 标题，如"⚠️ 检测到娱乐行为"
      * @param message 正文（AI 按角色口吻生成的提醒语）
-     * @param countdownSeconds >0 时在正文追加"N 秒后锁机"倒计时说明
+     * @param countdownSeconds >0 时在正文追加倒计时说明
+     * @param actionText 倒计时结束会做什么（按当前执法模式生成）
      */
     fun alertEntertainment(
         context: Context,
         title: String,
         message: String,
-        countdownSeconds: Int = 0
+        countdownSeconds: Int = 0,
+        actionText: String = "将自动锁机"
     ) {
         // ── 核心：像锁机页一样**直接拉起全屏提醒窗口** ──────
         // 通知横幅 / Full-Screen Intent 都依赖通知渠道与系统权限
@@ -51,7 +53,8 @@ object AlertNotifier {
                 context = context,
                 title = title,
                 message = message,
-                countdownSeconds = countdownSeconds
+                countdownSeconds = countdownSeconds,
+                actionText = actionText
             )
         } catch (e: Exception) {
             Log.w(TAG, "直接弹窗失败（可能非前台），退回通知：${e.message}")
@@ -73,7 +76,7 @@ object AlertNotifier {
                 if (countdownSeconds > 0) {
                     append("\n\n⏳ ")
                     append(countdownSeconds)
-                    append(" 秒后将自动锁机，现在切回学习即可避免")
+                    append(" 秒后$actionText，现在切回学习即可避免")
                 }
             }
 
@@ -86,6 +89,7 @@ object AlertNotifier {
                     putExtra("alert_title", title)
                     putExtra("alert_message", body)
                     putExtra("alert_countdown", countdownSeconds)
+                    putExtra("alert_action", actionText)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 },
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

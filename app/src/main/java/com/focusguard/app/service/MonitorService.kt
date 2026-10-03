@@ -40,6 +40,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 前台守护服务：周期性执行三级检测，并在判定为娱乐时执法。
@@ -655,6 +656,89 @@ class MonitorService : Service() {
     }
 
     /**
+     * 宽限期结束时真正会执行的动作，用于提醒文案。
+     * 选了「仅锁该软件」就说"锁定「应用名」"，不再一律写"锁机"。
+     */
+    private fun pendingActionText(outcome: DetectionOutcome): String =
+        when (settings.enforcementMode) {
+            com.focusguard.app.data.Settings.EnforcementMode.APP_BLOCK ->
+                if (outcome.appLabel.isNotBlank()) "将锁定「${outcome.appLabel}」" else "将锁定该应用"
+            com.focusguard.app.data.Settings.EnforcementMode.WARN -> "只会再提醒一次"
+            else -> "将自动锁机"
+        }
+
+    /**
+     * 宽限期复检：用户是否已经切回学习状态。
+     *
+     * 三级判定，任何一级命中即视为已收手：
+     * ① 前台应用是学习/办公类（换应用）；
+     * ② 屏幕文字命中学习特征词（同一应用内换内容，如视频 App 的学习频道）；
+     * ③ [deep] 为 true 时让 AI 看一次当前画面（仅宽限结束时做一次，受配额限制）。
+     */
+    private suspend fun hasSwitchedToStudy(deep: Boolean): Boolean {
+        // ① 应用级
+        val fg = AppClassifier.classifyForegroundApp(this, categoryStore)
+        if (fg != null && AppClassifier.classifyByAppInfo(fg) == "STUDY_WORK") return true
+
+        // ② 屏幕文字（本地）
+        val text = runCatching {
+            com.focusguard.app.detection.ScreenTextReader.readCurrentScreenText()
+        }.getOrNull()
+        if (!text.isNullOrBlank()) {
+            when (AppClassifier.classifyByScreenText(
+                text, settings.studyKeywordList(), settings.entertainmentKeywordList()
+            )) {
+                "STUDY_WORK" -> {
+                    Log.d(TAG, "屏幕文字命中学习特征，视为已切回学习")
+                    return true
+                }
+                // 文字已明确是娱乐内容：不必再花一次 AI 调用
+                "ENTERTAINMENT" -> {
+                    Log.d(TAG, "屏幕文字仍为娱乐内容，不做深度复检")
+                    return false
+                }
+            }
+        }
+
+        // ③ 深度：AI 看一眼当前画面
+        if (deep) {
+            val projection = mediaProjection
+            val capturer = screenCapturer
+            if (projection != null && capturer != null && tokenBudget.canCallAi()) {
+                val capture = runCatching { capturer.capture(projection) }.getOrNull()
+                if (capture != null) {
+                    val key = settings.apiKey
+                    if (key.isNotBlank()) {
+                        val result = runCatching {
+                            aiClient.analyzeScreen(
+                                imageBytes = capture.jpegBytes,
+                                baseUrl = settings.apiBaseUrl,
+                                apiKey = key,
+                                modelName = settings.modelName,
+                                whitelist = settings.whitelist,
+                                customPrompt = settings.aiCustomPrompt,
+                                apiFormat = settings.apiFormat,
+                                enforcementHint = com.focusguard.app.data.Settings
+                                    .enforcementHintText(settings.enforcementMode)
+                            )
+                        }.getOrNull()
+                        tokenBudget.recordCall()
+                        capture.close()
+                        if (result != null &&
+                            result.classification == "STUDY_WORK" &&
+                            result.confidence >= settings.confidenceThreshold
+                        ) {
+                            Log.d(TAG, "AI 复检为学习状态，视为已切回学习")
+                            return true
+                        }
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    /**
      * 达到执法条件时的处理：先弹横幅提醒 + 宽限期，再真正锁机。
      *
      * 宽限期内用户切回学习类应用即可免锁——由 [gracePeriodJob] 复检前台应用。
@@ -666,7 +750,8 @@ class MonitorService : Service() {
         if (delaySeconds <= 0) {
             AlertNotifier.alertEntertainment(
                 context = this,
-                title = "🔒 已锁机",
+                title = if (settings.enforcementMode == com.focusguard.app.data.Settings.EnforcementMode.APP_BLOCK)
+                    "🔒 已锁定该应用" else "🔒 已锁机",
                 message = outcome.reason
             )
             return doEnforce(outcome)
@@ -677,49 +762,82 @@ class MonitorService : Service() {
             context = this,
             title = "⚠️ 检测到娱乐行为",
             message = outcome.reason,
-            countdownSeconds = delaySeconds
+            countdownSeconds = delaySeconds,
+            actionText = pendingActionText(outcome)
         )
 
-        // 宽限期结束后复检：仍在娱乐 → 锁机；已收手 → 免锁
+        // 宽限期内轮询复检 + 结束时深度复检：只要已经切回学习状态就免执法。
+        // 「切回学习」不限于换应用——同一个应用内换到学习内容（例如视频 App 的
+        // 游戏频道切到学习频道）同样算，因此判定分三级：
+        //   ① 前台应用本身是学习/办公类 → 直接免
+        //   ② 屏幕文字命中学习特征词（本地，零成本，每 2 秒轮询）→ 免
+        //   ③ 到期前若干秒**提前**发起一次 AI 复检（AI 有网络延迟，等结束再问
+        //      就来不及了），到点时直接用已经拿到的结果
         gracePeriodJob?.cancel()
         gracePeriodJob = serviceScope.launch {
+            val totalMs = delaySeconds * 1000L
+            // 提前量：最多 6 秒，窗口本身就短时取一半，保证有足够时间等 AI 返回
+            val leadMs = minOf(6_000L, totalMs / 2)
+            var deepVerdict: Boolean? = null
+            var deepJob: Job? = null
             try {
-                delay(delaySeconds * 1000L)
-                // 复检前台应用类别：已切到学习/中性应用则放行
-                val fg = AppClassifier.classifyForegroundApp(this@MonitorService, categoryStore)
-                val stillEntertainment = fg == null ||
-                    AppClassifier.classifyByAppInfo(fg) != "STUDY_WORK"
+                var waitedMs = 0L
+                var switched = false
+                while (waitedMs < totalMs) {
+                    delay(2_000L)
+                    waitedMs += 2_000L
+                    // ② 本地判定：任何时刻命中学习就立即免执法
+                    if (hasSwitchedToStudy(deep = false)) {
+                        switched = true
+                        break
+                    }
+                    // ③ 进入提前量窗口：只发起一次 AI 复检，结果留到到点时用
+                    if (deepJob == null && waitedMs >= totalMs - leadMs) {
+                        deepJob = serviceScope.launch { deepVerdict = hasSwitchedToStudy(deep = true) }
+                    }
+                }
+                if (!switched && deepJob != null) {
+                    // 到点：最多再等 3 秒收尾（正常早已返回），拿不到就按"仍在娱乐"处理
+                    withTimeoutOrNull(3_000L) { deepJob?.join() }
+                }
+                switched = switched || deepVerdict == true
 
-                if (!stillEntertainment) {
-                    Log.d(TAG, "宽限期内已切回学习状态，免除锁机")
+                if (switched) {
+                    Log.d(TAG, "宽限期内已切回学习状态，免除本次执法")
                     AlertNotifier.cancelAlert(this@MonitorService)
+                    val fgLabel = AppClassifier.classifyForegroundApp(this@MonitorService, categoryStore)
+                        ?.label.orEmpty()
                     logStore.addLog(
                         DetectionLog(
                             classification = "STUDY_WORK",
                             confidence = 1f,
-                            reason = "宽限期内主动切回学习状态，免除锁机",
+                            reason = if (settings.enforcementMode == com.focusguard.app.data.Settings.EnforcementMode.APP_BLOCK)
+                                "宽限期内切回学习内容，免除本次应用锁定"
+                            else "宽限期内切回学习内容，免除本次锁机",
                             action = "NONE",
                             source = DetectionSource.APP_CATEGORY.name,
-                            appLabel = fg?.label.orEmpty()
+                            appLabel = fgLabel.ifBlank { outcome.appLabel }
                         )
                     )
                     return@launch
                 }
 
-                Log.d(TAG, "宽限期结束仍在娱乐，执行锁机")
+                Log.d(TAG, "宽限期结束仍在娱乐，执行执法")
                 AlertNotifier.alertEntertainment(
                     context = this@MonitorService,
-                    title = "🔒 已锁机",
+                    title = if (settings.enforcementMode == com.focusguard.app.data.Settings.EnforcementMode.APP_BLOCK)
+                        "🔒 已锁定该应用" else "🔒 已锁机",
                     message = outcome.reason
                 )
                 val enforceAction = doEnforce(outcome)
                 // 补记执法日志：宽限期路径在 performDetection 里记录的是"警告"，
-                // 真正锁机发生在这里——不补记的话用户会看到"明明锁机了日志却显示警告"
+                // 真正执法发生在这里——不补记的话用户会看到"明明锁了日志却显示警告"
                 logStore.addLog(
                     DetectionLog(
                         classification = outcome.classification,
                         confidence = outcome.confidence,
-                        reason = "宽限期结束仍在娱乐，已执行锁机",
+                        reason = if (settings.enforcementMode == com.focusguard.app.data.Settings.EnforcementMode.APP_BLOCK)
+                            "宽限期结束仍在娱乐，已锁定该应用" else "宽限期结束仍在娱乐，已执行锁机",
                         action = enforceAction, // LOCK / APP_BLOCK
                         source = outcome.source.name,
                         appLabel = outcome.appLabel

@@ -47,13 +47,25 @@ class AlertActivity : ComponentActivity() {
         private const val EXTRA_TITLE = "alert_title"
         private const val EXTRA_MESSAGE = "alert_message"
         private const val EXTRA_COUNTDOWN = "alert_countdown"
+        private const val EXTRA_ACTION = "alert_action"
 
-        fun show(context: Context, title: String, message: String, countdownSeconds: Int = 0) {
+        /**
+         * @param actionText 倒计时结束会做什么（如"将自动锁机"/"将锁定「哔哩哔哩」"），
+         *   由调用方按当前执法模式生成，避免选了「仅锁该软件」却写「将自动锁机」
+         */
+        fun show(
+            context: Context,
+            title: String,
+            message: String,
+            countdownSeconds: Int = 0,
+            actionText: String = "将自动锁机"
+        ) {
             try {
                 val intent = Intent(context, AlertActivity::class.java).apply {
                     putExtra(EXTRA_TITLE, title)
                     putExtra(EXTRA_MESSAGE, message)
                     putExtra(EXTRA_COUNTDOWN, countdownSeconds)
+                    putExtra(EXTRA_ACTION, actionText)
                     addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
                             Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -95,6 +107,7 @@ class AlertActivity : ComponentActivity() {
                 title = title,
                 message = message,
                 countdownSeconds = countdown,
+                actionText = intent.getStringExtra(EXTRA_ACTION) ?: "将自动锁机",
                 onDismiss = { finish() },
                 onOpenApp = {
                     try {
@@ -126,6 +139,7 @@ private fun AlertCard(
     title: String,
     message: String,
     countdownSeconds: Int,
+    actionText: String,
     onDismiss: () -> Unit,
     onOpenApp: () -> Unit
 ) {
@@ -199,7 +213,7 @@ private fun AlertCard(
                         color = palette.accent.copy(alpha = 0.14f)
                     ) {
                         Text(
-                            text = "$countdownSeconds 秒后将自动锁机，现在切回学习即可避免",
+                            text = "$countdownSeconds 秒后$actionText，现在切回学习即可避免",
                             fontSize = 12.sp,
                             color = palette.accent,
                             textAlign = TextAlign.Center,
