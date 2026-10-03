@@ -192,16 +192,42 @@ object LockPolicies {
         }
     }
 
-    /** 设置页「立即解冻」：两条路径都试一次，成功才算解开。 */
-    fun forceUnfreeze(context: Context): Boolean {
+    /**
+     * 设置页的「强制解冻」，由用户自己选路径。
+     *
+     * 挂起状态是按**施加者**记录的：当初用 Dhizuku 冻结的，用 Shizuku 的
+     * `pm unsuspend` 会返回成功但解不开。所以 [by] 传 "dhizuku" / "shizuku"
+     * 时只用那一条；传 null 或其他值则两条都试。选定的那条没解开时自动补试
+     * 另一条，并把真正生效的施加者写回记录。
+     *
+     * @return 是否（经 PackageManager 验证）已全部解开
+     */
+    fun forceUnfreeze(context: Context, by: String? = null): Boolean {
         val app = context.applicationContext
         val p = prefs(app)
         val suspended = p.getStringSet(KEY_SUSPENDED, emptySet()).orEmpty()
         if (suspended.isEmpty()) return true
-        DhizukuEnhancer.setPackagesSuspended(app, suspended, false)
-        ShizukuEnhancer.suspendPackages(suspended, false)
-        val ok = !stillSuspended(app, suspended)
-        if (ok) p.edit().putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "").commit()
+        val only: String? = when (by) {
+            "dhizuku", "shizuku" -> by
+            else -> null
+        }
+        if (only == null || only == "dhizuku") {
+            DhizukuEnhancer.setPackagesSuspended(app, suspended, false)
+        }
+        if (only == null || only == "shizuku") {
+            ShizukuEnhancer.suspendPackages(suspended, false)
+        }
+        var ok = !stillSuspended(app, suspended)
+        if (!ok && only != null) {
+            val other = if (only == "dhizuku") "shizuku" else "dhizuku"
+            if (other == "dhizuku") DhizukuEnhancer.setPackagesSuspended(app, suspended, false)
+            else ShizukuEnhancer.suspendPackages(suspended, false)
+            ok = !stillSuspended(app, suspended)
+            if (ok) p.edit().putString(KEY_SUSPENDED_BY, other).commit()
+        }
+        if (ok) {
+            p.edit().putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "").commit()
+        }
         return ok
     }
 

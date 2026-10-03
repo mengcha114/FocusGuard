@@ -93,18 +93,59 @@ fun ShizukuStatusCard() {
         StatusRow("Dhizuku（系统级锁机）", dzReady, DhizukuEnhancer.lastError.ifBlank { "已就绪" })
         StatusRow("无障碍服务", a11y, if (a11y) "已开启" else "未开启（锁机拦截失效）")
         StatusRow("使用情况访问", usage, if (usage) "已授权" else "未授权（无法识别前台应用）")
+        // 强制解冻：由用户选路径。挂起是按施加者记录的，选对了才解得开。
+        fun runUnfreeze(by: String?) {
+            Thread {
+                val ok = LockPolicies.forceUnfreeze(context.applicationContext, by)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(
+                        context,
+                        if (ok) "已解冻" else "仍未解开：请确认 Dhizuku 已就绪 / Shizuku 已启动，再试一次",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    tick++
+                }
+            }.start()
+        }
+        var showUnfreezeDialog by remember { mutableStateOf(false) }
         if (frozen > 0) {
             Text(
                 "冻结中：$frozen 个应用。正常应在锁机结束后自动解冻；" +
-                    "若一直没解开，点下面「立即解冻」，或先让 Dhizuku / Shizuku 可用",
+                    "若一直没解开，点下面「强制解冻」并选择路径",
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.error
             )
-            OutlinedButton(onClick = {
-                Thread {
-                    com.focusguard.app.enhance.LockPolicies.forceUnfreeze(context.applicationContext)
-                    android.os.Handler(android.os.Looper.getMainLooper()).post { tick++ }
-                }.start()
-            }) { Text("立即解冻") }
+            OutlinedButton(onClick = { showUnfreezeDialog = true }) { Text("强制解冻") }
+            if (showUnfreezeDialog) {
+                AlertDialog(
+                    onDismissRequest = { showUnfreezeDialog = false },
+                    title = { Text("强制解冻 $frozen 个应用") },
+                    text = {
+                        Text(
+                            "挂起状态是按「施加者」记录的：当初用 Dhizuku 冻结的，就得用 Dhizuku 解" +
+                                "（Shizuku 的 pm unsuspend 会返回成功但解不开）。不确定就选「两条都试」。"
+                        )
+                    },
+                    confirmButton = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = {
+                                showUnfreezeDialog = false; runUnfreeze("dhizuku")
+                            }) { Text("用 Dhizuku") }
+                            TextButton(onClick = {
+                                showUnfreezeDialog = false; runUnfreeze("shizuku")
+                            }) { Text("用 Shizuku") }
+                            TextButton(onClick = {
+                                showUnfreezeDialog = false; runUnfreeze(null)
+                            }) { Text("两条都试") }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showUnfreezeDialog = false }) {
+                            Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    },
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+                )
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
