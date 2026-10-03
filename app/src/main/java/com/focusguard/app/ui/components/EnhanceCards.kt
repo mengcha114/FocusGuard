@@ -85,8 +85,18 @@ fun ShizukuStatusCard() {
     val dzReady = remember(tick) { DhizukuEnhancer.isReady() }
     val a11y = remember(tick) { com.focusguard.app.util.PermissionChecker.isAccessibilityEnabled(context) }
     val usage = remember(tick) { com.focusguard.app.util.PermissionChecker.isUsageStatsGranted(context) }
-    // 锁机期冻结 + AI 对话手动冻结一起显示
-    val frozen = remember(tick) { LockPolicies.allFrozen(context).size }
+    // 锁机期冻结 + AI 对话手动冻结一起显示。
+    // 枚举已安装应用、取应用标签都是 IO，放到后台线程算，避免卡住设置页组合线程。
+    var frozenCount by remember { mutableIntStateOf(0) }
+    var suspendedList by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(tick) {
+        val app = context.applicationContext
+        val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            LockPolicies.allFrozen(app).size to LockPolicies.suspendedOnDevice(app)
+        }
+        frozenCount = result.first
+        suspendedList = result.second
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         StatusRow("Shizuku 服务", online, if (online) "已连接" else "未安装或未启动")
@@ -94,24 +104,36 @@ fun ShizukuStatusCard() {
         StatusRow("Dhizuku（系统级锁机）", dzReady, DhizukuEnhancer.lastError.ifBlank { "已就绪" })
         StatusRow("无障碍服务", a11y, if (a11y) "已开启" else "未开启（锁机拦截失效）")
         StatusRow("使用情况访问", usage, if (usage) "已授权" else "未授权（无法识别前台应用）")
+        // AI 对话下达的冻结属于「放宽需答题」的范围：设置页解冻同样要先答题，
+        // 否则这里的「强制解冻 / 全部解冻」就成了绕过答题的后门。
+        fun needsQuiz(): Boolean = runCatching {
+            LockPolicies.hasPersistentFreeze(context.applicationContext)
+        }.getOrDefault(false)
+        var pendingUnfreezeAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+        fun guardedUnfreeze(action: () -> Unit) {
+            if (needsQuiz()) pendingUnfreezeAction = action else action()
+        }
+
         // 强制解冻：由用户选路径。挂起是按施加者记录的，选对了才解得开。
         fun runUnfreeze(by: String?) {
-            Thread {
-                val ok = LockPolicies.forceUnfreeze(context.applicationContext, by)
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    android.widget.Toast.makeText(
-                        context,
-                        if (ok) "已解冻" else "仍未解开：请确认 Dhizuku 已就绪 / Shizuku 已启动，再试一次",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
-                    tick++
-                }
-            }.start()
+            guardedUnfreeze {
+                Thread {
+                    val ok = LockPolicies.forceUnfreeze(context.applicationContext, by)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        android.widget.Toast.makeText(
+                            context,
+                            if (ok) "已解冻" else "仍未解开：请确认 Dhizuku 已就绪 / Shizuku 已启动，再试一次",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                        tick++
+                    }
+                }.start()
+            }
         }
         var showUnfreezeDialog by remember { mutableStateOf(false) }
-        if (frozen > 0) {
+        if (frozenCount > 0) {
             Text(
-                "冻结中：$frozen 个应用。正常应在锁机结束后自动解冻；" +
+                "冻结中：$frozenCount 个应用。正常应在锁机结束后自动解冻；" +
                     "若一直没解开，点下面「强制解冻」并选择路径",
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.error
             )
@@ -119,7 +141,7 @@ fun ShizukuStatusCard() {
             if (showUnfreezeDialog) {
                 AlertDialog(
                     onDismissRequest = { showUnfreezeDialog = false },
-                    title = { Text("强制解冻 $frozen 个应用") },
+                    title = { Text("强制解冻 $frozenCount 个应用") },
                     text = {
                         Text(
                             "挂起状态是按「施加者」记录的：当初用 Dhizuku 冻结的，就得用 Dhizuku 解" +
@@ -149,26 +171,27 @@ fun ShizukuStatusCard() {
             }
         }
         // 记录之外的兜底：系统里真正处于挂起状态的应用（旧版本可能把记录清掉了）
-        val stillSuspended = remember(tick) { LockPolicies.suspendedOnDevice(context) }
-        if (stillSuspended.isNotEmpty()) {
+        if (suspendedList.isNotEmpty()) {
             Text(
-                "检测到 ${stillSuspended.size} 个应用仍处于系统挂起状态（冻结记录可能已丢失）。" +
+                "检测到 ${suspendedList.size} 个应用仍处于系统挂起状态（冻结记录可能已丢失）。" +
                     "点「全部解冻」一次性解开",
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.error
             )
             OutlinedButton(onClick = {
-                Thread {
-                    val (freed, left) = LockPolicies.forceUnfreezeAllSuspended(context.applicationContext)
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        android.widget.Toast.makeText(
-                            context,
-                            if (left == 0) "已解冻 $freed 个应用"
-                            else "解开 $freed 个，仍有 $left 个：请确认 Dhizuku / Shizuku 可用后重试",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
-                        tick++
-                    }
-                }.start()
+                guardedUnfreeze {
+                    Thread {
+                        val (freed, left) = LockPolicies.forceUnfreezeAllSuspended(context.applicationContext)
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            android.widget.Toast.makeText(
+                                context,
+                                if (left == 0) "已解冻 $freed 个应用"
+                                else "解开 $freed 个，仍有 $left 个：请确认 Dhizuku / Shizuku 可用后重试",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                            tick++
+                        }
+                    }.start()
+                }
             }) { Text("全部解冻") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -180,6 +203,23 @@ fun ShizukuStatusCard() {
                 enabled = granted
             ) { Text("一键修复权限") }
             OutlinedButton(onClick = { tick++ }) { Text("刷新状态") }
+        }
+
+        // AI 对话下达的冻结：解除必须先答题（与设置里「放宽限制」同一套规则）
+        pendingUnfreezeAction?.let { action ->
+            com.focusguard.app.ui.components.VerifyDialog(
+                title = "解冻需要先答题",
+                description = "冻结是 AI 对话下达的（或你手动标过），解除需要先答对一道题。" +
+                    "本题由应用本地题库按你的年级「" +
+                    com.focusguard.app.data.GradeStore(context).effective.label +
+                    "」出题，与 AI 无关；答错立即换题，错 2 次要等 5 分钟。",
+                confirmText = "验证并解冻",
+                onPassed = {
+                    pendingUnfreezeAction = null
+                    action()
+                },
+                onCancel = { pendingUnfreezeAction = null }
+            )
         }
     }
 }

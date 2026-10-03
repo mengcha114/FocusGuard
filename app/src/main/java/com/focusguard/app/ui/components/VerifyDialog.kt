@@ -86,9 +86,13 @@ fun VerifyDialog(
         nextQuestion()
     }
 
+    // 防重入：答对后回调里可能触发重组，同一帧内再点一次会重复执行放宽动作
+    var passed by remember { mutableStateOf(false) }
+
     fun submit(value: String) {
-        if (cooling || value.isBlank()) return
+        if (passed || cooling || value.isBlank()) return
         if (generator.isAnswerCorrect(value, question.answer)) {
+            passed = true
             guard.recordCorrect()
             guard.resetSession()
             onPassed()
@@ -105,7 +109,7 @@ fun VerifyDialog(
             delay(1000L)
             secondsLeft--
         }
-        recordWrongAndNext(timeout = true)
+        if (!passed) recordWrongAndNext(timeout = true)
     }
 
     val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.55f).dp

@@ -168,6 +168,7 @@ class GuardAccessibilityService : AccessibilityService() {
             val winPkg = event.packageName?.toString().orEmpty()
             if (winPkg.isNotBlank()) {
                 lastWindowPackage = winPkg
+                lastWindowPackageAt = System.currentTimeMillis()
                 if (winPkg != packageName && !isLockActive()) interceptIfBlocked(winPkg)
             }
         }
@@ -252,12 +253,34 @@ class GuardAccessibilityService : AccessibilityService() {
      * 此前那种情况下隐私保护会因为「包名为空」而被跳过，可能把银行/支付界面
      * 的文字与截图发出去。这里补一个来源，两者都不确定时由检测管线直接跳过本轮。
      */
+    /**
+     * 仅在窗口信息足够新时返回包名。
+     *
+     * [currentWindowPackage] 的兜底值可能已经过期（例如用户已回桌面）——
+     * 用它当「前台候选」去拉起封锁页，会把封锁页盖到桌面上。
+     * 这里要求兜底值必须来自最近 [maxAgeMs] 内的窗口事件。
+     */
+    fun freshWindowPackage(maxAgeMs: Long = 3_000L): String? {
+        val live = try {
+            rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            null
+        }
+        if (live != null) return live
+        val pkg = lastWindowPackage ?: return null
+        val age = System.currentTimeMillis() - lastWindowPackageAt
+        return pkg.takeIf { it.isNotBlank() && age in 0..maxAgeMs }
+    }
+
     fun currentWindowPackage(): String? = try {
         rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }
             ?: lastWindowPackage
     } catch (e: Exception) {
         lastWindowPackage
     }
+
+    /** 最近一次窗口事件时刻（判断窗口包名是否还新鲜）。 */
+    @Volatile private var lastWindowPackageAt = 0L
 
     private var lastBlockInterceptAt = 0L
     private var burstToken = 0
@@ -292,7 +315,7 @@ class GuardAccessibilityService : AccessibilityService() {
                 // 用户可能已经退回桌面：只有在仍处于该应用时才补发，
                 // 否则封锁页会盖在桌面上（比"晚一点才挡"更烦人）
                 if (token != burstToken) return@postDelayed
-                if (currentWindowPackage() != pkg) return@postDelayed
+                if (freshWindowPackage() != pkg) return@postDelayed
                 if (runCatching { isBlockedNow(pkg) }.getOrDefault(false)) showAppBlock(pkg)
             }, delayMs)
         }

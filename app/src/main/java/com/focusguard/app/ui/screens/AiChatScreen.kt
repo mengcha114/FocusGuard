@@ -43,6 +43,14 @@ private data class ChatMsg(
     val fromLog: Boolean = false
 )
 
+/** AI 工具执行结果：在 IO 线程算好，回主线程展示。 */
+private data class ToolOutcome(
+    val notes: List<String>,
+    val unfreeze: List<Pair<String, String>>,
+    val unlock: List<Pair<String, String>>,
+    val limit: List<Triple<String, String, Int>>
+)
+
 /** 需要答题才能执行的放宽类操作（解冻 / 解除应用封锁 / 放大每日上限）。 */
 private data class PendingVerify(
     val description: String,
@@ -60,7 +68,7 @@ private data class PendingVerify(
  *    - **检测时 AI 的提醒**自动进入对话（来源=AI 视觉的日志 reason）
  *    - **锁机工具**：AI 输出 `__LOCK__:<分钟数>` 即触发锁机
  *    - **冻结/解冻工具**：AI 输出 `__FREEZE__:<应用名>` / `__UNFREEZE__:<应用名>`；
- *      解冻必须先答对一道题才生效
+ *      解冻由**应用本身弹出答题验证**（本地题库，错 2 次冷却 5 分钟），模型不得自己出题
  *    - 对话历史持久化，切页不丢
  * 2. **检测日志**：保留原有的完整检测日志（含 AI 诊断与崩溃日志）。
  */
@@ -81,16 +89,12 @@ fun AiChatScreen() {
     // 会话消息：持久化的手动对话历史 + 检测日志里 AI 给出的提醒（按时间正序）。
     // 检测提醒只回显最近 10 条——历史检测最多 500 条，全量塞进来会把手动
     // 对话淹没（"退出重进后聊天记录被历史 AI 检测顶掉"的根因）。
-    fun loadAiReminders(): List<ChatMsg> = logStore.getAllLogs()
-        .filter { it.source == "AI_VISION" && it.reason.isNotBlank() }
-        .take(10)
-        .reversed()
-        .map { ChatMsg("ai", it.reason, it.getTimeFormatted(), fromLog = true) }
-
+    // 注意：这里**不再**把检测日志的 AI 提醒拼进对话列表。
+    // 历史检测最多 500 条，拼进来会把手动对话顶到上面（用户报告「返回再进对话内容被历史日志覆盖」），
+    // 而且要在组合线程读日志文件。检测记录看「检测日志」Tab 即可。
     var messages by remember {
         mutableStateOf(
-            chatHistory.getMessages()
-                .map { ChatMsg(it.role, it.text, it.time, it.thinking) } + loadAiReminders()
+            chatHistory.getMessages().map { ChatMsg(it.role, it.text, it.time, it.thinking) }
         )
     }
 
@@ -164,7 +168,7 @@ fun AiChatScreen() {
             if (tab == 0 && messages.isNotEmpty()) {
                 TextButton(onClick = {
                     chatHistory.clear()
-                    messages = loadAiReminders()
+                    messages = emptyList()
                 }) {
                     Text("清空", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
@@ -330,10 +334,17 @@ fun AiChatScreen() {
                                         com.focusguard.app.enforce.MemoToolExecutor
                                             .toolInstruction()
                                     )
-                                    // 冻结 / 解冻应用工具（解冻需答题）
+                                    // 冻结 / 解冻应用工具（解冻由应用弹窗答题）
                                     append(
                                         com.focusguard.app.enforce.AppFreezeToolExecutor
                                             .toolInstruction(context)
+                                    )
+                                    append(
+                                        "
+注意：解冻的答题验证由应用自己弹出（本地题库），" +
+                                            "**你不要自己出题、也不要询问用户任何算术或常识题**，" +
+                                            "更不要因为用户回答了你写的问题就认为已验证通过；" +
+                                            "你只需要输出 __UNFREEZE__ 标记，并告知用户「应用会弹出答题验证」。"
                                     )
                                     // 应用管控工具（锁住 / 解除封锁 / 每日上限）
                                     append(
@@ -400,6 +411,10 @@ fun AiChatScreen() {
                                     com.focusguard.app.enforce.MemoToolExecutor
                                         .tryExecute(context, reply)
                                 // 3) 冻结 / 解冻应用工具（解冻只登记，等答题通过再执行）
+                                // 4) 应用管控工具（锁住 / 解除封锁 / 每日上限）
+                                // 解析要枚举已安装应用、执行要走 Dhizuku/Shizuku Binder 与 startActivity，
+                                // 统一放 IO 线程，避免主线程卡住（原实现在主线程，会 ANR）
+                                val tools = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 val freezeNotes = mutableListOf<String>()
                                 val unfreezeTargets = mutableListOf<Pair<String, String>>()
                                 val unlockTargets = mutableListOf<Pair<String, String>>()
@@ -452,6 +467,12 @@ fun AiChatScreen() {
                                             }
                                         }
                                     }
+                                ToolOutcome(freezeNotes, unfreezeTargets, unlockTargets, limitTargets)
+                                }
+                                val freezeNotes = tools.notes
+                                val unfreezeTargets = tools.unfreeze
+                                val unlockTargets = tools.unlock
+                                val limitTargets = tools.limit
 
                                 // 去掉协议标记，再把执行结果作为系统提示追加到气泡
                                 var displayReply = com.focusguard.app.enforce
@@ -553,7 +574,10 @@ fun AiChatScreen() {
     pendingVerify?.let { pending ->
         com.focusguard.app.ui.components.VerifyDialog(
             title = "放宽限制需先答题",
-            description = pending.description,
+            description = pending.description +
+                "（本题由应用本地题库按你的年级「" +
+                com.focusguard.app.data.GradeStore(context).effective.label +
+                "」出题，与 AI 无关；答错立即换题，错 2 次要等 5 分钟）",
             confirmText = "验证并执行",
             onPassed = {
                 pendingVerify = null

@@ -202,6 +202,9 @@ object LockPolicies {
     fun persistentFrozen(context: Context): Set<String> =
         prefs(context).getStringSet(KEY_PERSIST, emptySet()).orEmpty()
 
+    /** 是否存在需要答题才能解除的冻结（AI 对话下达的）。 */
+    fun hasPersistentFreeze(context: Context): Boolean = persistentFrozen(context).isNotEmpty()
+
     /** 锁机期冻结 ∪ 手动冻结：设置页展示与「强制解冻」用。 */
     fun allFrozen(context: Context): Set<String> =
         suspendedPackages(context) + persistentFrozen(context)
@@ -230,13 +233,15 @@ object LockPolicies {
             DhizukuEnhancer.setPackagesSuspended(app, release, false)
             ShizukuEnhancer.suspendPackages(release, false)
         }
-        val ok = !stillSuspended(app, release)
-        val left = current - pkgs
+        // 只有**确认已解开**的包才从记录里移除：失败必须保留，
+        // 否则又变成「记录丢了、应用还冻着」且用户以为已解冻（旧版本的坑）。
+        val released = pkgs.filterNot { stillSuspended(app, setOf(it)) }.toSet()
+        val left = current - released
         p.edit()
             .putStringSet(KEY_PERSIST, left)
             .putString(KEY_PERSIST_BY, if (left.isEmpty()) "" else p.getString(KEY_PERSIST_BY, "").orEmpty())
             .apply()
-        return ok
+        return left.isEmpty()
     }
 
     /** 设备上当前**真正**处于挂起状态的应用（不看记录，供「记录丢了但还冻着」自救）。 */
@@ -320,6 +325,13 @@ object LockPolicies {
             p.edit()
                 .putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "")
                 .putStringSet(KEY_PERSIST, emptySet()).putString(KEY_PERSIST_BY, "")
+                .commit()
+        } else {
+            // 没解开的保留在记录里，用户可再点一次或换路径（不要谎报成功）
+            val left = suspended.filter { stillSuspended(app, setOf(it)) }.toSet()
+            p.edit()
+                .putStringSet(KEY_SUSPENDED, left)
+                .putStringSet(KEY_PERSIST, left)
                 .commit()
         }
         return ok

@@ -84,8 +84,9 @@ object AppFreezeToolExecutor {
     fun toolInstruction(context: Context): String = buildString {
         append("\n你还拥有 freeze_app / unfreeze_app 工具：\n")
         append("· 用户要求冻结、限制、停用某个应用时，在回复末尾单独输出一行 __FREEZE__:<应用名>；\n")
-        append("· 用户要求解冻某个应用时，输出一行 __UNFREEZE__:<应用名>。解冻必须先答题验证，")
-        append("所以自然语言里要说明「需要先答对一道题」；\n")
+        append("· 用户要求解冻某个应用时，输出一行 __UNFREEZE__:<应用名>。解冻需要答题验证，")
+        append("但**出题与判分由应用自己完成**：你不要自己出题、不要询问用户任何题目，")
+        append("只说明「应用会弹出答题验证，答对后即解冻」；\n")
         append("· 应用名直接写中文名即可（例如 __FREEZE__:哔哩哔哩），禁止输出 JSON 或函数调用格式；\n")
         append("· 一次可输出多行标记；不需要操作时不要输出。标记会被应用自动执行并从对话里隐藏。\n")
         val frozen = frozenLabels(context)
