@@ -164,9 +164,6 @@ class MainActivity : ComponentActivity() {
             android.util.Log.w("MainActivity", "自动恢复守护失败：${e.message}")
         }
 
-        // 不在最近任务里显示（可关）：避免用户顺手划掉 = 杀进程 = 守护中断
-        runCatching { setExcludeFromRecents(appSettings.hideFromRecents) }
-
         setContent {
             com.focusguard.app.ui.theme.ThemeState.ensureLoaded(this)
             FocusGuardTheme(
@@ -762,6 +759,19 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "onResume 锁机检查失败：${e.message}")
+        }
+    }
+
+    /**
+     * 离开应用时从最近任务里移除自己（设置里「不在最近任务里显示」可关）。
+     *
+     * 目的：用户顺手在最近任务里划掉 = 杀进程 = 守护与锁机中断。
+     * 注意这不是杀进程——守护服务照常运行，只是任务列表里看不到我们。
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        runCatching {
+            if (appSettings.hideFromRecents) finishAndRemoveTask()
         }
     }
 }
