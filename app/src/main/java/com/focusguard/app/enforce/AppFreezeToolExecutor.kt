@@ -30,14 +30,21 @@ object AppFreezeToolExecutor {
         .replace(Regex("""__FREEZE__:[^\n]*"""), "")
         .replace(Regex("""__UNFREEZE__:[^\n]*"""), "")
 
-    /** 应用名（模糊匹配）或包名 → (包名, 显示名)；找不到返回 null。 */
+    /**
+     * 应用名（模糊匹配）或包名 → (包名, 显示名)；找不到返回 null。
+     *
+     * 容错：模型常把说明文字写在同一行（例如 `__FREEZE__:哔哩哔哩 已冻结`），
+     * 所以先去掉尾部标点，再做三级匹配 —— 完全相等 → 应用名包含查询词
+     * → 反过来「查询词里包含应用名」（取最长的那个，最具体）。
+     */
     fun resolve(context: Context, query: String): Pair<String, String>? {
-        val q = query.trim()
+        val q = query.trim().trimEnd('。', '，', ',', '.', '!', '！', '；', ';')
         if (q.isEmpty()) return null
         val pm = context.packageManager
         val apps = runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList())
         val self = context.packageName
         var fuzzy: Pair<String, String>? = null
+        var contained: Pair<String, String>? = null
         for (info in apps) {
             val pkg = info.packageName
             if (pkg == self) continue
@@ -46,8 +53,12 @@ object AppFreezeToolExecutor {
             if (fuzzy == null && (label.contains(q, true) || pkg.contains(q, true))) {
                 fuzzy = pkg to label
             }
+            if (label.length >= 2 && q.contains(label, true)) {
+                val best = contained
+                if (best == null || label.length > best.second.length) contained = pkg to label
+            }
         }
-        return fuzzy
+        return fuzzy ?: contained
     }
 
     /** 立即冻结。返回生效的途径（dhizuku/shizuku），失败返回 null。 */

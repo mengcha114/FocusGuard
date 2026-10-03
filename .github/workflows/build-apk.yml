@@ -89,7 +89,7 @@ jobs:
           files: |
             app/build/outputs/apk/edu/debug/*.apk
             app/build/outputs/apk/general/debug/*.apk
-          name: ${{ github.ref_name }} - 正式版 (vc100)
+          name: ${{ github.ref_name }} - 正式版
           generate_release_notes: true
           draft: false
           prerelease: false
