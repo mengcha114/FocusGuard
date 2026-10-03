@@ -32,7 +32,7 @@ fun LockHardeningCard() {
         SwitchRow(
             title = "锁机期间冻结娱乐应用",
             hint = if (canFreeze) {
-                "锁机时冻结游戏与娱乐类应用（含 AI 判定与你手动标记的），解锁后自动解冻"
+                "锁机时冻结游戏与视频类应用（含 AI 判定与你手动标记的），解锁后自动解冻；社交类不冻结"
             } else {
                 "需要 Dhizuku 或 Shizuku 授权后才能使用"
             },
@@ -94,8 +94,17 @@ fun ShizukuStatusCard() {
         StatusRow("无障碍服务", a11y, if (a11y) "已开启" else "未开启（锁机拦截失效）")
         StatusRow("使用情况访问", usage, if (usage) "已授权" else "未授权（无法识别前台应用）")
         if (frozen > 0) {
-            Text("冻结中：$frozen 个应用",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+            Text(
+                "冻结中：$frozen 个应用。正常应在锁机结束后自动解冻；" +
+                    "若一直没解开，点下面「立即解冻」，或先让 Dhizuku / Shizuku 可用",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.error
+            )
+            OutlinedButton(onClick = {
+                Thread {
+                    com.focusguard.app.enhance.LockPolicies.forceUnfreeze(context.applicationContext)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post { tick++ }
+                }.start()
+            }) { Text("立即解冻") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(

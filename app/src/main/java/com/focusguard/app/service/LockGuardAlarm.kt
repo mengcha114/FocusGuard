@@ -82,9 +82,17 @@ object LockGuardAlarm {
                 val appCtx = context.applicationContext
                 val lockState = LockState(appCtx)
 
-                // 锁机已结束/暂停中 → 停止自续环（下次锁机由服务重新注册）
-                if (!lockState.isLocked || !lockState.shouldBlockNow) {
-                    Log.d(TAG, "锁机未激活，自愈闹钟停止续环")
+                // 锁机已结束 → 停止自续环（下次锁机由服务重新注册）
+                if (!lockState.isLocked) {
+                    Log.d(TAG, "锁机已结束，自愈闹钟停止续环")
+                    return
+                }
+                // 暂停 / 番茄休息：不执法，但**必须继续续环**。
+                // 此前这里直接 return，而暂停结束后没人再注册闹钟 ⇒ 本次锁机
+                // 剩余时间彻底没有兜底（进程被杀就再也回不来）。
+                if (!lockState.shouldBlockNow) {
+                    LockGuardService.ensureRunning(appCtx)
+                    schedule(appCtx, HEALTHY_INTERVAL_MS)
                     return
                 }
 

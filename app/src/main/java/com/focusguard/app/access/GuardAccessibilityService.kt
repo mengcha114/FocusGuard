@@ -161,6 +161,17 @@ class GuardAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
+        // 应用封锁与「实时窗口包名」跟锁机状态无关，必须在锁机早退之前处理：
+        // 「仅锁该软件」与「每日时长上限」两类封锁都只发生在非锁机态，
+        // 之前的早退让 interceptIfBlocked 成了死代码（打开被封应用要等守护巡检兜底）。
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val winPkg = event.packageName?.toString().orEmpty()
+            if (winPkg.isNotBlank()) {
+                lastWindowPackage = winPkg
+                if (winPkg != packageName && !isLockActive()) interceptIfBlocked(winPkg)
+            }
+        }
+
         val state = lockState ?: return
         if (!state.isLocked) return
 
@@ -332,11 +343,6 @@ class GuardAccessibilityService : AccessibilityService() {
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString() ?: return
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            lastWindowPackage = pkg
-            // 应用级封锁：切换到这个应用的一瞬间就拦，不等守护巡检
-            if (!isLockActive()) interceptIfBlocked(pkg)
-        }
         // 自身界面（锁屏页/答题页/应用主界面）不拦截
         if (pkg == packageName) return
 

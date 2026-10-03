@@ -20,6 +20,9 @@ object LockPolicies {
     private const val PREFS = "focus_guard_lock_policies"
     private const val KEY_RESTRICTED = "restricted"
     private const val KEY_SUSPENDED = "suspended_pkgs"
+
+    /** 冻结是由谁施加的（dhizuku / shizuku）：解冻必须用同一个施加者。 */
+    private const val KEY_SUSPENDED_BY = "suspended_by"
     private const val KEY_FREEZE_ENABLED = "freeze_enabled"
     private const val KEY_AUTO_TIME_ORIGINAL = "auto_time_original"
     private const val KEY_BLOCK_RESET = "block_factory_reset"
@@ -31,8 +34,7 @@ object LockPolicies {
     private val ENTERTAINMENT = setOf(
         AppCategory.GAME,
         AppCategory.SHORT_VIDEO,
-        AppCategory.VIDEO,
-        AppCategory.SOCIAL
+        AppCategory.VIDEO
     )
 
     private fun prefs(c: Context) =
@@ -70,7 +72,7 @@ object LockPolicies {
      * 学习结果里只取娱乐四类，学习/办公/系统不冻。用户标记优先级更高。
      */
     private fun entertainmentPackages(c: Context): Set<String> {
-        val store = AppCategoryStore(c)
+        val store = AppCategoryStore.shared(c)
         val merged = HashMap<String, AppCategory>()
         merged.putAll(store.allLearned())
         merged.putAll(store.allUserOverrides())
@@ -83,8 +85,10 @@ object LockPolicies {
         val p = prefs(app)
         val editor = p.edit()
         if (!p.getBoolean(KEY_RESTRICTED, false) && DhizukuEnhancer.ensureReady(app)) {
-            restrictions(app).forEach { DhizukuEnhancer.setUserRestriction(app, it, true) }
-            editor.putBoolean(KEY_RESTRICTED, true)
+            val allOk = restrictions(app).all { DhizukuEnhancer.setUserRestriction(app, it, true) }
+            // 只有全部设置成功才记账：此前无条件置位，一次失败后整轮锁机不再重试
+            if (allOk) editor.putBoolean(KEY_RESTRICTED, true)
+            else Log.w(TAG, "部分用户限制设置失败，下个巡检重试")
         }
         // 锁机期间保持「自动设置时间」开启；先记下用户原值，锁机结束还原，
         // 不擅自永久改掉用户「手动设置时间」的偏好（Shizuku 可用时才做）。
@@ -94,12 +98,12 @@ object LockPolicies {
         }
         if (isFreezeEnabled(app) && p.getStringSet(KEY_SUSPENDED, emptySet()).isNullOrEmpty()) {
             val pkgs = entertainmentPackages(app)
-            val ok = pkgs.isNotEmpty() && (
-                DhizukuEnhancer.setPackagesSuspended(app, pkgs, true) ||
-                    ShizukuEnhancer.suspendPackages(pkgs, true)
-                )
-            if (ok) editor.putStringSet(KEY_SUSPENDED, pkgs)
-            Log.d(TAG, "锁机冻结娱乐应用 ${pkgs.size} 个：$ok")
+            val by = freeze(app, pkgs)
+            if (by != null) {
+                editor.putStringSet(KEY_SUSPENDED, pkgs)
+                editor.putString(KEY_SUSPENDED_BY, by)
+            }
+            Log.d(TAG, "锁机冻结 ${pkgs.size} 个应用，途径=$by")
         }
         editor.commit()
     }
@@ -120,13 +124,85 @@ object LockPolicies {
         }
         val suspended = p.getStringSet(KEY_SUSPENDED, emptySet()).orEmpty()
         if (suspended.isNotEmpty()) {
-            // 两条路径都尝试，任何一条成功即视为已解冻
-            val dz = DhizukuEnhancer.setPackagesSuspended(app, suspended, false)
-            val sz = ShizukuEnhancer.suspendPackages(suspended, false)
-            if (dz || sz) editor.putStringSet(KEY_SUSPENDED, emptySet())
-            Log.d(TAG, "锁机结束解冻 ${suspended.size} 个应用：dhizuku=$dz shizuku=$sz")
+            val freed = unfreezeAll(app, p, suspended)
+            if (freed) {
+                editor.putStringSet(KEY_SUSPENDED, emptySet())
+                editor.putString(KEY_SUSPENDED_BY, "")
+            }
+            Log.d(TAG, "锁机结束解冻 ${suspended.size} 个应用：${if (freed) "已完成" else "未完成，保留记录稍后重试"}")
         }
         editor.commit()
+    }
+
+    /**
+     * 冻结应用，返回真正生效的途径（dhizuku / shizuku），都失败返回 null。
+     *
+     * 记录途径是必须的：Android 的挂起状态**按施加者记录**，
+     * `pm unsuspend`（shell 身份）解不了 Dhizuku（device owner）施加的挂起。
+     */
+    private fun freeze(context: Context, pkgs: Set<String>): String? {
+        if (pkgs.isEmpty()) return null
+        if (DhizukuEnhancer.setPackagesSuspended(context, pkgs, true)) return "dhizuku"
+        if (ShizukuEnhancer.suspendPackages(pkgs, true)) return "shizuku"
+        return null
+    }
+
+    /**
+     * 解冻并**逐包验证**，全部确认解除才返回 true。
+     *
+     * 之前是「两条路径都试，任一成功即当作已解冻」：Shizuku 的 `pm unsuspend`
+     * 对 Dhizuku 施加的挂起会返回成功（退出码 0）但包仍然挂起，于是代码清空记录
+     * ⇒ 应用永久冻结、重启也救不回来。现在只用同一施主解除 + PackageManager 验证。
+     */
+    private fun unfreezeAll(
+        context: Context,
+        p: android.content.SharedPreferences,
+        pkgs: Set<String>
+    ): Boolean {
+        val by = p.getString(KEY_SUSPENDED_BY, "").orEmpty()
+        if (by.isEmpty() || by == "dhizuku") DhizukuEnhancer.setPackagesSuspended(context, pkgs, false)
+        if (by.isEmpty() || by == "shizuku") ShizukuEnhancer.suspendPackages(pkgs, false)
+        // 施主长时间不可用 → 另一条路径也试一次（对别的施加者的挂起是无害空操作）
+        if (stillSuspended(context, pkgs)) {
+            DhizukuEnhancer.setPackagesSuspended(context, pkgs, false)
+            ShizukuEnhancer.suspendPackages(pkgs, false)
+        }
+        return !stillSuspended(context, pkgs)
+    }
+
+    /** 逐包确认是否仍处于挂起状态（权威判据，不依赖命令返回值）。 */
+    private fun stillSuspended(context: Context, pkgs: Set<String>): Boolean = pkgs.any { pkg ->
+        runCatching {
+            val info = context.packageManager.getPackageInfo(pkg, 0).applicationInfo
+            (info.flags and android.content.pm.ApplicationInfo.FLAG_SUSPENDED) != 0
+        }.getOrDefault(false)
+    }
+
+    /** 未锁机时的低频重试：仍有冻结记录就再试，成功才清记录。 */
+    fun retryUnfreeze(context: Context) {
+        val app = context.applicationContext
+        val p = prefs(app)
+        val suspended = p.getStringSet(KEY_SUSPENDED, emptySet()).orEmpty()
+        if (suspended.isEmpty()) return
+        if (unfreezeAll(app, p, suspended)) {
+            p.edit().putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "").commit()
+            Log.d(TAG, "残留冻结已解除 ${suspended.size} 个")
+        } else {
+            Log.w(TAG, "仍有 ${suspended.size} 个应用处于冻结，稍后重试")
+        }
+    }
+
+    /** 设置页「立即解冻」：两条路径都试一次，成功才算解开。 */
+    fun forceUnfreeze(context: Context): Boolean {
+        val app = context.applicationContext
+        val p = prefs(app)
+        val suspended = p.getStringSet(KEY_SUSPENDED, emptySet()).orEmpty()
+        if (suspended.isEmpty()) return true
+        DhizukuEnhancer.setPackagesSuspended(app, suspended, false)
+        ShizukuEnhancer.suspendPackages(suspended, false)
+        val ok = !stillSuspended(app, suspended)
+        if (ok) p.edit().putStringSet(KEY_SUSPENDED, emptySet()).putString(KEY_SUSPENDED_BY, "").commit()
+        return ok
     }
 
     /** 服务启动时调用：不在锁机却有残留限制 / 冻结 → 立即清除。 */

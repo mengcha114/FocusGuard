@@ -49,7 +49,7 @@ fun AppPickerDialog(
     LaunchedEffect(showSystem) {
         loading = true
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val store = AppCategoryStore(context)
+            val store = AppCategoryStore.shared(context)
             val list = AppInventory.listLaunchableApps(
                 context = context,
                 categoryStore = store,

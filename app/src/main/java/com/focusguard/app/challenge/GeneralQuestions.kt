@@ -29,13 +29,17 @@ object GeneralQuestions {
         val pool = if (hard) listOf("mix", "chainMul", "percent", "fraction")
         else listOf("mix", "paren", "percent")
         val kinds = pool.filter { it != excludeTopic }.ifEmpty { pool }
-        return when (kinds[rnd.nextInt(kinds.size)]) {
+        val kind = kinds[rnd.nextInt(kinds.size)]
+        val question = when (kind) {
             "chainMul" -> chainMul(hard)
             "percent" -> percent(hard)
             "fraction" -> fractionMix(hard)
             "paren" -> paren(hard)
             else -> mixed(hard)
         }
+        // 标上真实题型：此前 kind 恒为 "general"，导致「换一题」的排除条件
+        // 永远匹配不到，同一题型可能连续出现。
+        return question.copy(kind = kind)
     }
 
     private fun q(text: String, ans: Long, exp: String, sec: Int) =

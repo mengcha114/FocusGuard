@@ -94,15 +94,19 @@ class DetectionPipeline(
     private val cacheOn: Boolean get() = settings.decisionCacheEnabled
 
     suspend fun detect(projection: MediaProjection?): DetectionOutcome {
-        val appInfo = AppClassifier.classifyForegroundApp(context, categoryStore)
-        val usagePkg = appInfo?.packageName.orEmpty()
-        // 第二来源：无障碍报告的活动窗口。UsageStats 有时瞬时为空（刚切换应用、
-        // 权限被撤、数据过期），此时只看 UsageStats 会把「前台未知」当成「不敏感」。
+        // 前台识别统一走 ForegroundAppDetector（ACTIVITY_RESUMED 事件流，秒级），
+        // 不再优先用聚合 UsageStats —— 后者在部分 ROM 上有分钟级延迟，
+        // 会让「刚切过去的应用」这一轮仍被判成上一个应用。
+        val realtimePkg = com.focusguard.app.service.ForegroundAppDetector.current(context).orEmpty()
+        val fallbackInfo = AppClassifier.classifyForegroundApp(context, categoryStore)
+        val usagePkg = realtimePkg.ifBlank { fallbackInfo?.packageName.orEmpty() }
+        // 第二来源：无障碍报告的活动窗口。前两个来源都拿不到（刚切换应用、
+        // 权限被撤、数据过期）时用它补齐，仍取不到就由 L0 直接跳过本轮。
         val windowPkg = runCatching {
             com.focusguard.app.access.GuardAccessibilityService.instance?.currentWindowPackage()
         }.getOrNull().orEmpty()
-        // 包名为空时用窗口包名补齐：既修隐私漏洞，也让检测在 UsageStats 失准时仍可用
         val pkg = usagePkg.ifBlank { windowPkg }
+        val appInfo = AppClassifier.classifyPackage(context, pkg, categoryStore) ?: fallbackInfo
         val label = appInfo?.label.ifNullOrBlank { pkg }
 
         // ── L0 隐私保护（优先于一切判定，含白名单）─────────────────
@@ -412,10 +416,14 @@ class DetectionPipeline(
                 // 游戏/视频/短视频/社交类不写入长期名单：这些正是本应用要管控的对象，
                 // 一次「看着像隐私」的判定不能让它永久免检（AI 也会误判）。
                 // 本轮仍然按隐私处理（不执法、不留证），只是不记住该应用。
-                val learnable = appInfo?.category != AppCategory.GAME &&
-                    appInfo?.category != AppCategory.VIDEO &&
-                    appInfo?.category != AppCategory.SHORT_VIDEO &&
-                    appInfo?.category != AppCategory.SOCIAL
+                // 拿不到分类也**不学**：宁少学一次，也不让未知分类把游戏/娱乐
+                // 应用永久写进免检名单（appInfo 为 null 时旧写法恒真，等于放行）
+                val category = appInfo?.category
+                val learnable = category != null &&
+                    category != AppCategory.GAME &&
+                    category != AppCategory.VIDEO &&
+                    category != AppCategory.SHORT_VIDEO &&
+                    category != AppCategory.SOCIAL
                 if (settings.aiPrivacyLearning && learnable) {
                     com.focusguard.app.privacy.SensitiveLearning.mark(context, pkg)
                     com.focusguard.app.privacy.PrivacyStats.recordSkip(context, "AI 判定隐私敏感：$label")

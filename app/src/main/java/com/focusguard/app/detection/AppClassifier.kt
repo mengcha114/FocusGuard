@@ -142,16 +142,24 @@ object AppClassifier {
             .filter { it.packageName != context.packageName }
             .maxByOrNull { it.lastTimeUsed } ?: return null
 
-        val packageName = foreground.packageName
+        return classifyPackage(context, foreground.packageName, store)
+    }
+
+    /**
+     * 按包名取应用信息（不查「谁在前台」）。
+     *
+     * 「谁在前台」统一交给 [com.focusguard.app.service.ForegroundAppDetector]
+     * （事件流，秒级），这里只负责分类与显示名，避免各处再各自查聚合 UsageStats。
+     */
+    fun classifyPackage(context: Context, packageName: String, store: AppCategoryStore? = null): AppInfo? {
+        if (packageName.isBlank()) return null
         val pm = context.packageManager
         val label = try {
             pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
         } catch (e: Exception) {
             packageName
         }
-
-        val category = resolveCategory(context, packageName, store)
-        return AppInfo(packageName, category, label)
+        return AppInfo(packageName, resolveCategory(context, packageName, store), label)
     }
 
     /**

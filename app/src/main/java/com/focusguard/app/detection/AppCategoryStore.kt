@@ -21,6 +21,21 @@ class AppCategoryStore(context: Context) {
         private const val TAG = "AppCategoryStore"
         private const val FILE_USER = "app_category_user.json"
         private const val FILE_LEARNED = "app_category_learned.json"
+
+        /**
+         * 进程内共享实例。
+         *
+         * 每个实例都会把整张表读进内存、保存时整表覆盖。多处各建一个实例时，
+         * 后写者会用旧快照抹掉对方刚写入的分类（应用管控页刚标记的分类
+         * 会被守护服务的旧实例覆盖）。
+         */
+        @Volatile private var sharedInstance: AppCategoryStore? = null
+
+        fun shared(context: Context): AppCategoryStore =
+            sharedInstance ?: synchronized(this) {
+                sharedInstance
+                    ?: AppCategoryStore(context.applicationContext).also { sharedInstance = it }
+            }
     }
 
     private val userFile = File(context.filesDir, FILE_USER)

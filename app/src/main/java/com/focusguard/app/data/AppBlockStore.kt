@@ -45,6 +45,14 @@ class AppBlockStore(context: Context) {
         return until
     }
 
+    /** 是否有任何应用仍在封锁期内（重启恢复判定用）。 */
+    fun anyBlocked(): Boolean {
+        val now = System.currentTimeMillis()
+        return prefs.all.any { (key, value) ->
+            key.startsWith(KEY_PREFIX) && (value as? Long ?: 0L) > now
+        }
+    }
+
     /** 解除封锁。 */
     fun clear(packageName: String) {
         prefs.edit().remove(KEY_PREFIX + packageName).apply()

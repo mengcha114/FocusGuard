@@ -29,8 +29,9 @@ class BootReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "BootReceiver"
+        // 注意：本接收器不是 directBootAware（LockState 等数据在凭据加密存储里，
+        // 开机解锁前读不到），所以不收 LOCKED_BOOT_COMPLETED —— 收了也没用。
         private val TRIGGER_ACTIONS = setOf(
-            "android.intent.action.LOCKED_BOOT_COMPLETED",
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_USER_UNLOCKED,
             "android.intent.action.USER_SWITCHED",
@@ -51,10 +52,15 @@ class BootReceiver : BroadcastReceiver() {
             val lockState = LockState(app)
             val usageRuleStore = UsageRuleStore.shared(app)
 
-            // 1. 有锁机或有硬封锁规则 → 启动守护服务
+            // 1. 有锁机 / 硬封锁规则 / 「仅锁该软件」临时封锁 → 启动守护服务
             val hasBlockRule = usageRuleStore.allRules().any { it.hardBlockMinutes != null }
-            if (lockState.isLocked || hasBlockRule) {
-                Log.d(TAG, "存在锁机或封锁规则，启动锁机守护服务")
+            // 临时封锁（AI 执法下发）在重启后可能仍在有效期内，同样要守护；
+            // 此前漏了这一项，重启后「仅锁该软件」直接失效。
+            val hasTempBlock = runCatching {
+                com.focusguard.app.data.AppBlockStore(app).anyBlocked()
+            }.getOrDefault(false)
+            if (lockState.isLocked || hasBlockRule || hasTempBlock) {
+                Log.d(TAG, "存在锁机/封锁规则/临时封锁，启动锁机守护服务")
                 LockGuardService.start(app)
             }
 

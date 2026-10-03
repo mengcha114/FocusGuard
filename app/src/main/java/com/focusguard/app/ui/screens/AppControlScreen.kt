@@ -54,7 +54,7 @@ fun AppControlScreen() {
     LaunchedEffect(Unit) {
         loading = true
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val store = AppCategoryStore(context)
+            val store = AppCategoryStore.shared(context)
             apps = AppInventory.listLaunchableApps(context, store)
         }
         loading = false
@@ -156,7 +156,7 @@ fun AppControlScreen() {
             app = app,
             onDismiss = { editingApp = null },
             onSaved = { category, rule ->
-                val categoryStore = AppCategoryStore(context)
+                val categoryStore = AppCategoryStore.shared(context)
                 val ruleStore = UsageRuleStore.shared(context)
 
                 // 限额改动后必须解除既有封锁，否则旧封锁在新限额下仍然生效
@@ -189,7 +189,7 @@ fun AppControlScreen() {
                 // 重新加载以刷新分类显示
                 scope.launch {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        val store = AppCategoryStore(context)
+                        val store = AppCategoryStore.shared(context)
                         apps = AppInventory.listLaunchableApps(context, store, forceRefresh = true)
                     }
                 }
@@ -306,7 +306,7 @@ private fun AppEditSheet(
     onSaved: (category: AppCategory?, rule: AppUsageRule?) -> Unit
 ) {
     val context = LocalContext.current
-    val categoryStore = remember { AppCategoryStore(context) }
+    val categoryStore = remember { AppCategoryStore.shared(context) }
     val ruleStore = remember { UsageRuleStore.shared(context) }
 
     // 初始值：用户手动设置优先，否则取自动识别分类
@@ -407,6 +407,17 @@ private fun AppEditSheet(
                     )
                 }
                 Switch(checked = marked, onCheckedChange = { on ->
+                    // 锁机期间禁止改「检测相关」配置（与设置页同一条规则）：
+                    // 标为敏感会让该应用直接免检（L0 直接 PRIVACY_SKIP），
+                    // 属于能被用来绕过执法的改动。
+                    if (com.focusguard.app.data.LockState(context).isLocked) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "锁机期间不能修改检测与隐私配置，锁机结束后再改",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                        return@Switch
+                    }
                     marked = on
                     val store = com.focusguard.app.data.Settings(context)
                     val cur = store.sensitiveApps

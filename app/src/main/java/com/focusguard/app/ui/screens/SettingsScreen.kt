@@ -146,7 +146,7 @@ fun SettingsScreen(
                                     apiKey = ""
                                     modelName = ""
                                 } else {
-                                    // 点击预设厂商：把预设填入输入框，但保留用户之前存在 custom 里的自定义配置
+                                    // 点击预设厂商：把预设填入输入框（API 密钥仍需自己填）
                                     apiFormat = cfg.first
                                     apiBaseUrl = cfg.second
                                     modelName = cfg.third
@@ -687,7 +687,12 @@ fun SettingsScreen(
                     sb.append("今日调用：${tokenBudget.callsToday} 次\n")
                     sb.append("今日节约：${tokenBudget.savedCallsToday} 次\n")
                     sb.append("===== AI 调用诊断（最近 ${com.focusguard.app.ai.AiClient.exportDiagnostics().lines().count()} 条） =====\n")
-                    sb.append(com.focusguard.app.ai.AiClient.exportDiagnostics())
+                    // 诊断段落里可能含屏幕内容 / AI 回复原文，导出前同样脱敏
+                    sb.append(
+                        com.focusguard.app.privacy.Redactor.redact(
+                            com.focusguard.app.ai.AiClient.exportDiagnostics(), 4000
+                        )
+                    )
                     sb.append("\n")
                     sb.append("===== 检测日志 =====\n")
                     sb.append(logStore.exportText())

@@ -185,6 +185,9 @@ class MonitorService : Service() {
     /** 是否处于「使用时长触发」的加密检测模式。 */
     private var usageTriggeredDetection = false
 
+    /** 最近一次已拉起封锁页的应用（边沿触发用，避免每 15 秒重建一次）。 */
+    private var lastHardBlockPkg = ""
+
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var monitorJob: Job? = null
     private var consecutiveViolations = 0
@@ -218,7 +221,7 @@ class MonitorService : Service() {
         lockState = LockState(this)
         aiClient = AiClient()
         enforcer = Enforcer(this)
-        categoryStore = AppCategoryStore(this)
+        categoryStore = AppCategoryStore.shared(this)
         tokenBudget = TokenBudget(this).apply { dailyCallLimit = settings.dailyCallLimit }
         decisionCache = DecisionCache(this)
         usageRuleStore = UsageRuleStore.shared(this)
@@ -411,7 +414,10 @@ class MonitorService : Service() {
                                 msUntilNextDetection = 0L
                             }
                         }
-                        UsageTracker.Verdict.Idle -> usageTriggeredDetection = false
+                        UsageTracker.Verdict.Idle -> {
+                            usageTriggeredDetection = false
+                            lastHardBlockPkg = ""
+                        }
                     }
 
                     // 心跳：证明循环还活着（排查"守护开着但不检测"用）
@@ -447,7 +453,9 @@ class MonitorService : Service() {
             if (com.focusguard.app.enforce.UnlockChallengeActivity.active) return
             if (com.focusguard.app.enforce.LockScreenActivity.friendUnlockActive) return
             // 锁机页在前台也算受控
-            if (com.focusguard.app.enforce.LockScreenActivity.instance != null) return
+            // 用 foreground 而不是 instance != null：实例只在 onDestroy 清空，
+            // 锁机页被切到后台后仍非空 ⇒ 这层兜底永远不会触发。
+            if (com.focusguard.app.enforce.LockScreenActivity.foreground) return
 
             Log.d(TAG, "锁机状态激活但无任何防线在前台，自动重新拉起")
             com.focusguard.app.enforce.LockScreenActivity.show(this)
@@ -510,14 +518,26 @@ class MonitorService : Service() {
      * 封锁页自己的驻留时间会被算进被封应用的时长。
      */
     private fun usageTick(): UsageTracker.Verdict {
-        val foreground = AppClassifier.classifyForegroundApp(this, categoryStore)
-        val pkg = foreground?.packageName
+        // 计时与检测闸门必须用同一个「前台」来源：此前计时用聚合 UsageStats、
+        // 闸门用「聚合 + 无障碍窗口」，只被无障碍识别到的应用会被跳过检测却从不计时。
+        val pkg = ForegroundAppDetector.current(this)
+            ?: AppClassifier.classifyForegroundApp(this, categoryStore)?.packageName
         val countable = pkg?.takeUnless { it == packageName }
         return usageTracker.tick(countable)
     }
 
     /** 触发应用硬封锁：拉起全屏封锁页，并记入日志。 */
     private fun handleHardBlock(verdict: UsageTracker.Verdict.ShouldHardBlock) {
+        // 边沿触发：同一应用连续 tick 命中时不再重复拉起与记账。
+        // 此前每 15 秒 rebuild 一次封锁页（onNewIntent → recreate），
+        // 表现为封锁页反复闪烁 + 日志被刷屏。
+        if (verdict.packageName == lastHardBlockPkg) return
+        lastHardBlockPkg = verdict.packageName
+        // 锁机期间由锁机页执法，不再叠加应用封锁页（两个全屏页会互相顶）
+        if (lockState.isLocked) {
+            Log.d(TAG, "锁机中，应用封锁交给锁机页")
+            return
+        }
         val label = runCatching {
             packageManager.getApplicationLabel(
                 packageManager.getApplicationInfo(verdict.packageName, 0)
@@ -549,15 +569,35 @@ class MonitorService : Service() {
         )
     }
 
-    /** 前台应用候选（UsageStats + 无障碍当前窗口），任一命中即算。 */
-    private fun foregroundCandidates(): List<String> {
-        val usage = AppClassifier.classifyForegroundApp(this, categoryStore)?.packageName
-        val window = com.focusguard.app.access.GuardAccessibilityService.instance
-            ?.currentWindowPackage()
-        return listOfNotNull(
-            usage?.takeIf { it.isNotBlank() },
-            window?.takeIf { it.isNotBlank() && it != usage }
-        )
+    /**
+     * 上传前的隐私门（与检测管线 L0 同一套判定）。
+     * 返回非空表示这次不该截屏、不该上传。
+     */
+    private fun privacySkipReason(screenText: String?): String? {
+        val candidates = listOfNotNull(
+            ForegroundAppDetector.current(this),
+            com.focusguard.app.access.GuardAccessibilityService.instance?.currentWindowPackage()
+        ).filter { it.isNotBlank() && it != packageName }.distinct()
+        for (c in candidates) {
+            if (settings.aiPrivacyLearning &&
+                com.focusguard.app.privacy.SensitiveLearning.isMarked(this, c)
+            ) {
+                return "AI 标记的敏感应用（$c）"
+            }
+            val label = runCatching {
+                packageManager.getApplicationLabel(packageManager.getApplicationInfo(c, 0)).toString()
+            }.getOrDefault(c)
+            if (com.focusguard.app.privacy.PrivacyGuard.isSensitive(
+                    c, label, settings.sensitiveApps, useBuiltin = settings.builtinPrivacyHints
+                )
+            ) {
+                return "敏感应用：$label"
+            }
+        }
+        if (settings.contentPrivacyCheck && !screenText.isNullOrBlank()) {
+            com.focusguard.app.privacy.ContentPrivacy.inspect(screenText)?.let { return "内容兜底：$it" }
+        }
+        return null
     }
 
     private fun appLabelOf(pkg: String): String = runCatching {
@@ -601,9 +641,12 @@ class MonitorService : Service() {
         // （用户报告「设置了应用允许使用的时长后还会触发 AI 检测」——
         //   指的是到点之前不该触发。）
         if (!isManualTest) {
-            val gated = foregroundCandidates().firstOrNull { pkg ->
-                val rule = usageRuleStore.getRule(pkg) ?: return@firstOrNull false
-                val startAt = rule.triggerMinutes ?: rule.hardBlockMinutes ?: return@firstOrNull false
+            val fgPkg = ForegroundAppDetector.bestPackage(this, categoryStore)
+            val gated = fgPkg?.takeIf { pkg ->
+                val rule = usageRuleStore.getRule(pkg) ?: return@takeIf false
+                // 只有设了「允许使用时间」（triggerMinutes）才在到点前跳过检测；
+                // 只设「最多使用时间」的应用全程正常检测（AI 判娱乐即提前封锁）。
+                val startAt = rule.triggerMinutes ?: return@takeIf false
                 val used = (usageRuleStore.getTodaySeconds(pkg) / 60).toInt()
                 used < startAt
             }
@@ -732,8 +775,9 @@ class MonitorService : Service() {
      * ③ [deep] 为 true 时让 AI 看一次当前画面（仅宽限结束时做一次，受配额限制）。
      */
     private suspend fun hasSwitchedToStudy(deep: Boolean): Boolean {
-        // ① 应用级
-        val fg = AppClassifier.classifyForegroundApp(this, categoryStore)
+        // ① 应用级（统一的实时前台判定）
+        val fg = ForegroundAppDetector.bestPackage(this, categoryStore)
+            ?.let { AppClassifier.classifyPackage(this, it, categoryStore) }
         if (fg != null && AppClassifier.classifyByAppInfo(fg) == "STUDY_WORK") return true
 
         // ② 屏幕文字（本地）
@@ -758,6 +802,18 @@ class MonitorService : Service() {
 
         // ③ 深度：AI 看一眼当前画面
         if (deep) {
+            // 隐私门：此前这里直接截屏上传，绕过了敏感应用名单、内置特征与内容兜底
+            // —— 用户在被判娱乐后的宽限期内切到银行/支付页面，会把该界面截图发出去。
+            if (settings.textOnlyUpload) {
+                Log.d(TAG, "已开启「仅上传屏幕文字」：宽限期复检不做截图上传")
+                return false
+            }
+            val privacyReason = if (settings.privacyProtectEnabled) privacySkipReason(text) else null
+            if (privacyReason != null) {
+                com.focusguard.app.privacy.PrivacyStats.recordSkip(this, "宽限期复检：$privacyReason")
+                Log.d(TAG, "宽限期复检命中隐私保护（$privacyReason），不截屏、不上传")
+                return false
+            }
             val projection = mediaProjection
             val capturer = screenCapturer
             if (projection != null && capturer != null && tokenBudget.canCallAi()) {
@@ -777,8 +833,13 @@ class MonitorService : Service() {
                                 enforcementHint = settings.enforcementHint()
                             )
                         }.getOrNull()
-                        tokenBudget.recordCall()
                         capture.recycle()
+                        if (result != null) {
+                            // 只有真拿到结果才记账（此前调用失败也照记，虚增今日消耗），
+                            // 并补记「今日已上传」（首页统计此前少算这一路）
+                            tokenBudget.recordCall()
+                            com.focusguard.app.privacy.PrivacyStats.recordUpload(this)
+                        }
                         if (result != null &&
                             result.classification == "STUDY_WORK" &&
                             result.confidence >= settings.confidenceThreshold
@@ -911,22 +972,21 @@ class MonitorService : Service() {
     private fun doEnforce(outcome: DetectionOutcome): String {
         // 智能调度：执法后提醒计数归零、风险回落
         smartScheduler?.onEnforced()
-        val performed = enforcer.enforce(
+        // 必须先落锁机状态、再拉起锁机页：LockScreenActivity 在 onResume 里
+        // 发现「不在锁机中」会立刻 finish，先 enforce 会让锁机页只闪一下。
+        if (settings.enforcementMode != Settings.EnforcementMode.WARN &&
+            settings.enforcementMode != Settings.EnforcementMode.APP_BLOCK
+        ) {
+            // 应用设置里配置的 AI 执法解锁强度；已在锁机时只加码不覆盖
+            // （强度 3 的朋友密文由 startLock 内部生成）
+            lockState.startLock(settings.lockMinutesOnViolation, "AI", settings.aiLockStrength)
+        }
+        return enforcer.enforce(
             settings.enforcementMode,
             outcome.reason,
             outcome.packageName,
             outcome.appLabel
         )
-        if (settings.enforcementMode != Settings.EnforcementMode.WARN) {
-            // 「仅锁该软件」模式：不触发全局锁机，只封锁该应用
-            if (settings.enforcementMode == Settings.EnforcementMode.APP_BLOCK) {
-                return performed
-            }
-            // 应用设置里配置的 AI 执法解锁强度；已在锁机时只加码不覆盖
-            // （强度 3 的朋友密文由 startLock 内部生成）
-            lockState.startLock(settings.lockMinutesOnViolation, "AI", settings.aiLockStrength)
-        }
-        return performed
     }
 
     private fun updateNotification(outcome: DetectionOutcome) {

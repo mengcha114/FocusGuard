@@ -22,6 +22,9 @@ object ForegroundAppDetector {
     /** 事件回溯窗口。太小会漏事件，太大浪费 CPU。 */
     private const val LOOKBACK_MS = 10_000L
 
+    /** 缓存有效期：超过后不再复用（此前 cachedAt 只写不读，前台判断可能永远停在旧应用）。 */
+    private const val CACHE_TTL_MS = 30_000L
+
     /** 缓存最近一次探测结果，事件窗口内无新事件时复用。 */
     @Volatile
     private var cachedPackage: String? = null
@@ -36,7 +39,7 @@ object ForegroundAppDetector {
      */
     fun current(context: Context): String? {
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-            ?: return cachedPackage
+            ?: return freshCached()
 
         val now = System.currentTimeMillis()
         return try {
@@ -61,14 +64,35 @@ object ForegroundAppDetector {
                 cachedAt = now
                 latestPackage
             } else {
-                // 窗口内无切换事件说明前台没变，复用缓存
-                cachedPackage
+                // 窗口内无切换事件说明前台没变，复用缓存（但要检查是否已过期）
+                freshCached()
             }
         } catch (e: Exception) {
             Log.w(TAG, "查询前台应用失败：${e.message}")
-            cachedPackage
+            freshCached()
         }
     }
+
+    private fun freshCached(): String? {
+        val pkg = cachedPackage ?: return null
+        val age = System.currentTimeMillis() - cachedAt
+        return if (age in 0..CACHE_TTL_MS) pkg else null
+    }
+
+    /**
+     * 统一的「当前前台应用」判定（全工程只此一处）：
+     * ① 实时事件流（秒级）→ ② 无障碍当前窗口 → ③ 聚合 UsageStats（兜底）。
+     *
+     * 此前检测管线用聚合数据、守护用事件流，同一个应用在两处会判出不同结果
+     * （隐私候选、分类、宽限期复检、时长计时全都受影响）。
+     */
+    fun bestPackage(
+        context: Context,
+        store: com.focusguard.app.detection.AppCategoryStore? = null
+    ): String? =
+        current(context)
+            ?: com.focusguard.app.access.GuardAccessibilityService.instance?.currentWindowPackage()
+            ?: com.focusguard.app.detection.AppClassifier.classifyForegroundApp(context, store)?.packageName
 
     /** 清空缓存（权限变更或服务重启时调用）。 */
     fun invalidate() {

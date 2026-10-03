@@ -239,8 +239,9 @@ class LockGuardService : Service() {
             isRunning = true
         } catch (e: Exception) {
             Log.e(TAG, "startForeground 失败：${e.message}")
-            // 即使 startForeground 失败也要让巡检跑起来（后台服务仍可短期存活）
-            isRunning = true
+            // 这里必须如实报告「没跑起来」：ensureRunning / 看门狗据此判断是否需要
+            // 重新拉起。此前失败也置 true，两条保活路径同时失效、永不重试。
+            isRunning = false
         }
     }
 
@@ -318,7 +319,9 @@ class LockGuardService : Service() {
             )
                 .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
                 .setContentTitle("检测到系统时间被修改")
-                .setContentText("锁机倒计时以设备运行时间为准，并已追加惩罚时长；改时间无法提前解锁")
+                .setContentText(
+                    "时间偏差约 ${tamperMs / 1000}s：锁机倒计时以设备运行时间为准，并已追加惩罚时长，改时间无法提前解锁"
+                )
                 .setAutoCancel(true)
                 .build()
             getSystemService(NotificationManager::class.java).notify(1006, notification)
@@ -498,14 +501,26 @@ class LockGuardService : Service() {
             // 只读缓存门槛：未就绪（无 Dhizuku）直接跳过，避免后台线程
             // 触发 HiddenApiBypass/Dhizuku.init Binder 初始化（死锁/ANR 隐患）
             if (com.focusguard.app.enhance.DhizukuEnhancer.isReadyCached()) {
-                uninstallBlocked = lockedNow
-                com.focusguard.app.enhance.DhizukuEnhancer.setUninstallBlocked(
+                val b = com.focusguard.app.enhance.DhizukuEnhancer.setUninstallBlocked(
                     applicationContext, lockedNow
                 )
-                com.focusguard.app.enhance.DhizukuEnhancer.setUserControlDisabled(
+                val u = com.focusguard.app.enhance.DhizukuEnhancer.setUserControlDisabled(
                     applicationContext, lockedNow
                 )
+                // 成功才记账：此前先置位再调用，一次失败后整轮锁机不再重试，
+                // 「禁止卸载 / 禁止强停」可能全程空窗（正是安全模式卸载的窗口）。
+                if (b && u) uninstallBlocked = lockedNow
+                else Log.w(TAG, "禁卸载/禁用户控制未设置成功（b=$b u=$u），下个巡检重试")
             }
+        }
+
+        // 未锁机时的残留冻结重试：解冻失败（Dhizuku/Shizuku 未就绪）此前只等
+        // 下次服务启动，而前台服务常年活着 ⇒ 用户看到「到点了应用还冻着」。
+        // 每 ~20 秒重试一次，直到 PackageManager 验证确认解开。
+        if (!lockedNow && tickCount % 66 == 0) {
+            Thread {
+                runCatching { com.focusguard.app.enhance.LockPolicies.retryUnfreeze(applicationContext) }
+            }.start()
         }
 
         // 媒体键抢占随锁机状态切换（蓝牙/线控长按语音助手在源头失效）
@@ -667,16 +682,22 @@ class LockGuardService : Service() {
         }
 
         // ── B. 应用硬封锁守护 ───────────────────────
-        // 锁机结束后仍要守护应用限额，因此不 return
-        if (foreground == null || foreground == packageName) return
-
-        // B0. 无障碍报告的当前窗口包名作为第二候选：UsageStats 的前台判定有
-        // 秒级延迟，只靠它会出现「已经打开被封应用，却过一会儿才挡住」。
+        // 锁机结束后仍要守护应用限额，因此不 return。
+        // 息屏时一律不拉起界面：封锁页带 setTurnScreenOn，反复拉起会把屏幕点亮。
+        val powerManager = getSystemService(android.os.PowerManager::class.java)
+        if (powerManager != null && !powerManager.isInteractive) return
+        // 候选 = 实时事件流（foreground）+ 无障碍当前窗口：后者在使用情况权限
+        // 被撤、事件窗口瞬时为空时兜底。此前 `foreground == null` 就整段 return，
+        // 第二候选写了也用不上。
         val windowPkg = com.focusguard.app.access.GuardAccessibilityService.instance
             ?.currentWindowPackage()
-            ?.takeIf { it.isNotBlank() && it != packageName && it != foreground }
-        if (windowPkg != null && enforceAppBlockFor(windowPkg)) return
-        enforceAppBlockFor(foreground)
+        val targets = listOfNotNull(foreground, windowPkg)
+            .filter { it.isNotBlank() && it != packageName }
+            .distinct()
+        if (targets.isEmpty()) return
+        for (target in targets) {
+            if (enforceAppBlockFor(target)) return
+        }
     }
 
     /**

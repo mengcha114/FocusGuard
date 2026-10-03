@@ -155,7 +155,7 @@
         <!-- 锁机守护前台服务（不依赖无障碍，使用情况权限即可工作） -->
         <!-- 锁机自愈闹钟接收器（杀后台后 5 秒内强制恢复锁机） -->
         <receiver
-            android:name=".service.LockGuardAlarmReceiver"
+            android:name=".service.LockGuardAlarm$LockGuardAlarmReceiver"
             android:exported="false" />
 
         <service
@@ -184,7 +184,6 @@
             android:exported="true">
             <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.USER_UNLOCKED" />
                 <action android:name="android.intent.action.USER_SWITCHED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />

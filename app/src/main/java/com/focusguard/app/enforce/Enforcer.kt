@@ -70,7 +70,14 @@ class Enforcer(private val context: Context) {
     private fun blockApp(reason: String, packageName: String, appLabel: String) {
         try {
             if (packageName.isBlank()) {
-                Log.w(TAG, "缺少包名，无法执行应用封锁")
+                // 没有包名时无法定位应用，但也不能静默什么都不做（此前这条
+                // 「锁机失败」的兜底分支实际不产生任何执法动作）。
+                Log.w(TAG, "缺少包名，无法执行应用封锁：$reason")
+                com.focusguard.app.service.AlertNotifier.alertEntertainment(
+                    context = context,
+                    title = "⚠️ 封锁未能执行",
+                    message = reason
+                )
                 return
             }
             val settings = Settings(context)

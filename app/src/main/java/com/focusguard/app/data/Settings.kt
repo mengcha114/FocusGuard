@@ -410,7 +410,7 @@ gacha
 
     /**
      * Token 节约总开关。关闭后每次检测都直接调用视觉大模型，
-     * 不做任何本地过滤。默认开启。
+     * 不做任何本地过滤。默认关闭（用户要求：省 token 系列默认关）。
      */
     var tokenSavingEnabled: Boolean
         get() = prefs.getBoolean(KEY_TOKEN_SAVING_ENABLED, false)
@@ -418,7 +418,7 @@ gacha
 
     /**
      * 感知哈希去重：画面与上次几乎相同时直接复用上次判定结论，
-     * 不截图、不调用 AI。默认开启。
+     * 不截图、不调用 AI。默认关闭。
      */
     var screenHashDedupEnabled: Boolean
         get() = tokenSavingEnabled && prefs.getBoolean(KEY_SCREEN_HASH_DEDUP, false)
@@ -426,7 +426,7 @@ gacha
 
     /**
      * 屏幕文字预过滤：通过无障碍服务读取屏幕文字，命中关键词规则时
-     * 不消耗 token 直接定论。默认开启（需要无障碍权限）。
+     * 不消耗 token 直接定论。默认关闭（需要无障碍权限）。
      */
     var screenTextPrefilterEnabled: Boolean
         get() = tokenSavingEnabled && prefs.getBoolean(KEY_SCREEN_TEXT_PREFILTER, false)
@@ -434,7 +434,7 @@ gacha
 
     /**
      * 判定结果缓存：对历史上见过的相似画面复用大模型结论，
-     * TTL 6 小时，避免同一内容反复付费。默认开启。
+     * TTL 6 小时，避免同一内容反复付费。默认关闭。
      */
     var decisionCacheEnabled: Boolean
         get() = tokenSavingEnabled && prefs.getBoolean(KEY_DECISION_CACHE_ENABLED, false)
@@ -442,7 +442,7 @@ gacha
 
     /**
      * 自适应检测间隔：连续学习状态时自动延长间隔（最多 4×），
-     * 发现娱乐迹象时立刻缩短到最小值。默认开启。
+     * 发现娱乐迹象时立刻缩短到最小值。默认关闭。
      */
     var adaptiveIntervalEnabled: Boolean
         get() = tokenSavingEnabled && prefs.getBoolean(KEY_ADAPTIVE_INTERVAL, false)

@@ -32,15 +32,19 @@ object PrivacyStats {
         return e
     }
 
+    /** 今天的计数基线：跨天时必须是 0，否则会把昨天的计数带进今天。 */
+    private fun base(p: SharedPreferences, key: String): Int =
+        if (p.getString(KEY_DATE, "") == today()) p.getInt(key, 0) else 0
+
     fun recordUpload(context: Context) {
         val p = prefs(context)
-        rollIfNeeded(p).putInt(KEY_UPLOADS, p.getInt(KEY_UPLOADS, 0) + 1).apply()
+        rollIfNeeded(p).putInt(KEY_UPLOADS, base(p, KEY_UPLOADS) + 1).apply()
     }
 
     fun recordSkip(context: Context, reason: String) {
         val p = prefs(context)
         rollIfNeeded(p)
-            .putInt(KEY_SKIPS, p.getInt(KEY_SKIPS, 0) + 1)
+            .putInt(KEY_SKIPS, base(p, KEY_SKIPS) + 1)
             .putString(KEY_LAST_SKIP, Redactor.redact(reason))
             .apply()
     }
