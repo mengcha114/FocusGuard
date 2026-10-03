@@ -192,7 +192,7 @@ class AppBlockActivity : ComponentActivity() {
                 .isBlocked(blockedPackage)
             if (tempBlocked) return@runCatching true
 
-            val store = com.focusguard.app.usage.UsageRuleStore(this)
+            val store = com.focusguard.app.usage.UsageRuleStore.shared(this)
             val limit = store.getRule(blockedPackage)?.hardBlockMinutes
                 ?: return@runCatching false
             val usedMinutes = (store.getTodaySeconds(blockedPackage) / 60).toInt()

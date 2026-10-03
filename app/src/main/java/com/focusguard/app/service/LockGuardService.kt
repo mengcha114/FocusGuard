@@ -182,7 +182,7 @@ class LockGuardService : Service() {
     override fun onCreate() {
         super.onCreate()
         lockState = LockState(this)
-        usageRuleStore = UsageRuleStore(this)
+        usageRuleStore = UsageRuleStore.shared(this)
         Log.d(TAG, "锁机守护服务已创建")
 
         // ── 强制停止检测：服务每次复活都比对上次心跳 ──

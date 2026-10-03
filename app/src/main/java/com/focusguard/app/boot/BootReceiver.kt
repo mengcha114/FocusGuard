@@ -49,7 +49,7 @@ class BootReceiver : BroadcastReceiver() {
 
         try {
             val lockState = LockState(app)
-            val usageRuleStore = UsageRuleStore(app)
+            val usageRuleStore = UsageRuleStore.shared(app)
 
             // 1. 有锁机或有硬封锁规则 → 启动守护服务
             val hasBlockRule = usageRuleStore.allRules().any { it.hardBlockMinutes != null }

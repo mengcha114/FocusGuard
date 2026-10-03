@@ -221,7 +221,7 @@ class MonitorService : Service() {
         categoryStore = AppCategoryStore(this)
         tokenBudget = TokenBudget(this).apply { dailyCallLimit = settings.dailyCallLimit }
         decisionCache = DecisionCache(this)
-        usageRuleStore = UsageRuleStore(this)
+        usageRuleStore = UsageRuleStore.shared(this)
         usageTracker = UsageTracker(usageRuleStore)
     }
 
@@ -399,13 +399,14 @@ class MonitorService : Service() {
                             continue
                         }
                         is UsageTracker.Verdict.ShouldDetect -> {
-                            // 越过触发阈值，立刻转入检测模式而不等原定周期
+                            // 越过「允许使用时间」，立刻转入检测模式而不等原定周期
                             if (!usageTriggeredDetection) {
                                 usageTriggeredDetection = true
                                 Log.d(
                                     TAG,
-                                    "${verdict.packageName} 使用 ${verdict.usedMinutes} 分钟" +
-                                        "（阈值 ${verdict.triggerMinutes}），开始 AI 检测"
+                                    appLabelOf(verdict.packageName) +
+                                        " 已用 ${verdict.usedMinutes} 分钟" +
+                                        "（允许 ${verdict.triggerMinutes}），开始 AI 检测"
                                 )
                                 msUntilNextDetection = 0L
                             }
@@ -548,6 +549,43 @@ class MonitorService : Service() {
         )
     }
 
+    /** 前台应用候选（UsageStats + 无障碍当前窗口），任一命中即算。 */
+    private fun foregroundCandidates(): List<String> {
+        val usage = AppClassifier.classifyForegroundApp(this, categoryStore)?.packageName
+        val window = com.focusguard.app.access.GuardAccessibilityService.instance
+            ?.currentWindowPackage()
+        return listOfNotNull(
+            usage?.takeIf { it.isNotBlank() },
+            window?.takeIf { it.isNotBlank() && it != usage }
+        )
+    }
+
+    private fun appLabelOf(pkg: String): String = runCatching {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+    }.getOrDefault(pkg)
+
+    private var lastRuleSkipPkg = ""
+    private var lastRuleSkipAt = 0L
+
+    /** 时长规则跳过的日志：同一应用 10 分钟内只记一条，避免日志被刷屏。 */
+    private fun noteRuleSkip(pkg: String) {
+        val now = System.currentTimeMillis()
+        if (pkg == lastRuleSkipPkg && now - lastRuleSkipAt < 600_000L) return
+        lastRuleSkipPkg = pkg
+        lastRuleSkipAt = now
+        val label = appLabelOf(pkg)
+        logStore.addLog(
+            DetectionLog(
+                classification = "NEUTRAL",
+                confidence = 1f,
+                reason = "$label 已设置使用时长，到点前只计时、不做 AI 检测",
+                action = "NONE",
+                source = DetectionSource.APP_CATEGORY.name,
+                appLabel = label
+            )
+        )
+    }
+
     private suspend fun performDetection(isManualTest: Boolean) {
         val activePipeline = pipeline ?: return
 
@@ -555,6 +593,24 @@ class MonitorService : Service() {
         if (!isManualTest && lockState.isLocked) {
             Log.d(TAG, "锁机中，跳过本轮检测")
             return
+        }
+
+        // 设了使用时长规则的应用：到「允许使用时间」之前不做 AI 检测，只计时。
+        // 到点后由 usageTick 的 ShouldDetect 接管检测（只设「最多使用时间」的，
+        // 到点直接封锁）；没设规则的应用行为完全不变。
+        // （用户报告「设置了应用允许使用的时长后还会触发 AI 检测」——
+        //   指的是到点之前不该触发。）
+        if (!isManualTest) {
+            val gated = foregroundCandidates().firstOrNull { pkg ->
+                val rule = usageRuleStore.getRule(pkg) ?: return@firstOrNull false
+                val startAt = rule.triggerMinutes ?: rule.hardBlockMinutes ?: return@firstOrNull false
+                val used = (usageRuleStore.getTodaySeconds(pkg) / 60).toInt()
+                used < startAt
+            }
+            if (gated != null) {
+                noteRuleSkip(gated)
+                return
+            }
         }
 
         val outcome = try {

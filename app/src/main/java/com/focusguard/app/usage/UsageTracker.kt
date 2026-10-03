@@ -97,6 +97,7 @@ class UsageTracker(private val store: UsageRuleStore) {
 
         rule.triggerMinutes?.let { trigger ->
             if (usedMinutes >= trigger) {
+                // 到「允许使用时间」后开始 AI 检测（检测接管）
                 return Verdict.ShouldDetect(packageName, usedMinutes, trigger)
             }
         }

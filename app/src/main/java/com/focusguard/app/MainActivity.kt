@@ -114,7 +114,7 @@ class MainActivity : ComponentActivity() {
         // 早期实现在这里没有任何处理，导致主界面与锁机页互相拉起 → 闪退。
         try {
             val lockState = com.focusguard.app.data.LockState(this)
-            val usageRuleStore = com.focusguard.app.usage.UsageRuleStore(this)
+            val usageRuleStore = com.focusguard.app.usage.UsageRuleStore.shared(this)
             val hasBlockRule = usageRuleStore.allRules().any { it.hardBlockMinutes != null }
 
             // 有锁机或封锁规则 → 确保守护服务与看门狗在位

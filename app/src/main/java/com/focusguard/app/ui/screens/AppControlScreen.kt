@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
  *
  * 点击任意应用直接进入编辑弹窗，一个弹窗里完成全部设置：
  * - 应用类型（自动识别 / 游戏 / 学习办公 / 视频 / 短视频 / 社交 / 系统）
- * - 允许使用时间（超过后开始 AI 检测）
+ * - 允许使用时间（到点前只计时不检测；超过后开始 AI 检测）
  * - 最多使用时间（超过后全屏封锁）
  */
 @Composable
@@ -140,7 +140,7 @@ fun AppControlScreen() {
                     AppControlRow(
                         app = app,
                         hasRule = remember(app.packageName) {
-                            UsageRuleStore(context).getRule(app.packageName) != null
+                            UsageRuleStore.shared(context).getRule(app.packageName) != null
                         },
                         onClick = { editingApp = app }
                     )
@@ -157,7 +157,7 @@ fun AppControlScreen() {
             onDismiss = { editingApp = null },
             onSaved = { category, rule ->
                 val categoryStore = AppCategoryStore(context)
-                val ruleStore = UsageRuleStore(context)
+                val ruleStore = UsageRuleStore.shared(context)
 
                 // 限额改动后必须解除既有封锁，否则旧封锁在新限额下仍然生效
                 // （用户反馈"修改限额后软件仍被封锁"的根因）：
@@ -307,7 +307,7 @@ private fun AppEditSheet(
 ) {
     val context = LocalContext.current
     val categoryStore = remember { AppCategoryStore(context) }
-    val ruleStore = remember { UsageRuleStore(context) }
+    val ruleStore = remember { UsageRuleStore.shared(context) }
 
     // 初始值：用户手动设置优先，否则取自动识别分类
     val initialCategory = remember {
@@ -448,7 +448,8 @@ private fun AppEditSheet(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
             Text(
-                text = "留空表示不限制；最多使用时间必须 ≥ 允许使用时间",
+                text = "留空表示不限制，最多使用时间必须 ≥ 允许使用时间；"
+                    + "设了时长的应用在到点前不做 AI 检测，没设规则的应用照常检测",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
             )
