@@ -1,9 +1,7 @@
-package com.focusguard.app.challenge
+package com.focusguard.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.focusguard.app.data.LockClock
-import com.focusguard.app.data.SystemLockClock
 
 /**
  * 答题防试错规则（锁机答题、设置放宽验证、停止守护、应用管控共用）。

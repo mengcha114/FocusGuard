@@ -1481,10 +1481,8 @@ object LockOverlayManager {
         // 防止用"退出重进"绕过「换一题」5 次限制反复刷题。
         if (challengeSession == null) {
             challengeSession = ChallengeSession(
-                // numericOnly：自绘键盘无法输入中文，排除星期推算题
                 question = generator(context).generate(
-                    difficulty = if (requiredCorrect >= 3) 3 else 2,
-                    numericOnly = true
+                    difficulty = if (requiredCorrect >= 3) 3 else 2
                 ),
                 requiredCorrect = requiredCorrect.coerceAtLeast(1),
                 forPause = forPause
@@ -2598,8 +2596,7 @@ object LockOverlayManager {
         session: ChallengeSession
     ) {
         session.question = generator(context).generate(
-            difficulty = if (session.requiredCorrect >= 3) 3 else 2,
-            numericOnly = true
+            difficulty = if (session.requiredCorrect >= 3) 3 else 2
         )
         session.input = ""
         session.feedback = ""

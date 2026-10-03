@@ -1,7 +1,5 @@
-package com.focusguard.app.challenge
+package com.focusguard.app.data
 
-import com.focusguard.app.data.FakeClock
-import com.focusguard.app.data.FakePrefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

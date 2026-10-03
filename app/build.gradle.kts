@@ -56,6 +56,24 @@ android {
 
     buildFeatures {
         compose = true
+        // 两版通过 BuildConfig.CHALLENGE_MODE 在编译期确定答题模式（AGP 8 默认关闭该特性）
+        buildConfig = true
+    }
+
+    // 两个版本：学段版（真题库+选年级）/ 通用版（繁复计算题，不选年级）
+    // 学段版沿用原 applicationId（老用户升级无感、已激活的 Dhizuku 授权不失效）；
+    // 通用版加后缀，可与学段版同时安装，但需要用户重新在 Dhizuku 中授权本应用。
+    flavorDimensions += "edition"
+    productFlavors {
+        create("edu") {
+            dimension = "edition"
+            buildConfigField("String", "CHALLENGE_MODE", "\"edu\"")
+        }
+        create("general") {
+            dimension = "edition"
+            applicationIdSuffix = ".general"
+            buildConfigField("String", "CHALLENGE_MODE", "\"general\"")
+        }
     }
 
     composeOptions {

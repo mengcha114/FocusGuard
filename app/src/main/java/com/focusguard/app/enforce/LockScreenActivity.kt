@@ -1158,11 +1158,18 @@ private fun LockScreenContent(
                                 lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
                                 else -> "专注锁定中"
                             },
-                            subBadge = if (com.focusguard.app.enhance.DhizukuUpgrade.pending) "⏳ 正在恢复系统级守护…" else "🛡️ 系统级守护",
+                            subBadge = if (com.focusguard.app.enhance.DhizukuUpgrade.pending) "⏳ 恢复中：${com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { \"等待 Dhizuku\" }}" else "🛡️ 系统级守护",
                             accent = accent,
                             palette = palette,
                             locked = !isRelaxed
                         )
+                        // 系统级未恢复：手动入口。锁机页在前台，可以拉起 Dhizuku 应用；
+                        // Dhizuku 进程没起来时自动重试无能为力，这是最可靠的恢复路径。
+                        if (com.focusguard.app.enhance.DhizukuUpgrade.pending) {
+                            TextButton(onClick = {
+                                com.focusguard.app.enhance.DhizukuUpgrade.openDhizukuApp(mottoContext)
+                            }) { Text("点此尝试恢复系统级守护", fontSize = 12.sp, color = accent) }
+                        }
 
                         Spacer(Modifier.height(16.dp))
 
@@ -1330,11 +1337,16 @@ private fun LockScreenContent(
                             lockState.lockSource == "AI" -> "AI 检测到娱乐 · 已锁定"
                             else -> "专注锁定中"
                         },
-                        subBadge = if (com.focusguard.app.enhance.DhizukuUpgrade.pending) "⏳ 正在恢复系统级守护…" else "🛡️ 系统级守护",
+                        subBadge = if (com.focusguard.app.enhance.DhizukuUpgrade.pending) "⏳ 恢复中：${com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { \"等待 Dhizuku\" }}" else "🛡️ 系统级守护",
                         accent = accent,
                         palette = palette,
                         locked = !isRelaxed
                     )
+                    if (com.focusguard.app.enhance.DhizukuUpgrade.pending) {
+                        TextButton(onClick = {
+                            com.focusguard.app.enhance.DhizukuUpgrade.openDhizukuApp(mottoContext)
+                        }) { Text("点此尝试恢复系统级守护", fontSize = 12.sp, color = accent) }
+                    }
                 }
             }
             Spacer(Modifier.height(26.dp))

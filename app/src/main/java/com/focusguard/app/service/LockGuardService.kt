@@ -151,15 +151,18 @@ class LockGuardService : Service() {
      */
     private fun checkForceStopped() {
         try {
-            val compensated = lockState.compensateGuardGap()
+            val chargeOff = runCatching {
+                com.focusguard.app.data.Settings(applicationContext).countOffTimeInLock
+            }.getOrDefault(true)
+            val compensated = lockState.compensateGuardGap(chargeOff)
             if (compensated > 0L && lockState.isLocked) {
-                Log.w(TAG, "检测到守护曾被强制停止，已补回锁机 ${compensated / 1000}s")
+                Log.w(TAG, "检测到锁机期间守护曾中断（被杀 / 关机 / 安全模式），已补回 ${compensated / 1000}s")
                 val notification = android.app.Notification.Builder(
                     this, com.focusguard.app.FocusGuardApp.CHANNEL_ID
                 )
                     .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
-                    .setContentTitle("守护曾被强制停止，现已恢复")
-                    .setContentText("被停止的 ${compensated / 60_000 + 1} 分钟已补回锁机时长")
+                    .setContentTitle("锁机期间守护曾中断，现已恢复")
+                    .setContentText("锁机中断的 ${compensated / 60_000 + 1} 分钟已补回锁机时长")
                     .setAutoCancel(true)
                     .build()
                 getSystemService(NotificationManager::class.java).notify(1007, notification)
@@ -444,6 +447,26 @@ class LockGuardService : Service() {
             }
         }
 
+        // ── 重启后降级：持续探测 Dhizuku，就绪即升级回系统级 ──
+        // 必须放在所有分支之前：Dhizuku 优先分支会以 return 结束（Activity 在前台时正是
+        // 需要重试的场景），放在其后等于永不执行——上一版补丁失效的原因。
+        if (lockState.isLocked && com.focusguard.app.enhance.DhizukuUpgrade.pending) {
+            com.focusguard.app.enhance.DhizukuUpgrade.tick(applicationContext) {
+                Log.d(TAG, "Dhizuku 已就绪，升级回系统级锁机")
+                LockScreenActivity.show(applicationContext, forceActivity = true)
+            }
+        }
+        // ── 锁机中（非暂停）：Shizuku 写回无障碍与自动时间（低频，约每 10 秒） ──
+        if (lockState.isLocked && lockState.shouldBlockNow && tickCount % 33 == 0 &&
+            com.focusguard.app.enhance.ShizukuEnhancer.isReady()
+        ) {
+            val app = applicationContext
+            Thread {
+                com.focusguard.app.enhance.ShizukuEnhancer.ensureAccessibility(app)
+                com.focusguard.app.enhance.ShizukuEnhancer.ensureAutoTime()
+            }.start()
+        }
+
         // 番茄钟阶段推进统一在守护里做：悬浮窗路径（无 Dhizuku）也能正常切换阶段
         if (lockState.tickPomodoro()) {
             Log.d(TAG, "番茄钟阶段切换：专注=${lockState.pomodoroIsWorkPhase}")
@@ -464,14 +487,6 @@ class LockGuardService : Service() {
             Thread {
                 if (lockedNow) com.focusguard.app.enhance.LockPolicies.onLockStart(app)
                 else com.focusguard.app.enhance.LockPolicies.onLockEnd(app)
-            }.start()
-        }
-        // 锁机中（非暂停）：Shizuku 写回无障碍与自动时间（低频，每 ~10 秒）
-        if (blockingNow && tickCount % 33 == 0 && com.focusguard.app.enhance.ShizukuEnhancer.isReady()) {
-            val app = applicationContext
-            Thread {
-                com.focusguard.app.enhance.ShizukuEnhancer.ensureAccessibility(app)
-                com.focusguard.app.enhance.ShizukuEnhancer.ensureAutoTime()
             }.start()
         }
         if (lockedNow != uninstallBlocked) {
@@ -609,14 +624,6 @@ class LockGuardService : Service() {
                     LockScreenActivity.show(applicationContext, forceActivity = true)
                 }
                 return
-            }
-
-            // ── 重启后降级：后台持续探测 Dhizuku，就绪即升级回系统级 ──
-            if (com.focusguard.app.enhance.DhizukuUpgrade.pending) {
-                com.focusguard.app.enhance.DhizukuUpgrade.tick(applicationContext) {
-                    Log.d(TAG, "Dhizuku 已就绪，升级回系统级锁机")
-                    LockScreenActivity.show(applicationContext, forceActivity = true)
-                }
             }
 
             // ── 无 Dhizuku：全屏悬浮窗常驻（主防线） ──────────

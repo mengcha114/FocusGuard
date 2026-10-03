@@ -64,7 +64,12 @@ fun UnlockChallengeScreen(
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var switching by remember { mutableStateOf(false) }
-    val gradeLabel = remember { com.focusguard.app.data.GradeStore(context).effective.label }
+    // 通用版没有学段概念，显示模式名而不是兜底的学段
+    val gradeLabel = remember {
+        if (com.focusguard.app.challenge.ChallengeMode.needsGrade())
+            com.focusguard.app.data.GradeStore(context).effective.label
+        else "通用题库"
+    }
     // 作答时限：每题独立计时，超时算错并换题
     var secondsLeft by remember { mutableIntStateOf(currentQuestion.timeLimitSec) }
     // 答错冷却：免费次数用完后每次答错需等待 5 分钟（单调时钟，退出重进不重置）

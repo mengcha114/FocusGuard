@@ -39,8 +39,14 @@ class LockState internal constructor(
         private const val KEY_SNAP_ELAPSED = "snap_elapsed"
         private const val KEY_SNAP_UPTIME = "snap_uptime"
 
+        /** 快照时刻的墙钟：跨重启（关机 / 安全模式往返）只能靠它测量时间差。 */
+        private const val KEY_SNAP_WALL = "snap_wall"
+
         /** 墙钟与单调钟偏差超过此值（毫秒）判定为时间篡改。 */
         const val TIME_TAMPER_THRESHOLD_MS = 3 * 60_000L
+
+        /** 跨重启补足的判定门限：墙钟差小于此值视为正常重启抖动，不补。 */
+        private const val OFF_GAP_THRESHOLD_MS = 60_000L
 
         /** 守护中断（按设备清醒时间计）超过此值才视为被杀并补回。 */
         const val KILL_GAP_THRESHOLD_MS = 10_000L
@@ -50,8 +56,11 @@ class LockState internal constructor(
 
         /** 单次锁机内「换一题」按钮可用次数上限（持久化：退出重进不重置）。 */
         private const val KEY_CHALLENGE_REFRESHES = "challenge_refreshes"
-        private const val KEY_WRONG_COUNT = "challenge_wrong_count"
-        private const val KEY_COOLDOWN_BASE = "challenge_cooldown_base"
+
+        /** 连续答错多少次进入冷却（单一来源：AttemptGuard）。 */
+        const val FREE_WRONG_ANSWERS = AttemptGuard.MAX_WRONG
+        const val WRONG_COOLDOWN_MS = AttemptGuard.COOLDOWN_MS
+        private const val KEY_CHALLENGE_REFRESHES = "challenge_refreshes"
 
         /** 连续答错多少次进入冷却（与 AttemptGuard.MAX_WRONG 一致）。 */
         const val FREE_WRONG_ANSWERS = 2
@@ -142,8 +151,10 @@ class LockState internal constructor(
             .putLong(KEY_PAUSE_ELAPSED_BASE, 0L)
             .putLong(KEY_PAUSE_DURATION_MS, 0L)
             .putLong(KEY_SNAP_REMAINING, remaining)
-            .putLong(KEY_SNAP_ELAPSED, now)
-            .putLong(KEY_SNAP_UPTIME, clock.uptime())
+            // 注意：这里**故意不刷新** KEY_SNAP_ELAPSED / UPTIME / WALL。
+            // 跨重启补足要靠这份「重启前的快照」来测量中断时长；一旦在这里
+            // 刷新成当前值，补偿就永远测不到间隔。补足完成后由 writeSnapshot()
+            // 负责刷新锚点，因此不会重复累加。
             .commit()
     }
 
@@ -216,8 +227,6 @@ class LockState internal constructor(
             .putString(KEY_LOCK_SOURCE, source)
             .putInt(KEY_LOCK_STRENGTH, level)
             .putInt(KEY_CHALLENGE_REFRESHES, 0)
-            .putInt(KEY_WRONG_COUNT, 0)
-            .putLong(KEY_COOLDOWN_BASE, 0L)
             .putInt(KEY_PAUSE_USED, 0)
             .putLong(KEY_PAUSE_ELAPSED_BASE, 0L)
             .putLong(KEY_PAUSE_DURATION_MS, 0L)
@@ -228,6 +237,7 @@ class LockState internal constructor(
             .putLong(KEY_SNAP_ELAPSED, now)
             .putLong(KEY_SNAP_UPTIME, clock.uptime())
             .commit()
+        attemptGuard.resetAll()
         if (level == 3) setupFriendChallenge()
         return true
     }
@@ -245,14 +255,13 @@ class LockState internal constructor(
             .putLong(KEY_PAUSE_ELAPSED_BASE, 0L)
             .putLong(KEY_PAUSE_DURATION_MS, 0L)
             .putInt(KEY_CHALLENGE_REFRESHES, 0)
-            .putInt(KEY_WRONG_COUNT, 0)
-            .putLong(KEY_COOLDOWN_BASE, 0L)
             .putBoolean(KEY_POMODORO_RUNNING, false)
             .putLong(KEY_SNAP_REMAINING, 0L)
             .putLong(KEY_SNAP_PHASE_REMAINING, 0L)
             .putLong(KEY_SNAP_ELAPSED, 0L)
             .putLong(KEY_SNAP_UPTIME, 0L)
             .commit()
+        attemptGuard.resetAll()
     }
 
     // ── 时间篡改 ──────────────────────────────────────
@@ -295,10 +304,12 @@ class LockState internal constructor(
                 .putLong(KEY_SNAP_PHASE_REMAINING, pomodoroPhaseRemainingMs)
                 .putLong(KEY_SNAP_ELAPSED, clock.elapsed())
                 .putLong(KEY_SNAP_UPTIME, clock.uptime())
+                .putLong(KEY_SNAP_WALL, clock.wall())
         } else {
             editor.putLong(KEY_SNAP_REMAINING, 0L)
                 .putLong(KEY_SNAP_ELAPSED, 0L)
                 .putLong(KEY_SNAP_UPTIME, 0L)
+                .putLong(KEY_SNAP_WALL, 0L)
         }
         editor.apply()
     }
@@ -310,13 +321,34 @@ class LockState internal constructor(
      *
      * @return 补回的毫秒数，0 表示无需补回
      */
-    fun compensateGuardGap(): Long {
+    fun compensateGuardGap(chargeOffTime: Boolean = true): Long {
         val snapElapsed = long(KEY_SNAP_ELAPSED)
         val snapRemaining = long(KEY_SNAP_REMAINING)
         if (snapElapsed <= 0L || snapRemaining <= 0L) return 0L
         val elapsedGap = clock.elapsed() - snapElapsed
+        // ── 跨重启：单调时钟归零，改用墙钟差补足 ──
+        // 覆盖两条路径：① 正常关机重启；② 进安全模式（第三方应用全部禁用，
+        // 本应用无法运行，回来时已是新的一次启动）。两者都让用户在锁机期间
+        // 白用了手机，因此回来后把这段时间补回锁机剩余时长——只会让锁更久，
+        // 改系统时间最多把补足量放大，不会缩短锁机（无安全风险）。
+        if (elapsedGap <= 0L || isStaleBoot(snapElapsed)) {
+            if (!chargeOffTime) return 0L
+            val snapWall = long(KEY_SNAP_WALL)
+            if (snapWall <= 0L) return 0L
+            val wallGap = clock.wall() - snapWall
+            if (wallGap < OFF_GAP_THRESHOLD_MS) return 0L
+            val extend = wallGap.coerceAtMost(MAX_EXTEND_MS)
+            val base = remainingMs
+            extendRemainingTo(base + extend)
+            if (pomodoroRunning) {
+                prefs.edit().putLong(KEY_POMODORO_PHASE_BASE,
+                    long(KEY_POMODORO_PHASE_BASE) + extend).apply()
+            }
+            writeSnapshot()
+            return extend
+        }
         val awakeGap = clock.uptime() - long(KEY_SNAP_UPTIME)
-        if (elapsedGap <= 0L || awakeGap < KILL_GAP_THRESHOLD_MS) return 0L
+        if (awakeGap < KILL_GAP_THRESHOLD_MS) return 0L
         val extend = awakeGap.coerceAtMost(minOf(elapsedGap, MAX_EXTEND_MS))
         // 期望剩余 = 快照剩余 − 睡眠部分（睡眠时间正常计入锁机）
         val target = snapRemaining - (elapsedGap - extend)
@@ -332,6 +364,40 @@ class LockState internal constructor(
         writeSnapshot()
         return target - before
     }
+
+    // ── 锁机期间「换一题」次数（防破解） ──────────────
+    // 存 prefs 持久化：用户退出答题页再重进，次数不重置。锁机结束自动归零。
+
+    /** 本次锁机已使用的「换一题」次数。 */
+    var challengeRefreshCount: Int
+        get() = prefs.getInt(KEY_CHALLENGE_REFRESHES, 0)
+        set(value) = prefs.edit().putInt(KEY_CHALLENGE_REFRESHES, value.coerceAtLeast(0)).apply()
+
+    // ── 答错冷却（防暴力试答） ────────────────────────
+    // 实际计数与冷却逻辑在 [AttemptGuard]（与设置验证弹窗共用同一套规则）：
+    // 答错立即换题、连续错 MAX_WRONG 次冷却 5 分钟、冷却用单调时钟不可跳过。
+
+    private val attemptGuard: AttemptGuard by lazy {
+        AttemptGuard(prefs, clock, AttemptGuard.SCOPE_LOCK)
+    }
+
+    /** 剩余可答错次数。 */
+    val freeWrongLeft: Int get() = attemptGuard.wrongLeft
+
+    /** 冷却剩余毫秒。 */
+    val cooldownRemainingMs: Long get() = attemptGuard.cooldownRemainingMs
+
+    /** 是否处于冷却中。 */
+    val isInCooldown: Boolean get() = attemptGuard.isInCooldown
+
+    /**
+     * 记录一次答错（或超时）。
+     * @return true = 因此进入冷却
+     */
+    fun recordWrongAnswer(): Boolean = attemptGuard.recordWrong()
+
+    /** 答对：连续错误计数清零。 */
+    fun recordCorrectAnswer() = attemptGuard.recordCorrect()
 
     // ── 锁机期间「换一题」次数（防破解） ──────────────
     // 存 prefs 持久化：用户退出答题页再重进，次数不重置。锁机结束自动归零。

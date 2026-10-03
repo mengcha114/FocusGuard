@@ -391,8 +391,19 @@ fun SettingsScreen(
         // ═══════ 分组二：执法与锁机 ═══════
         SettingsGroupHeader("执法与锁机")
 
-        SettingsSection(title = "答题年级", icon = Icons.Default.School) {
-            com.focusguard.app.ui.components.GradeSettingCard()
+        // 通用版没有学段概念，不显示年级卡片
+        if (com.focusguard.app.challenge.ChallengeMode.needsGrade()) {
+            SettingsSection(title = "答题年级", icon = Icons.Default.School) {
+                com.focusguard.app.ui.components.GradeSettingCard()
+            }
+        }
+
+        SettingsSection(title = "锁机加固", icon = Icons.Default.Lock) {
+            com.focusguard.app.ui.components.LockHardeningCard()
+        }
+
+        SettingsSection(title = "Shizuku / Dhizuku 增强", icon = Icons.Default.Security) {
+            com.focusguard.app.ui.components.ShizukuStatusCard()
         }
 
         // ── 执法模式 ──────────────────────────────────────────────
@@ -598,6 +609,10 @@ fun SettingsScreen(
 
         // ═══════ 分组四：系统与调试 ═══════
         SettingsGroupHeader("系统与调试")
+
+        SettingsSection(title = "关于与题库出处", icon = Icons.Default.Info) {
+            com.focusguard.app.ui.components.AboutCard()
+        }
 
         // ── 调试与导出 ────────────────────────────────────────────
         SettingsSection(title = "调试", icon = Icons.Default.BugReport) {

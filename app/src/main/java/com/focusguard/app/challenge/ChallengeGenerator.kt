@@ -40,6 +40,12 @@ class ChallengeGenerator(context: Context? = null) {
 
     private val appContext: Context? = context?.applicationContext
 
+    /**
+     * 是否使用本地真题库。
+     * 由 [ChallengeMode] 决定（学段版 true / 通用版 false），不再与输入方式（numericOnly）挂钩。
+     */
+    private val useBank: Boolean get() = ChallengeMode.current() == ChallengeMode.EDU
+
     private val rnd = SecureRandom()
     private val prefs = context?.applicationContext?.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val gradeStore = context?.let { GradeStore(it) }
@@ -138,8 +144,18 @@ class ChallengeGenerator(context: Context? = null) {
         val stream = gradeStore?.stream ?: GradeStore.Stream.ALL
         val recentFp = loadFp()
 
+        // 0. 通用版：程序生成的繁复多步计算题（不依赖题库与年级）
+        if (!useBank) {
+            // 答错后降一档：连对 5 题的强度视为 2，其余为 1
+            val strength = if (!easeDifficulty && level >= 3) 2 else 1
+            return GeneralQuestions.generate(strength, excludeTopic)
+        }
+
         // 1. 本地真题库（按真实来源年级 + 选科）；答错后 easeDifficulty 降一档
-        if (!numericOnly) {
+        // 注意：不能用 numericOnly 拦截——题库答案就是 A–D 字母（自绘键盘有 ABC 页与
+        // ABCD 快捷按钮），而锁机主路径（悬浮窗）传的正是 numericOnly=true，
+        // 早先这样拦会导致「题库永远不生效」。
+        if (useBank) {
             val pool = QuestionBank.find(appContext, effectiveGrade, stream, excludeTopic, if (easeDifficulty) 1 else 3)
             pickBankItem(pool, recentFp)?.let { item ->
                 remember(item.topic, "bank|${item.question}")

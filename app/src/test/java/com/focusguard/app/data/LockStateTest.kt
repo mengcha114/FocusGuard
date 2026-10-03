@@ -280,6 +280,42 @@ class LockStateTest {
         assertFalse(state.isInCooldown)
     }
 
+    // ── 关机 / 安全模式：跨重启补足 ──
+
+    @Test
+    fun safeModeOrShutdownGapIsChargedBackAfterReboot() {
+        state.startLock(60, "PLAIN", 1)
+        clock.advance(10 * min)
+        state.writeSnapshot()
+        val snapWall = clock.wallMs
+        // 重启（可能进的是安全模式：第三方应用全部禁用，本应用无法运行）
+        clock.reboot(offMs = 10 * min)
+        // 在安全模式里用了 20 分钟
+        clock.advance(20 * min)
+        val s = reload()
+        val wallGap = clock.wallMs - snapWall
+        assertEquals(wallGap, s.compensateGuardGap(chargeOffTime = true))
+        // 原剩余 50 分钟 + 补足量
+        assertEquals(50 * 60 + (wallGap / 1000).toInt(), s.remainingSeconds)
+    }
+
+    @Test
+    fun gapIsNotChargedWhenDisabled() {
+        state.startLock(60, "PLAIN", 1)
+        state.writeSnapshot()
+        clock.reboot(offMs = 30 * min)
+        assertEquals(0L, reload().compensateGuardGap(chargeOffTime = false))
+        assertEquals(60 * 60, state.remainingSeconds)
+    }
+
+    @Test
+    fun shortRebootDoesNotCharge() {
+        state.startLock(60, "PLAIN", 1)
+        state.writeSnapshot()
+        clock.reboot(offMs = 10_000) // 只关机 10 秒
+        assertEquals(0L, reload().compensateGuardGap(chargeOffTime = true))
+    }
+
     @Test
     fun releaseClearsEverything() {
         state.startLock(60, "PLAIN", 3)

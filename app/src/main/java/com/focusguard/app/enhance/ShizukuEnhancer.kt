@@ -137,7 +137,8 @@ object ShizukuEnhancer {
      */
     fun ensureAccessibility(context: Context): Boolean {
         if (!isReady()) return false
-        val self = "${context.packageName}/${context.packageName}.access.GuardAccessibilityService"
+        val self = android.content.ComponentName(context, com.focusguard.app.access.GuardAccessibilityService::class.java)
+            .flattenToShortString()
         val current = runForOutput("settings", "get", "secure", "enabled_accessibility_services")
             ?.trim()?.takeIf { it.isNotEmpty() && it != "null" } ?: ""
         if (current.split(':').any { it.equals(self, true) }) return true
@@ -148,12 +149,21 @@ object ShizukuEnhancer {
         return ok
     }
 
-    /** 锁机期间保持「自动设置时间」开启（改时间本身已有单调时钟防护，这里减少尝试）。 */
+    /**
+     * 锁机期间保持「自动设置时间」开启（改时间本身已有单调时钟防护，这里减少尝试）。
+     * 原值由调用方在锁机开始时记录，锁机结束用 [restoreAutoTime] 还原，不擅自改用户偏好。
+     */
     fun ensureAutoTime(): Boolean {
         if (!isReady()) return false
         val v = runForOutput("settings", "get", "global", "auto_time")?.trim()
         if (v == "1") return true
         return runCommand("settings", "put", "global", "auto_time", "1")
+    }
+
+    /** 还原「自动设置时间」为用户原值（"0" 时关闭；其他值不处理）。 */
+    fun restoreAutoTime(original: String?): Boolean {
+        if (!isReady() || original.isNullOrBlank()) return false
+        return runCommand("settings", "put", "global", "auto_time", original.trim())
     }
 
     /** 收起通知栏 / 快捷设置面板。 */

@@ -445,6 +445,17 @@ object DhizukuEnhancer {
         }
     }
 
+    /**
+     * 清除连接缓存，供「重启后 Dhizuku 晚启动」的重试使用。
+     * 只清内存缓存，不动任何已写入的设备策略。
+     */
+    fun resetForRetry() {
+        connected = false
+        initialized = false
+        wrappedDpm = null
+        ownerComponent = null
+    }
+
     /** 施加 / 撤销用户限制（如禁止改时间、禁止安全模式）。 */
     fun setUserRestriction(context: Context, key: String, on: Boolean): Boolean = try {
         if (!ensureReady(context)) false else {

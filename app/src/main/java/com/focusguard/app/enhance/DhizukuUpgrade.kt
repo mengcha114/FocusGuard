@@ -1,8 +1,12 @@
 package com.focusguard.app.enhance
 
 import android.content.Context
+import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 /**
  * 重启后「系统级 → 普通模式」降级的自动升级。
@@ -22,9 +26,8 @@ object DhizukuUpgrade {
     private const val SLOW_INTERVAL_MS = 30_000L
     private const val FAST_WINDOW_MS = 3 * 60_000L
 
-    /** 是否处于「已降级、等待升级」状态（锁机页据此显示恢复中徽章）。 */
-    @Volatile
-    var pending: Boolean = false
+    /** 是否处于「已降级、等待升级」状态（锁机页据此显示恢复中徽章）。Compose 状态，界面会实时刷新。 */
+    var pending by mutableStateOf(false)
         private set
 
     @Volatile private var since = 0L
@@ -48,6 +51,20 @@ object DhizukuUpgrade {
         Log.d(TAG, "清除待升级状态")
     }
 
+    /**
+     * 打开 Dhizuku 应用，让它的进程/服务起来（自动重试在 Dhizuku 未运行时无能为力）。
+     * 锁机页在前台时具备启动其他 Activity 的权限，因此这是最可靠的一条恢复路径。
+     */
+    fun openDhizukuApp(context: Context): Boolean = runCatching {
+        val intent = context.packageManager.getLaunchIntentForPackage("com.rosan.dhizuku")
+            ?: return@runCatching false
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        markPending()
+        lastProbeAt = 0L
+        true
+    }.getOrDefault(false)
+
     /** 守护巡检调用；到点时在后台线程探测 Dhizuku，就绪后在调用线程外回调 [onReady]。 */
     fun tick(context: Context, onReady: () -> Unit) {
         if (!pending || probing) return
@@ -67,6 +84,10 @@ object DhizukuUpgrade {
                 if (ready && pending) {
                     pending = false
                     onReady()
+                } else if (!ready) {
+                    // 清掉连接缓存再试：重启后 Dhizuku 进程晚启动时，一次失败可能让
+                    // connected/initialized 处于半初始化状态，后续重试全部无效。
+                    runCatching { DhizukuEnhancer.resetForRetry() }
                 }
             } finally {
                 probing = false

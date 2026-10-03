@@ -212,7 +212,10 @@ class MainActivity : ComponentActivity() {
 
                 // 首次进入（或旧版本升级后）必须选择答题年级；选择后只能调高
                 var needGrade by remember {
-                    mutableStateOf(!com.focusguard.app.data.GradeStore(this@MainActivity).isChosen)
+                    mutableStateOf(
+                        com.focusguard.app.challenge.ChallengeMode.needsGrade() &&
+                            !com.focusguard.app.data.GradeStore(this@MainActivity).isChosen
+                    )
                 }
                 if (needGrade && !showDisclaimer && !showPermissionSetup) {
                     com.focusguard.app.ui.components.GradePickerDialog(

@@ -27,15 +27,11 @@ object PermissionChecker {
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             ).orEmpty()
-            val fullName = "${context.packageName}/${GuardAccessibilityService::class.java.name}"
-            // 部分 ROM 写成相对类名（包名/.access.XxxService），两种都要匹配
-            val shortName = "${context.packageName}/.${
-                GuardAccessibilityService::class.java.name.removePrefix("${context.packageName}.")
-            }"
-            enabled.split(':').any { entry ->
-                entry.equals(fullName, ignoreCase = true) ||
-                    entry.equals(shortName, ignoreCase = true)
-            }
+            // 组件全名由 manifest 的包名决定，与 applicationId 可能不同（存在 applicationIdSuffix
+            // 的版本里二者不一致），因此必须用 ComponentName 生成，不能拼接 packageName。
+            val component = android.content.ComponentName(context, GuardAccessibilityService::class.java)
+            val names = setOf(component.flattenToString(), component.flattenToShortString())
+            enabled.split(':').any { it.trim().let { e -> names.any { it.equals(e, ignoreCase = true) } } }
         } catch (e: Exception) {
             false
         }
