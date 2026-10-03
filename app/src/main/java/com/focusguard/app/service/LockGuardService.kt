@@ -670,47 +670,64 @@ class LockGuardService : Service() {
         // 锁机结束后仍要守护应用限额，因此不 return
         if (foreground == null || foreground == packageName) return
 
+        // B0. 无障碍报告的当前窗口包名作为第二候选：UsageStats 的前台判定有
+        // 秒级延迟，只靠它会出现「已经打开被封应用，却过一会儿才挡住」。
+        val windowPkg = com.focusguard.app.access.GuardAccessibilityService.instance
+            ?.currentWindowPackage()
+            ?.takeIf { it.isNotBlank() && it != packageName && it != foreground }
+        if (windowPkg != null && enforceAppBlockFor(windowPkg)) return
+        enforceAppBlockFor(foreground)
+    }
+
+    /**
+     * 对某个候选前台应用执行硬封锁判定，命中并拉起封锁页时返回 true。
+     *
+     * B1.「仅锁该软件」临时封锁（AI 执法下发）：打开即挡，直到截止时间；
+     * B2. 每日使用时长上限（用户配置的长期规则）。
+     */
+    private fun enforceAppBlockFor(target: String): Boolean {
+        val now = System.currentTimeMillis()
         val label = runCatching {
             packageManager.getApplicationLabel(
-                packageManager.getApplicationInfo(foreground, 0)
+                packageManager.getApplicationInfo(target, 0)
             ).toString()
-        }.getOrDefault(foreground)
+        }.getOrDefault(target)
 
-        // B1. 「仅锁该软件」临时封锁（AI 执法下发）：打开即挡，直到截止时间
-        val appBlockStore = com.focusguard.app.data.AppBlockStore(applicationContext)
-        val blockUntil = appBlockStore.blockedUntil(foreground)
+        // B1. 「仅锁该软件」临时封锁：打开即挡，直到截止时间
+        val blockUntil = com.focusguard.app.data.AppBlockStore(applicationContext)
+            .blockedUntil(target)
         if (blockUntil > 0L) {
-            if (now - lastBlockReassertAt < blockReassertCooldownMs) return
-            lastBlockReassertAt = now
-            Log.d(TAG, "$label 处于临时封锁期，拉起封锁页")
-            AppBlockActivity.show(
-                context = applicationContext,
-                packageName = foreground,
-                appLabel = label,
-                usedMinutes = 0,
-                limitMinutes = 0,
-                blockUntil = blockUntil
-            )
-            return
+            if (now - lastBlockReassertAt > blockReassertCooldownMs) {
+                lastBlockReassertAt = now
+                Log.d(TAG, "$label 处于临时封锁期，拉起封锁页")
+                AppBlockActivity.show(
+                    context = applicationContext,
+                    packageName = target,
+                    appLabel = label,
+                    usedMinutes = 0,
+                    limitMinutes = 0,
+                    blockUntil = blockUntil
+                )
+            }
+            return true
         }
 
         // B2. 每日使用时长硬封锁（用户配置的长期规则）
-        val rule = usageRuleStore.getRule(foreground) ?: return
-        val limit = rule.hardBlockMinutes ?: return
-        val usedMinutes = (usageRuleStore.getTodaySeconds(foreground) / 60).toInt()
-        if (usedMinutes < limit) return
-
-        if (now - lastBlockReassertAt < blockReassertCooldownMs) return
+        val limit = usageRuleStore.getRule(target)?.hardBlockMinutes ?: return false
+        val usedMinutes = (usageRuleStore.getTodaySeconds(target) / 60).toInt()
+        if (usedMinutes < limit) return false
+        if (now - lastBlockReassertAt <= blockReassertCooldownMs) return true
         lastBlockReassertAt = now
 
         Log.d(TAG, "$label 今日已用 $usedMinutes 分钟，超过上限 $limit 分钟，拉起封锁页")
         AppBlockActivity.show(
             context = applicationContext,
-            packageName = foreground,
+            packageName = target,
             appLabel = label,
             usedMinutes = usedMinutes,
             limitMinutes = limit
         )
+        return true
     }
 
     override fun onDestroy() {

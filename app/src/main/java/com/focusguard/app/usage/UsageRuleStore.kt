@@ -55,6 +55,21 @@ class UsageRuleStore(context: Context) {
         private const val RULES_FILE = "usage_rules.json"
         private const val DAILY_FILE = "usage_daily.json"
 
+        /**
+         * 进程内共享实例。
+         *
+         * 每次构造都要读磁盘上的规则与当日统计。无障碍窗口事件、守护巡检这类
+         * 高频调用点如果各建一个实例，判定之前先做一次文件 IO，表现为「打开
+         * 被封应用后要等一会儿才挡住」。这里统一复用同一份内存数据。
+         */
+        @Volatile private var sharedInstance: UsageRuleStore? = null
+
+        fun shared(context: Context): UsageRuleStore =
+            sharedInstance ?: synchronized(this) {
+                sharedInstance
+                    ?: UsageRuleStore(context.applicationContext).also { sharedInstance = it }
+            }
+
         /** 封锁界面上展示的解封时间提示。计时按自然日归零。 */
         fun resetHint(): String = "计时将在次日 00:00 归零"
     }

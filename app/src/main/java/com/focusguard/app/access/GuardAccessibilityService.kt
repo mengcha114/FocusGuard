@@ -248,40 +248,62 @@ class GuardAccessibilityService : AccessibilityService() {
         lastWindowPackage
     }
 
-    /** 被封应用的判定缓存（包名 → 到期时间与结论），避免每次窗口变化都查使用时长。 */
-    private val blockCache = HashMap<String, Pair<Long, Boolean>>()
     private var lastBlockInterceptAt = 0L
+    private var burstToken = 0
+
+    /** 共享的规则仓库：构造实例要读磁盘文件，窗口事件里不能每次都新建。 */
+    private val ruleStore: com.focusguard.app.usage.UsageRuleStore
+        get() = com.focusguard.app.usage.UsageRuleStore.shared(this)
 
     /**
      * 应用级封锁的即时拦截。
      *
      * 原先只靠守护巡检（300ms 一次 + 1 秒节流），用户打开被封应用最多要等 1.3 秒
-     * 才看到封锁页，体验上像"没生效"。这里在窗口切换到该应用的瞬间就拉起封锁页，
-     * 判定结果缓存 5 秒，避免频繁查使用时长。
+     * 才看到封锁页，体验上像「没生效」。这里在窗口切换到该应用的瞬间就拉起封锁页。
+     *
+     * 两个细节决定「打开即挡」是否真的成立：
+     * 1. 判定只读内存数据（共享的规则仓库 + 封锁表），不做文件 IO、不查 UsageStats；
+     * 2. 刚切过去的那一次启动请求常被系统丢下（目标应用正在启动），
+     *    因此随后再补发几次，直到封锁页确实压在最上面。
      */
     private fun interceptIfBlocked(pkg: String) {
+        if (!runCatching { isBlockedNow(pkg) }.getOrDefault(false)) return
         val now = System.currentTimeMillis()
-        val cached = blockCache[pkg]
-        val blocked = if (cached != null && cached.first > now) {
-            cached.second
-        } else {
-            val value = runCatching { isBlockedNow(pkg) }.getOrDefault(false)
-            blockCache[pkg] = now + 5_000L to value
-            value
-        }
-        if (!blocked) return
-        if (now - lastBlockInterceptAt < 400L) return
+        if (now - lastBlockInterceptAt < 200L) return
         lastBlockInterceptAt = now
-        Log.d(TAG, "$pkg 已被封锁，立即拉起封锁页")
+        showAppBlock(pkg)
+
+        // 补发：只发一次时系统可能把启动请求丢掉，实测要等下一次巡检才出现
+        val token = ++burstToken
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        for (delayMs in longArrayOf(300L, 800L, 1600L)) {
+            handler.postDelayed({
+                if (token == burstToken && runCatching { isBlockedNow(pkg) }.getOrDefault(false)) {
+                    showAppBlock(pkg)
+                }
+            }, delayMs)
+        }
+    }
+
+    /**
+     * 拉起全屏封锁页。
+     *
+     * 没有悬浮窗权限时，全屏页的启动请求很可能被系统的后台启动限制丢弃，
+     * 那时先把用户顶回桌面——「打开就被打断」这件事本身不依赖任何界面。
+     */
+    private fun showAppBlock(pkg: String) {
+        Log.d(TAG, "$pkg 已被封锁，拉起封锁页")
         runCatching {
-            val store = com.focusguard.app.data.AppBlockStore(this)
-            val until = store.blockedUntil(pkg)
+            val until = com.focusguard.app.data.AppBlockStore(this).blockedUntil(pkg)
             val label = runCatching {
                 val pm = packageManager
                 pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
             }.getOrDefault(pkg)
-            val rule = com.focusguard.app.usage.UsageRuleStore(this).getRule(pkg)
-            val used = (com.focusguard.app.usage.UsageRuleStore(this).getTodaySeconds(pkg) / 60).toInt()
+            val rule = ruleStore.getRule(pkg)
+            val used = (ruleStore.getTodaySeconds(pkg) / 60).toInt()
+            if (!android.provider.Settings.canDrawOverlays(this)) {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            }
             com.focusguard.app.enforce.AppBlockActivity.show(
                 context = this,
                 packageName = pkg,
@@ -297,9 +319,8 @@ class GuardAccessibilityService : AccessibilityService() {
     private fun isBlockedNow(pkg: String): Boolean {
         if (pkg == packageName) return false
         if (com.focusguard.app.data.AppBlockStore(this).blockedUntil(pkg) > 0L) return true
-        val store = com.focusguard.app.usage.UsageRuleStore(this)
-        val limit = store.getRule(pkg)?.hardBlockMinutes ?: return false
-        return (store.getTodaySeconds(pkg) / 60).toInt() >= limit
+        val limit = ruleStore.getRule(pkg)?.hardBlockMinutes ?: return false
+        return (ruleStore.getTodaySeconds(pkg) / 60).toInt() >= limit
     }
 
     /** 当前是否处于「锁机中且应当拦截」的状态。 */
