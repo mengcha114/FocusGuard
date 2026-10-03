@@ -999,7 +999,14 @@ class MonitorService : Service() {
                     this, com.focusguard.app.enhance.LockPolicies.Hardening.LOCK_NOW
                 )
             ) {
-                Thread { runCatching { com.focusguard.app.enhance.DhizukuEnhancer.lockNow(applicationContext) } }.start()
+                Thread {
+                    runCatching {
+                        // 优先 Dhizuku（Device Owner）；没有它就退到系统「设备管理员」的 force-lock
+                        if (!com.focusguard.app.enhance.DhizukuEnhancer.lockNow(applicationContext)) {
+                            com.focusguard.app.enhance.AdminEnhancer.lockNow(applicationContext)
+                        }
+                    }
+                }.start()
             }
             // 应用设置里配置的 AI 执法解锁强度；已在锁机时只加码不覆盖
             // （强度 3 的朋友密文由 startLock 内部生成）

@@ -102,6 +102,17 @@ fun PermissionSetupScreen(
                 isGranted = PermissionChecker.isBatteryOptimizationIgnored(context),
                 isRequired = false
             ),
+            // ── 系统自带的设备管理员（免 root / 免 Shizuku，人人可用） ──
+            PermissionItem(
+                key = "device_admin",
+                title = "设备管理员（系统自带·推荐）",
+                description = "系统设置 → 安全 → 设备管理器应用里的那个，不需要 root 与 Shizuku。" +
+                    "激活后锁机可在执法瞬间立即锁屏；随时可在系统设置里撤销",
+                icon = Icons.Default.AdminPanelSettings,
+                isGranted = com.focusguard.app.enhance.AdminEnhancer.isActive(context),
+                isRequired = false
+            ),
+
             // ── 高级增强（可选，Shizuku/Dhizuku） ──
             PermissionItem(
                 key = "shizuku",

@@ -178,6 +178,20 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- 设备管理员（force-lock）：没有 Dhizuku 时也能「执法瞬间锁屏」，
+             用户可在系统设置里看到并随时撤销 -->
+        <receiver
+            android:name=".access.GuardDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
         <!-- 开机自启动：恢复锁机状态 + 启动锁机守护服务 -->
         <receiver
             android:name=".boot.BootReceiver"

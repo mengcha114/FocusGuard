@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  设备管理员策略声明（系统「设备管理员」列表里会显示本应用）。
+  只用最小集合：force-lock = 立即锁屏，用于「执法瞬间锁屏」在
+  没有 Dhizuku 的机器上也能生效；不申请擦除数据等危险策略。
+-->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
+</device-admin>

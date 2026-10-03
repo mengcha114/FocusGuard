@@ -529,6 +529,30 @@ class MainActivity : ComponentActivity() {
                     }
                 }, 1500)
             }
+            "device_admin" -> {
+                // 系统「设备管理员」：免 root、免 Shizuku，用户在系统弹窗点一下即可激活
+                if (com.focusguard.app.enhance.AdminEnhancer.isActive(this)) {
+                    Toast.makeText(this, "设备管理员已激活（执法瞬间锁屏可用）", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                val adminIntent = Intent(
+                    android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN
+                ).apply {
+                    putExtra(
+                        android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN,
+                        android.content.ComponentName(
+                            this@MainActivity,
+                            com.focusguard.app.access.GuardDeviceAdminReceiver::class.java
+                        )
+                    )
+                    putExtra(
+                        android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                        "用于锁机期间立即锁屏等管理能力；不需要 root 或 Shizuku，" +
+                            "激活后可在「设置 → 安全 → 设备管理器应用」里随时撤销。"
+                    )
+                }
+                settingsPageLauncher.launch(adminIntent)
+            }
             "dhizuku" -> {
                 val enhancer = com.focusguard.app.enhance.DhizukuEnhancer
                 if (!enhancer.connect(this)) {
