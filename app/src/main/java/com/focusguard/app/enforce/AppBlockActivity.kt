@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -136,12 +137,30 @@ class AppBlockActivity : ComponentActivity() {
         val blockUntil = intent.getLongExtra(EXTRA_BLOCK_UNTIL, 0L)
 
         setContent {
+            var showVerify by remember { mutableStateOf(false) }
+            if (showVerify) {
+                // 答题解封：答对后解除本次封锁，并把今日已用时长回退一段（再换点使用时间）
+                val extra = com.focusguard.app.data.Settings(this).appBlockMinutes
+                com.focusguard.app.ui.components.VerifyDialog(
+                    title = "解封需要先答题",
+                    description = "你正在解除「" + label + "」的封锁；答对后可再使用 " + extra + " 分钟。",
+                    confirmText = "验证并解封",
+                    onPassed = {
+                        showVerify = false
+                        com.focusguard.app.enforce.AppLockToolExecutor
+                            .grantExtraTime(this, blockedPackage, extra)
+                        goHome()
+                    },
+                    onCancel = { showVerify = false }
+                )
+            }
             if (blockUntil > 0L) {
                 // 临时封锁（仅锁该软件）：显示封锁截止时间与倒计时
                 AppBlockedUntilScreen(
                     appLabel = label,
                     blockUntil = blockUntil,
-                    onGoHome = { goHome() }
+                    onGoHome = { goHome() },
+                    onChallenge = { showVerify = true }
                 )
             } else {
                 AppBlockScreen(
@@ -149,7 +168,8 @@ class AppBlockActivity : ComponentActivity() {
                     usedMinutes = used,
                     limitMinutes = limit,
                     resetHint = "计时于每日 0 点自动归零",
-                    onGoHome = { goHome() }
+                    onGoHome = { goHome() },
+                    onChallenge = { showVerify = true }
                 )
             }
         }
@@ -246,7 +266,8 @@ class AppBlockActivity : ComponentActivity() {
 private fun AppBlockedUntilScreen(
     appLabel: String,
     blockUntil: Long,
-    onGoHome: () -> Unit
+    onGoHome: () -> Unit,
+    onChallenge: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val palette = remember(context) {
@@ -385,6 +406,23 @@ private fun AppBlockedUntilScreen(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("返回桌面", fontSize = 16.sp)
             }
+
+            // 答题解封：靠自己努力换回一点使用时间（不答题只能等封锁结束）
+            OutlinedButton(
+                onClick = onChallenge,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Psychology,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("答题解封（答对可再用一会）", fontSize = 15.sp)
+            }
         }
     }
 }
@@ -395,7 +433,8 @@ private fun AppBlockScreen(
     usedMinutes: Int,
     limitMinutes: Int,
     resetHint: String,
-    onGoHome: () -> Unit
+    onGoHome: () -> Unit,
+    onChallenge: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val palette = remember(context) {
@@ -528,6 +567,23 @@ private fun AppBlockScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("返回桌面", fontSize = 16.sp)
+            }
+
+            // 答题解封：靠自己努力换回一点使用时间（不答题只能等封锁结束）
+            OutlinedButton(
+                onClick = onChallenge,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Psychology,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("答题解封（答对可再用一会）", fontSize = 15.sp)
             }
         }
     }

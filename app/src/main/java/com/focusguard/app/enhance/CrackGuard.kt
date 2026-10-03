@@ -42,8 +42,9 @@ object CrackGuard {
         "autojs", "autox.js", "macrodroid", "net.dinglisch.android.taskerm",
         "parallel.space", "virtualapp", "vmos", "dualspace", "multiapp", "lbe.parallel",
         "xposed", "magisk", "lsposed", "lucky.patcher", "chelpus",
-        "teamviewer", "anydesk", "airdroid", "sunlogin", "oray.sunlogin",
-        "omarea", "ice.box", "freezeyou"
+        "teamviewer", "anydesk", "airdroid", "sunlogin", "oray.sunlogin", "todesk", "rustdesk",
+        "omarea", "ice.box", "freezeyou", "kernelsu", "apatch", "virtualxposed", "vphonegaga",
+        "youlong", "yltool"
     )
 
     /** 应用名特征（中文工具基本靠这个命中）。 */
@@ -55,7 +56,19 @@ object CrackGuard {
         "xposed", "magisk", "lsposed", "面具", "幸运破解", "lucky patcher", "烧饼", "游戏修改",
         "gg修改器", "gameguardian", "时间修改", "改机",
         "teamviewer", "向日葵", "anydesk", "airdroid", "远程控制", "远程协助",
-        "scene", "微霸", "thanox", "黑盒"
+        "scene", "微霸", "thanox", "黑盒",
+        // 进程守护 / 「安全护盾」类：会拦截其它应用的操作（能掐掉我们的守护进程）
+        "游龙", "游龙工具", "安全护盾", "进程守护", "防卸载", "守护精灵", "护盾",
+        "手机变电脑", "桌面模式",
+        // 自动化 / 宏
+        "自动精灵", "一触即发", "易点", "超级点击器", "脚本精灵", "auto js",
+        // 多开 / 沙箱 / 云手机
+        "沙箱", "多开助手", "双开助手", "红手指", "云手机", "gaga", "虚拟空间", "平行空间",
+        // 远程控制
+        "todesk", "rustdesk", "网易uu远程", "uu远程", "远程桌面",
+        // 特权 / 改机 / 冻结
+        "kernelsu", "apatch", "太极", "应用变量", "冰箱pro", "hibernator", "servicely",
+        "greenify", "superfreezz", "nap time", "naptime"
     )
 
     private fun prefs(c: Context): SharedPreferences =

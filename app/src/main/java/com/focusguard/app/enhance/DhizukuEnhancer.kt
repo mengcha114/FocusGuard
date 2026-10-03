@@ -563,11 +563,20 @@ object DhizukuEnhancer {
     /** 隐藏/恢复应用（比冻结更彻底：图标从桌面与搜索里消失）。返回是否全部成功。 */
     fun setApplicationHidden(context: Context, pkgs: Collection<String>, hidden: Boolean): Boolean = try {
         if (!ensureReady(context) || pkgs.isEmpty()) false else {
-            // 注意用 List 重载：Array 重载是「单包」那个签名的歧义点，Kotlin 会解析错
-            val failed = wrappedDpm?.setApplicationHidden(ownerComponent!!, pkgs.toList(), hidden)
-            val ok = failed.isNullOrEmpty()
-            Log.d(TAG, "setApplicationHidden(${pkgs.size} 个, hidden=$hidden) ok=$ok")
-            ok
+            // 这个 compileSdk 只暴露「单包」重载：逐包调用，任一失败即视为未全部成功
+            val dpm = wrappedDpm
+            val comp = ownerComponent
+            if (dpm == null || comp == null) {
+                false
+            } else {
+                var ok = true
+                pkgs.forEach { pkg ->
+                    val changed = dpm.setApplicationHidden(comp, pkg, hidden)
+                    if (!changed && !isApplicationHidden(context, pkg)) ok = false
+                }
+                Log.d(TAG, "setApplicationHidden(${pkgs.size} 个, hidden=$hidden) ok=$ok")
+                ok
+            }
         }
     } catch (e: Throwable) {
         Log.w(TAG, "setApplicationHidden 失败：${e.message}"); false

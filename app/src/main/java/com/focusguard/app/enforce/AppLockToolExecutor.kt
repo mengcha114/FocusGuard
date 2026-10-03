@@ -81,6 +81,19 @@ object AppLockToolExecutor {
         return LockResult(label, mins, shownNow)
     }
 
+    /**
+     * 答题解封：解除临时封锁，并把「今日已用时长」回退 [minutes] 分钟
+     * —— 等于通过答题再换一段使用时间。封锁页上的「答题解封」走这里。
+     */
+    fun grantExtraTime(context: Context, pkg: String, minutes: Int) {
+        val store = UsageRuleStore.shared(context)
+        AppBlockStore(context).clear(pkg)
+        val back = minutes.coerceAtLeast(1) * 60L
+        val used = store.getTodaySeconds(pkg)
+        store.addSeconds(pkg, -minOf(used, back))
+        AppBlockActivity.dismissIfShowing(pkg)
+    }
+
     /** 解除应用封锁（答题通过后调用）。 */
     fun unlockApp(context: Context, pkg: String) {
         AppBlockStore(context).clear(pkg)
