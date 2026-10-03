@@ -324,6 +324,17 @@ fun AiChatScreen() {
                                     }
                                     append("你是专注卫士的 AI 助手，回答简短、友好、有耐心，使用中文。")
                                     append(
+                                        "\n【工具使用规则（必须严格遵守，违反会打扰用户）】\n" +
+                                            "1. 只有用户**明确要求**时才输出工具标记；一次最多输出一个，且单独占一行。\n" +
+                                            "2. 用户没要求的事绝不要做，也不要"顺手"多做一步；不要重复执行同一操作。\n" +
+                                            "3. 你**没有执行能力**：标记由应用执行。不要说"已完成/已锁定/已解冻"，" +
+                                            "只能说"已请求执行"，等应用返回结果。\n" +
+                                            "4. 用户的要求不在下面的工具列表里（例如卸载应用、破解、绕过锁机）→ " +
+                                            "直接说做不到，**绝不编造操作或结果**。\n" +
+                                            "5. 不确定要操作哪个应用时先问清楚，不要猜。\n" +
+                                            "6. 不要输出 JSON / 函数调用格式，只输出文本标记。\n"
+                                    )
+                                    append(
                                         "\n你拥有 lock_phone 工具：当用户请求锁机、自律、管住自己、限制使用手机时，" +
                                             "在你的回复末尾单独输出一行 __LOCK__:<分钟数>（例如 __LOCK__:30 表示锁机 30 分钟），" +
                                             "应用会自动执行锁机。其余情况不要输出该标记。" +
@@ -409,6 +420,17 @@ fun AiChatScreen() {
                                 val memoResult =
                                     com.focusguard.app.enforce.MemoToolExecutor
                                         .tryExecute(context, reply)
+                                // 反幻觉：免费模型经常"一本正经地执行用户没要求的操作"。
+                                // 只有用户最近几条消息里**提到过这个应用**、或**明确表达过这类动作**，
+                                // 才真正执行；否则忽略并在气泡里说明，避免乱锁应用。
+                                val recentUserText = history.takeLast(6)
+                                    .filter { it.role == "user" }
+                                    .joinToString(" ") { it.content }
+                                    .lowercase()
+                                val actionAsked = listOf(
+                                    "锁", "冻结", "解冻", "解除", "限制", "停用", "封", "答题"
+                                ).any { recentUserText.contains(it) }
+
                                 // 3) 冻结 / 解冻应用工具（解冻只登记，等答题通过再执行）
                                 // 4) 应用管控工具（锁住 / 解除封锁 / 每日上限）
                                 // 解析要枚举已安装应用、执行要走 Dhizuku/Shizuku Binder 与 startActivity，
@@ -423,7 +445,15 @@ fun AiChatScreen() {
                                     .forEach { req ->
                                         val target = com.focusguard.app.enforce
                                             .AppFreezeToolExecutor.resolve(context, req.query)
+                                        // 反幻觉闸门：既没提到这个应用、也没表达这类动作 → 忽略
+                                        val mentioned = target != null &&
+                                            (recentUserText.contains(req.query.lowercase()) ||
+                                                recentUserText.contains(target.second.lowercase()))
                                         when {
+                                            target != null && !mentioned && !actionAsked -> {
+                                                freezeNotes += "已忽略一个你没要求的操作「${target.second}」" +
+                                                    "（模型自作主张）"
+                                            }
                                             target == null ->
                                                 freezeNotes += "没找到应用「${req.query}」"
                                             req.unfreeze -> unfreezeTargets += target
@@ -440,7 +470,16 @@ fun AiChatScreen() {
                                     .forEach { req ->
                                         val target = com.focusguard.app.enforce
                                             .AppFreezeToolExecutor.resolve(context, req.query)
-                                        if (target == null) {
+                                        val askedKind = listOf(
+                                            "锁", "冻结", "解冻", "解除", "限制", "停用", "封", "答题"
+                                        ).any { recentUserText.contains(it) }
+                                        val mentioned2 = target != null &&
+                                            (recentUserText.contains(req.query.lowercase()) ||
+                                                recentUserText.contains(target.second.lowercase()))
+                                        if (target != null && !mentioned2 && !askedKind) {
+                                            freezeNotes += "已忽略一个你没要求的操作「${target.second}」" +
+                                                "（模型自作主张）"
+                                        } else if (target == null) {
                                             freezeNotes += "没找到应用「${req.query}」"
                                         } else when (req.kind) {
                                             "lock" -> {

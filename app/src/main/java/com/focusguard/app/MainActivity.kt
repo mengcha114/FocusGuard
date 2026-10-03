@@ -164,6 +164,9 @@ class MainActivity : ComponentActivity() {
             android.util.Log.w("MainActivity", "自动恢复守护失败：${e.message}")
         }
 
+        // 不在最近任务里显示（可关）：避免用户顺手划掉 = 杀进程 = 守护中断
+        runCatching { setExcludeFromRecents(appSettings.hideFromRecents) }
+
         setContent {
             com.focusguard.app.ui.theme.ThemeState.ensureLoaded(this)
             FocusGuardTheme(
