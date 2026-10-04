@@ -15,6 +15,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -176,6 +178,37 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             com.focusguard.app.ui.theme.ThemeState.ensureLoaded(this)
+            // 上次若出过错：直接把原因弹出来、可一键复制（取不到日志文件时的唯一入口）
+            var crashText by remember {
+                mutableStateOf(com.focusguard.app.FocusGuardApp.readCrashLog(this))
+            }
+            if (crashText.isNotBlank()) {
+                AlertDialog(
+                    onDismissRequest = { crashText = "" },
+                    title = { Text("上次运行出错了（原因已复制到剪贴板）") },
+                    text = {
+                        Text(
+                            text = crashText.takeLast(1500),
+                            fontSize = 12.sp,
+                            modifier = Modifier.verticalScroll(rememberScrollState())
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            runCatching {
+                                val cm = getSystemService(android.content.ClipboardManager::class.java)
+                                cm?.setPrimaryClip(
+                                    android.content.ClipData.newPlainText("crash", crashText)
+                                )
+                            }
+                            crashText = ""
+                        }) { Text("复制原因") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { crashText = "" }) { Text("关闭") }
+                    }
+                )
+            }
             FocusGuardTheme(
                 themeMode = com.focusguard.app.ui.theme.ThemeState.mode,
                 accentOverride = com.focusguard.app.ui.theme.ThemeState.accent
@@ -747,6 +780,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         // 从系统弹窗/设置页回来：不再是“正在拉起系统界面”
+        android.util.Log.d("MainActivity", "onResume（此前是否在拉系统界面=$launchingSystemUi）")
         launchingSystemUi = false
         super.onResume()
         // 从系统设置页返回后同步权限状态
@@ -775,21 +809,6 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "onResume 锁机检查失败：${e.message}")
-        }
-    }
-
-    /**
-     * 离开应用时从最近任务里移除自己（设置里「不在最近任务里显示」可关）。
-     *
-     * 目的：用户顺手在最近任务里划掉 = 杀进程 = 守护与锁机中断。
-     * 注意这不是杀进程——守护服务照常运行，只是任务列表里看不到我们。
-     */
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        runCatching {
-            // 拉起系统弹窗期间的前台切换不是“用户主动离开”，此时移除任务会
-            // 连带销毁授权回调（表现为打开闪退）
-            if (appSettings.hideFromRecents && !launchingSystemUi) finishAndRemoveTask()
         }
     }
 }

@@ -64,21 +64,13 @@ fun LockHardeningCard() {
 
         val settings = remember { com.focusguard.app.data.Settings(context) }
 
-        // 不在最近任务里显示（防划掉杀进程）
-        var hideRecents by remember { mutableStateOf(settings.hideFromRecents) }
-        SwitchRow(
-            title = "不在最近任务里显示",
-            hint = "防止用户顺手把专注卫士从最近任务划掉（划掉 = 杀进程，守护与锁机都会中断）。" +
-                "关掉后本应用会正常出现在最近任务里。默认开（下次打开应用生效）",
-            checked = hideRecents,
-            enabled = true
-        ) { value ->
-            hideRecents = value
-            settings.hideFromRecents = value
-            android.widget.Toast.makeText(
-                context, "已自动保存（下次打开应用生效）", android.widget.Toast.LENGTH_SHORT
-            ).show()
-        }
+        // 不在最近任务里显示：由安装清单固定开启（不能用运行时“结束任务”实现——
+        // 那会在打开应用的瞬间被系统弹窗/我方界面抢前台时把整个界面撤掉，表现为「打开闪退」）
+        StatusRow(
+            "最近任务隐藏",
+            true,
+            "本应用不会出现在最近任务里，划不掉"
+        )
 
         // 没有 Shizuku/Dhizuku 的用户：用系统「强行停止」把被锁应用真正停掉
         var forceStop by remember { mutableStateOf(settings.forceStopUnlocked) }
