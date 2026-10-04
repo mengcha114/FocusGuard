@@ -114,7 +114,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.focusguard.app.util.StartupTrace.mark(this, "main.enter")
         appSettings = AppSettings(this)
+        com.focusguard.app.util.StartupTrace.mark(this, "main.settings")
 
         // 从崩溃通知点进来：直接把原因复制到剪贴板（用户只要长按粘贴发我即可）
         if (intent?.getBooleanExtra("copy_crash", false) == true) {

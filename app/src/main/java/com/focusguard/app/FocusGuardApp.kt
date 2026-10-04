@@ -79,13 +79,23 @@ class FocusGuardApp : Application() {
         }
     }
 
+    override fun attachBaseContext(newBase: android.content.Context?) {
+        super.attachBaseContext(newBase)
+        // 比 onCreate 更早的一步也打点：如果连这里都没跑到，说明死在框架/ROM 层
+        runCatching { com.focusguard.app.util.StartupTrace.mark(this, "app.attachBaseContext") }
+    }
+
     override fun onCreate() {
         super.onCreate()
-        // 最先装崩溃处理与启动轨迹：越早越好，否则「启动期就死」的情况什么都留不下
+        // 整段保护：这里任何一步失败都不能让应用打不开。
+        // 用户反馈「清掉后台后一打开就闪退，且没有崩溃日志」，轨迹定位到
+        // 「app.onCreate 之后、main.onCreate 之前」，所以这一段逐步打点 + 全部兜底。
         runCatching { com.focusguard.app.util.CrashLogger.install(this) }
-        installCrashHandler()
         runCatching { com.focusguard.app.util.StartupTrace.begin(this) }
-        createNotificationChannel()
+        runCatching { installCrashHandler() }
+        runCatching { com.focusguard.app.util.StartupTrace.mark(this, "app.crashHandler") }
+        runCatching { createNotificationChannel() }
+        runCatching { com.focusguard.app.util.StartupTrace.mark(this, "app.channel") }
     }
 
     /**
