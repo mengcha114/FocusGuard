@@ -52,8 +52,12 @@ object StartupTrace {
         val f = file(context)
         if (!f.exists()) return false
         val text = f.readText()
-        // 没跑完，或者跑完了但期间主线程卡死过（ANR 型死亡）——都算异常
-        text.isNotBlank() && (!text.contains(DONE_MARK) || text.contains("main.blocked"))
+        // 只有「确实尝试进入界面却没跑完」才算异常。
+        // 关键：开机时守护服务也会拉起进程、写 app.onCreate，但它**不会走 MainActivity**，
+        // 自然也没有 resume-ok —— 那不是崩溃，绝不能因此进安全模式（否则重启后每次都误进）。
+        val triedUi = text.contains("main.enter")
+        text.isNotBlank() && triedUi &&
+            (!text.contains(DONE_MARK) || text.contains("main.blocked"))
     }.getOrDefault(false)
 
     /** 读取轨迹全文（诊断页/崩溃弹窗展示用）。 */
