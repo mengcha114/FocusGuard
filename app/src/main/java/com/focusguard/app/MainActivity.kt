@@ -60,15 +60,34 @@ class MainActivity : ComponentActivity() {
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        com.focusguard.app.enforce.ProjectionConsent.disarm()
-        if (result.resultCode == RESULT_OK && result.data != null) {
-            appSettings.screenCaptureGranted = true
-            com.focusguard.app.service.MonitorService.startService(
-                this, result.resultCode, result.data!!
-            )
-            serviceRunning = true
-        } else {
-            Toast.makeText(this, "屏幕录制权限被拒绝", Toast.LENGTH_SHORT).show()
+        // 整段兜底：授权回调里任何异常都不能让应用死掉（用户实测"不授权录屏就闪退"）
+        runCatching { com.focusguard.app.enforce.ProjectionConsent.disarm() }
+        val ok = runCatching {
+            if (result.resultCode == RESULT_OK && result.data != null) {
+                appSettings.screenCaptureGranted = true
+                com.focusguard.app.service.MonitorService.startService(
+                    this, result.resultCode, result.data!!
+                )
+                serviceRunning = true
+                com.focusguard.app.util.StartupTrace.mark(this, "main.reauthOk")
+                true
+            } else {
+                false
+            }
+        }.getOrElse { e ->
+            android.util.Log.w("MainActivity", "处理录屏授权结果失败：${e.message}")
+            runCatching {
+                com.focusguard.app.util.StartupTrace.mark(
+                    this, "main.reauthFail " + e.javaClass.simpleName
+                )
+            }
+            false
+        }
+        if (!ok) {
+            com.focusguard.app.util.StartupTrace.mark(this, "main.reauthDenied")
+            runCatching {
+                Toast.makeText(this, "屏幕录制权限被拒绝，守护未开启", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -98,6 +117,9 @@ class MainActivity : ComponentActivity() {
 
     /** 本次冷启动是否已尝试过自动恢复守护（避免重复弹授权框）。 */
     private var autoReauthAttempted = false
+
+    /** 「隐藏最近任务」的延后判定世代号：重复触发时只认最后一次。 */
+    private var leaveHintGen = 0
 
     /** 停止守护前的答题验证状态（防误停/防被监管对象随意停止）。 */
     private var showStopVerify by mutableStateOf(false)
@@ -212,10 +234,11 @@ class MainActivity : ComponentActivity() {
         }
         com.focusguard.app.util.StartupTrace.mark(this, "main.onCreate safeMode=$safeMode")
 
-        // ── 守护自动恢复 ──────────────────────────────
-        // 曾开启 AI 守护但服务已中断（进程被杀 / MediaProjection 被系统回收）
-        // → 打开应用时自动重新请求屏幕录制授权并恢复检测。
-        // 这是"解锁后不再自动检测"的闭环修复：用户下次打开应用即恢复。
+        // ── 守护中断：只提示，不再自动弹系统授权框 ──────────────
+        // 用户实测：**不授权录屏就会闪退，授权了就不会** —— 之前这里会在打开应用时
+        // 自动拉起屏幕录制授权弹窗，那条路径在部分 ROM 上会让应用直接死掉，而且每次
+        // 打开都弹、拒了就再弹。现在改成：授权只由用户点击触发（「开始守护」按钮 /
+        // 中断通知），系统弹窗只会在界面已完全就绪、用户刚点过的时刻出现。
         try {
             if (!safeMode &&
                 appSettings.serviceRunning &&
@@ -223,17 +246,15 @@ class MainActivity : ComponentActivity() {
                 !autoReauthAttempted
             ) {
                 autoReauthAttempted = true
-                // 允许无障碍替用户点掉系统授权弹窗（重启后免手动；可在设置里关）
-                if (appSettings.autoGrantProjection) {
-                    com.focusguard.app.enforce.ProjectionConsent.arm()
-                }
-                launchingSystemUi = true
-                screenCaptureLauncher.launch(
-                    mediaProjectionManager.createScreenCaptureIntent()
-                )
+                com.focusguard.app.util.StartupTrace.mark(this, "main.reauthHint")
+                android.widget.Toast.makeText(
+                    this,
+                    "AI 守护已中断，点「开始守护」即可恢复检测",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
             }
         } catch (e: Exception) {
-            android.util.Log.w("MainActivity", "自动恢复守护失败：${e.message}")
+            android.util.Log.w("MainActivity", "守护中断提示失败：${e.message}")
         }
         com.focusguard.app.util.StartupTrace.mark(this, "autoReauth done")
 
@@ -658,10 +679,17 @@ class MainActivity : ComponentActivity() {
     private fun requestPermission(permission: String) {
         // 要去系统界面了：这段期间别把自己当作“用户离开了应用”
         launchingSystemUi = true
+        leaveHintGen++  // 取消尚未落地的"隐藏任务"判定，避免在系统界面期间关掉自己
         when (permission) {
             "screen_capture" -> {
                 launchingSystemUi = true
-                screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+                if (appSettings.autoGrantProjection) {
+                    runCatching { com.focusguard.app.enforce.ProjectionConsent.arm() }
+                }
+                com.focusguard.app.util.StartupTrace.mark(this, "main.reauthLaunch")
+                runCatching {
+                    screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+                }
             }
             "overlay" -> {
                 val intent = Intent(
@@ -892,7 +920,14 @@ class MainActivity : ComponentActivity() {
         }
         // MediaProjection 授权每次启动都要重新申请，系统不允许复用
         launchingSystemUi = true
-                screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+        // 由无障碍替用户点掉系统授权弹窗（可在设置里关；仅在刚拉起后 60 秒内有效）
+        if (appSettings.autoGrantProjection) {
+            runCatching { com.focusguard.app.enforce.ProjectionConsent.arm() }
+        }
+        com.focusguard.app.util.StartupTrace.mark(this, "main.reauthLaunch")
+        runCatching {
+            screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+        }
     }
 
     /**
@@ -931,9 +966,25 @@ class MainActivity : ComponentActivity() {
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        runCatching {
-            if (appSettings.hideFromRecents && !launchingSystemUi) finishAndRemoveTask()
-        }
+        // 延后 800ms 再决定，并核对"现在前台到底是谁"：系统授权框/权限页（我们自己
+        // 拉起的）也会让我们离开前台，只靠一个标志位判断时，遇到 ROM 不通知就变成
+        // "应用把自己关掉"（用户眼里的闪退）。宁可这次不隐藏，也不能误关自己。
+        val gen = ++leaveHintGen
+        android.os.Handler(mainLooper).postDelayed({
+            runCatching {
+                if (gen != leaveHintGen) return@runCatching
+                if (!appSettings.hideFromRecents || launchingSystemUi || isFinishing) {
+                    return@runCatching
+                }
+                val fg = com.focusguard.app.service.ForegroundAppDetector.current(this)
+                if (fg == null || fg == packageName) return@runCatching
+                if (com.focusguard.app.enforce.ProjectionConsent.isConsentHost(fg)) {
+                    return@runCatching
+                }
+                com.focusguard.app.util.StartupTrace.mark(this, "main.hideTask")
+                finishAndRemoveTask()
+            }
+        }, 800L)
     }
 
     override fun onResume() {

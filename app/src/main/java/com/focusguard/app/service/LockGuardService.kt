@@ -254,6 +254,10 @@ class LockGuardService : Service() {
             // 这里必须如实报告「没跑起来」：ensureRunning / 看门狗据此判断是否需要
             // 重新拉起。此前失败也置 true，两条保活路径同时失效、永不重试。
             isRunning = false
+            // 本服务是用 startForegroundService 拉起的：前台化失败若不 stopSelf，
+            // 系统 5 秒后会按 ForegroundServiceDidNotStartInTime 杀掉整个进程
+            //（用户眼里就是"没有日志的闪退"）。
+            runCatching { stopSelf() }
         }
     }
 

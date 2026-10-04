@@ -82,7 +82,8 @@ object StartupTrace {
         if (lastEnter < 0) return false
         return lines.drop(lastEnter).none { line ->
             line.contains(DONE_MARK) || line.contains("main.redirectLock") ||
-                line.contains("main.dhizukuRestart") || line.contains("main.lockFallback")
+                line.contains("main.dhizukuRestart") || line.contains("main.lockFallback") ||
+                line.contains("main.hideTask")
         }
     }
 

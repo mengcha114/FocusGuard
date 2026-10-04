@@ -238,6 +238,13 @@ class MonitorService : Service() {
                     startMonitoring(resultCode, data)
                 } else {
                     Log.e(TAG, "缺少 MediaProjection 授权数据，无法启动")
+                    // 先成为前台服务再停：本服务是用 startForegroundService 拉起的，
+                    // 直接 stopSelf 会让系统在 5 秒后按
+                    // ForegroundServiceDidNotStartInTime 杀掉整个进程
+                    // ——表现就是「没有任何崩溃日志的闪退」。
+                    runCatching {
+                        startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null))
+                    }
                     stopSelf()
                 }
             }
