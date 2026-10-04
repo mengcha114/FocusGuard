@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -162,10 +166,25 @@ private fun MeshBackground(base: Color, surface: Color, accent: Color, secondary
 private fun ImageBackground(a: Appearance, base: Color) {
     val context = LocalContext.current
     val file = AppearanceState.imageFile(context, a)
-    val bitmap = remember(a.imageFile) {
-        file?.let { runCatching { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }.getOrNull() }
-            ?.asImageBitmap()
+    // 关键：自定义背景图**不能在主线程整图解码**。
+    // 原来在 remember 里直接 decodeFile（2160 长边 ≈ 几十 MB），低端机上会把主线程卡住，
+    // 表现为「主界面打开就闪退且没有任何日志」——安全模式页不画背景图，所以它能正常打开。
+    // 现在：放到 IO 线程解码 + 降采样一档，解码失败就退回纯色/渐变背景（绝不阻塞、绝不崩）。
+    val bitmapState = remember(a.imageFile) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    LaunchedEffect(a.imageFile) {
+        bitmapState.value = null
+        val f = file ?: return@LaunchedEffect
+        bitmapState.value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val opts = android.graphics.BitmapFactory.Options().apply {
+                    inSampleSize = 2
+                    inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                }
+                android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
+            }.getOrNull()
+        }
     }
+    val bitmap = bitmapState.value
     Box(Modifier.fillMaxSize().background(base)) {
         if (bitmap != null) {
             androidx.compose.foundation.Image(
