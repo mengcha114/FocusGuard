@@ -34,7 +34,11 @@ object CrashLogger {
     private fun record(app: Context, thread: Thread, error: Throwable) {
         val time = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
         val stack = error.stackTraceToString().lines().take(12).joinToString("\n")
-        val text = "[$time] ${thread.name}: ${error.javaClass.simpleName}: ${error.message}\n$stack"
+        val text = "v" + com.focusguard.app.BuildConfig.VERSION_NAME +
+            " (vc" + com.focusguard.app.BuildConfig.VERSION_CODE + ") · " +
+            android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL +
+            " · Android " + android.os.Build.VERSION.RELEASE + "\n" +
+            "[$time] ${thread.name}: ${error.javaClass.simpleName}: ${error.message}\n$stack"
         Log.e(TAG, "捕获崩溃：\n$text")
         // ① 检测日志（界面里可见可复制）
         runCatching {

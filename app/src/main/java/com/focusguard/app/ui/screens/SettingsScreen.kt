@@ -96,6 +96,13 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("设置", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+        // 版本号就放在标题下：排查"改了但没效果"时第一眼就能确认装的是哪一版
+        Text(
+            text = "专注卫士 v" + com.focusguard.app.BuildConfig.VERSION_NAME +
+                " (vc" + com.focusguard.app.BuildConfig.VERSION_CODE + ")",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
+        )
 
         // ═══════ 分组一：AI 检测 ═══════
         SettingsGroupHeader("AI 检测")

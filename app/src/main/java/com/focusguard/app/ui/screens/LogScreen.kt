@@ -59,7 +59,7 @@ fun LogScreen() {
         ) {
             Column {
                 Text(
-                    text = "检测日志",
+                    text = "检测日志 · v" + com.focusguard.app.BuildConfig.VERSION_NAME,
                     fontSize = 30.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground

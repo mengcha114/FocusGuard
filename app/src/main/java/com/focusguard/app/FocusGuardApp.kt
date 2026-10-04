@@ -99,6 +99,18 @@ class FocusGuardApp : Application() {
                 val sw = StringWriter()
                 throwable.printStackTrace(PrintWriter(sw))
                 val entry = buildString {
+                    // 版本与机型：排查时第一眼就知道是哪一版、什么设备
+                    append("版本 v")
+                    append(BuildConfig.VERSION_NAME)
+                    append(" (vc")
+                    append(BuildConfig.VERSION_CODE)
+                    append(") · ")
+                    append(android.os.Build.MANUFACTURER)
+                    append(" ")
+                    append(android.os.Build.MODEL)
+                    append(" · Android ")
+                    append(android.os.Build.VERSION.RELEASE)
+                    append("\n")
                     append("===== ")
                     append(
                         SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
