@@ -101,6 +101,9 @@ class MainActivity : ComponentActivity() {
     /** 停止守护前的答题验证状态（防误停/防被监管对象随意停止）。 */
     private var showStopVerify by mutableStateOf(false)
 
+    /** 本次启动是否为「安全模式」（上次启动没跑完 → 不再自动拉起服务与系统弹窗）。 */
+    private var startupSafeMode = false
+
     /** 待办提醒通知 / 第三方分享进来的「打开备忘录」请求。 */
     private var pendingMemoOpen by mutableStateOf(false)
 
@@ -173,6 +176,7 @@ class MainActivity : ComponentActivity() {
         // 若上一轮启动没跑完（进程被杀/启动期死掉，且不会产生 Java 崩溃日志），
         // 这一轮就别再自动拉起服务与系统弹窗，先保证应用能正常打开。
         val safeMode = com.focusguard.app.util.StartupTrace.lastRunCrashed(this)
+        startupSafeMode = safeMode
         if (safeMode) {
             android.util.Log.w("MainActivity", "上次启动异常中断，本次以安全模式启动")
             val trace = com.focusguard.app.util.StartupTrace.read(this)
@@ -875,7 +879,7 @@ class MainActivity : ComponentActivity() {
             if (com.focusguard.app.service.MonitorService.isRunning &&
                 !com.focusguard.app.service.MonitorService.isLoopAlive()
             ) {
-                if (!safeMode) com.focusguard.app.service.MonitorService.resurrect(this)
+                if (!startupSafeMode) com.focusguard.app.service.MonitorService.resurrect(this)
             }
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "复活守护失败：${e.message}")
