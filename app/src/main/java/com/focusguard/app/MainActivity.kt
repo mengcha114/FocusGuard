@@ -118,6 +118,17 @@ class MainActivity : ComponentActivity() {
     /** 本次冷启动是否已尝试过自动恢复守护（避免重复弹授权框）。 */
     private var autoReauthAttempted = false
 
+    /** 「守护是否真的在跑」的校正定时器：按钮只认服务的真实状态。 */
+    private val serviceTickHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val serviceTickRunnable = object : Runnable {
+        override fun run() {
+            runCatching {
+                serviceRunning = com.focusguard.app.service.MonitorService.isRunning
+            }
+            serviceTickHandler.postDelayed(this, 3_000L)
+        }
+    }
+
     /** 「隐藏最近任务」的延后判定世代号：重复触发时只认最后一次。 */
     private var leaveHintGen = 0
 
@@ -160,8 +171,10 @@ class MainActivity : ComponentActivity() {
             }
         }
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        serviceRunning = com.focusguard.app.service.MonitorService.isRunning ||
-            appSettings.serviceRunning
+        // 按钮状态必须反映**真实**情况：服务真的在跑才算"守护中"。
+        // 曾用 `appSettings.serviceRunning`（持久化的意愿标记）兜底 —— 重启后服务
+        // 并没有跑，界面却一直显示「停止守护」，点了也没有反应（用户实测）。
+        serviceRunning = com.focusguard.app.service.MonitorService.isRunning
 
         // vc63 一次性迁移：历史版本已经授权 Dhizuku 的用户不会再次触发授权
         // 回调，因此首次运行本版本时主动完成初始化并重启一次。标志在准备成功后
@@ -987,6 +1000,11 @@ class MainActivity : ComponentActivity() {
         }, 800L)
     }
 
+    override fun onPause() {
+        serviceTickHandler.removeCallbacks(serviceTickRunnable)
+        super.onPause()
+    }
+
     override fun onResume() {
         com.focusguard.app.util.StartupTrace.markHealthy(this)
         // 从系统弹窗/设置页回来：不再是“正在拉起系统界面”
@@ -996,6 +1014,10 @@ class MainActivity : ComponentActivity() {
         // 从系统设置页返回后同步权限状态
         syncPermissionFlags()
         permissionRefreshTick++
+        // 守护按钮状态按**真实值**校正：延后 800ms（刚点「开始守护」时服务还在启动中，
+        // 立刻刷新会把按钮又变回「开始守护」），之后每 3 秒再校一次
+        serviceTickHandler.removeCallbacks(serviceTickRunnable)
+        serviceTickHandler.postDelayed(serviceTickRunnable, 800L)
 
         // 自愈：守护"显示开着"但检测循环已停（心跳停止）→ 尝试复活
         try {
