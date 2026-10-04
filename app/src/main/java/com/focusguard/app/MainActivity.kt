@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
     private var fallbackLockPage by mutableStateOf(false)
 
     /** 本次启动是否为「安全模式」（上次启动没跑完 → 不再自动拉起服务与系统弹窗）。 */
-    private var startupSafeMode = false
+    private var startupSafeMode by mutableStateOf(false)
 
     /** 待办提醒通知 / 第三方分享进来的「打开备忘录」请求。 */
     private var pendingMemoOpen by mutableStateOf(false)

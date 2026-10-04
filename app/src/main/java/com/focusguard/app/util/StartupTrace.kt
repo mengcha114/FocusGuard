@@ -52,7 +52,8 @@ object StartupTrace {
         val f = file(context)
         if (!f.exists()) return false
         val text = f.readText()
-        text.isNotBlank() && !text.contains(DONE_MARK)
+        // 没跑完，或者跑完了但期间主线程卡死过（ANR 型死亡）——都算异常
+        text.isNotBlank() && (!text.contains(DONE_MARK) || text.contains("main.blocked"))
     }.getOrDefault(false)
 
     /** 读取轨迹全文（诊断页/崩溃弹窗展示用）。 */

@@ -59,13 +59,18 @@ object MainThreadWatch {
         lastReportAt = now
         val seconds = delayMs / 1000
         Log.w(TAG, "主线程卡顿 ${seconds}s")
+        // 主线程栈：卡死类问题（无 Java 崩溃日志）只有这个能说清卡在哪
+        val stack = runCatching {
+            Thread.getAllStackTraces()[Looper.getMainLooper().thread]
+                ?.take(14)?.joinToString("\n") { "    at $it" }.orEmpty()
+        }.getOrDefault("")
         StartupTrace.mark(app, "main.blocked ${seconds}s")
         runCatching {
             LogStore(app).addLog(
                 DetectionLog(
                     classification = "NEUTRAL",
                     confidence = 1f,
-                    reason = "主线程卡顿 ${seconds} 秒（很可能是被系统判为无响应而结束进程）",
+                    reason = "主线程卡顿 ${seconds} 秒（很可能被判无响应结束进程）。主线程栈：\n$stack",
                     action = "NONE",
                     source = "ERROR",
                     appLabel = ""
