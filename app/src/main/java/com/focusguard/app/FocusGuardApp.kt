@@ -95,6 +95,8 @@ class FocusGuardApp : Application() {
         runCatching { installCrashHandler() }
         runCatching { com.focusguard.app.util.StartupTrace.mark(this, "app.crashHandler") }
         runCatching { createNotificationChannel() }
+        // 主线程卡顿探针：ANR 不会产生崩溃日志，靠它留下证据
+        runCatching { com.focusguard.app.util.MainThreadWatch.start(this) }
         runCatching { com.focusguard.app.util.StartupTrace.mark(this, "app.channel") }
     }
 

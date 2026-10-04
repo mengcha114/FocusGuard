@@ -238,6 +238,34 @@ class MainActivity : ComponentActivity() {
         com.focusguard.app.util.StartupTrace.mark(this, "setContent")
         setContent {
             com.focusguard.app.ui.theme.ThemeState.ensureLoaded(this)
+            if (startupSafeMode && !fallbackLockPage) {
+                // 上次启动异常：本次直接给一个极简页，不渲染主界面（重活都不做），
+                // 保证一定能打开，并把轨迹/诊断交到用户手上
+                SafeModeScreen(
+                    onRetryNormal = {
+                        runCatching { com.focusguard.app.util.StartupTrace.markHealthy(this) }
+                        startupSafeMode = false
+                    },
+                    onCopyDiag = {
+                        runCatching {
+                            val diag = "版本 v" + com.focusguard.app.BuildConfig.VERSION_NAME +
+                                "\n启动轨迹：\n" + com.focusguard.app.util.StartupTrace.read(this) +
+                                "\n最近日志：\n" + com.focusguard.app.data.LogStore(this)
+                                    .getAllLogs().takeLast(8).joinToString("\n") {
+                                        it.getTimeFormatted() + " " + it.reason.take(120)
+                                    }
+                            val cm = getSystemService(android.content.ClipboardManager::class.java)
+                            cm?.setPrimaryClip(
+                                android.content.ClipData.newPlainText("FocusGuard 诊断", diag)
+                            )
+                            android.widget.Toast.makeText(
+                                this, "诊断信息已复制", android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                )
+                return@setContent
+            }
             if (fallbackLockPage) {
                 // 锁机中但锁机页没起来：显示"锁机进行中"兜底页（含自动重试与手动入口）
                 LockRedirectFallback(
@@ -792,20 +820,14 @@ class MainActivity : ComponentActivity() {
             val restartIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             } ?: return@postDelayed
-            val pendingIntent = PendingIntent.getActivity(
-                this,
-                7360,
-                restartIntent,
-                PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.ELAPSED_REALTIME,
-                android.os.SystemClock.elapsedRealtime() + 1_000L,
-                pendingIntent
-            )
-            finishAffinity()
-            android.os.Process.killProcess(android.os.Process.myPid())
+            // 不再 killProcess：自杀和"闪退"在用户眼里完全一样，而且不产生任何日志。
+            // 改为进程内重启界面 + 让 Dhizuku 连接缓存失效（下次读取自动重新初始化）。
+            com.focusguard.app.util.StartupTrace.mark(this, "main.dhizukuRestart")
+            com.focusguard.app.enhance.DhizukuEnhancer.resetForRetry()
+            runCatching {
+                startActivity(restartIntent)
+                finishAffinity()
+            }
         }, 300L)
     }
 
@@ -987,6 +1009,48 @@ private fun LockRedirectFallback(onOpenLock: () -> Unit) {
             Button(onClick = onOpenLock, shape = RoundedCornerShape(12.dp)) {
                 Text("打开锁机界面")
             }
+        }
+    }
+}
+
+/**
+ * 安全模式页：上次启动异常时，本次只渲染这一页（不做任何重活），保证能打开并拿到诊断。
+ */
+@Composable
+private fun SafeModeScreen(onRetryNormal: () -> Unit, onCopyDiag: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(28.dp)
+        ) {
+            Text(
+                "安全模式",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                "上次启动没跑完（可能是被杀、卡死或启动期出错），本次已跳过自动拉起与系统弹窗。",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Text(
+                "版本 v" + com.focusguard.app.BuildConfig.VERSION_NAME,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+            )
+            Button(onClick = onCopyDiag, shape = RoundedCornerShape(12.dp)) {
+                Text("复制诊断信息（发给我）")
+            }
+            TextButton(onClick = onRetryNormal) { Text("以正常模式重试") }
         }
     }
 }
