@@ -53,7 +53,31 @@ object CrashLogger {
                 )
             )
         }
-        // ② 剪贴板：崩溃后长按任意输入框就能粘贴出来（最省事的一条）
+        // ② 通知：崩溃后仍留在通知栏，点一下就复制原因（弹窗/剪贴板都可能来不及）
+        runCatching {
+            val pi = android.app.PendingIntent.getActivity(
+                app,
+                9001,
+                android.content.Intent(app, com.focusguard.app.MainActivity::class.java)
+                    .putExtra("copy_crash", true)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                    android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+            val nm = app.getSystemService(android.app.NotificationManager::class.java)
+            nm?.notify(
+                1010,
+                android.app.Notification.Builder(app, com.focusguard.app.FocusGuardApp.CHANNEL_ID)
+                    .setSmallIcon(com.focusguard.app.R.drawable.ic_shield)
+                    .setContentTitle("上次运行崩溃了（点这里复制原因）")
+                    .setContentText(text.lineSequence().take(2).joinToString(" ").take(80))
+                    .setStyle(android.app.Notification.BigTextStyle().bigText(text.take(600)))
+                    .setContentIntent(pi)
+                    .setAutoCancel(true)
+                    .build()
+            )
+        }
+        // ③ 剪贴板：崩溃后长按任意输入框就能粘贴出来（最省事的一条）
         // 注意 Android 10+ 限制后台访问剪贴板，这里属尽力而为；失败也不影响其他两路记录
         runCatching {
             val cm = app.getSystemService(android.content.ClipboardManager::class.java)
@@ -61,7 +85,7 @@ object CrashLogger {
                 android.content.ClipData.newPlainText("FocusGuard 崩溃原因", text.take(2000))
             )
         }
-        // ③ 外部文件（应用起不来时也能取）
+        // ④ 外部文件（应用起不来时也能取）
         runCatching {
             val dir = app.getExternalFilesDir(null) ?: app.filesDir
             File(dir, "crash_last.txt").writeText(text)

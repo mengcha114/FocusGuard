@@ -112,6 +112,22 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appSettings = AppSettings(this)
+
+        // 从崩溃通知点进来：直接把原因复制到剪贴板（用户只要长按粘贴发我即可）
+        if (intent?.getBooleanExtra("copy_crash", false) == true) {
+            runCatching {
+                val text = com.focusguard.app.FocusGuardApp.readCrashLog(this)
+                if (text.isNotBlank()) {
+                    val cm = getSystemService(android.content.ClipboardManager::class.java)
+                    cm?.setPrimaryClip(
+                        android.content.ClipData.newPlainText("FocusGuard 崩溃原因", text.take(2000))
+                    )
+                    android.widget.Toast.makeText(
+                        this, "崩溃原因已复制，长按粘贴即可", android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         serviceRunning = com.focusguard.app.service.MonitorService.isRunning ||
             appSettings.serviceRunning
