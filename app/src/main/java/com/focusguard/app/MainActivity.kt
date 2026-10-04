@@ -43,6 +43,15 @@ private val topLevelRoutes = setOf("home", "apps", "timer_lock", "ai_chat", "set
 class MainActivity : ComponentActivity() {
 
     private lateinit var appSettings: AppSettings
+
+    /**
+     * 是否正在拉起系统界面/弹窗（录屏授权框、权限设置页…）。
+     *
+     * 这些弹窗会把本界面切到后台，触发 [onUserLeaveHint]；如果不加区分就
+     * `finishAndRemoveTask()`，「不在最近任务里显示」会把**我们自己的界面连同
+     * 授权回调一起销毁** —— 表现为「打开应用就闪退」（v3.11.0 实测）。
+     */
+    private var launchingSystemUi = false
     private lateinit var mediaProjectionManager: MediaProjectionManager
 
     private val screenCaptureLauncher = registerForActivityResult(
@@ -156,6 +165,7 @@ class MainActivity : ComponentActivity() {
                 if (appSettings.autoGrantProjection) {
                     com.focusguard.app.enforce.ProjectionConsent.arm()
                 }
+                launchingSystemUi = true
                 screenCaptureLauncher.launch(
                     mediaProjectionManager.createScreenCaptureIntent()
                 )
@@ -485,8 +495,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestPermission(permission: String) {
+        // 要去系统界面了：这段期间别把自己当作“用户离开了应用”
+        launchingSystemUi = true
         when (permission) {
             "screen_capture" -> {
+                launchingSystemUi = true
                 screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
             }
             "overlay" -> {
@@ -699,7 +712,8 @@ class MainActivity : ComponentActivity() {
             return
         }
         // MediaProjection 授权每次启动都要重新申请，系统不允许复用
-        screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+        launchingSystemUi = true
+                screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
     }
 
     /**
@@ -732,6 +746,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onResume() {
+        // 从系统弹窗/设置页回来：不再是“正在拉起系统界面”
+        launchingSystemUi = false
         super.onResume()
         // 从系统设置页返回后同步权限状态
         syncPermissionFlags()
@@ -771,7 +787,9 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         runCatching {
-            if (appSettings.hideFromRecents) finishAndRemoveTask()
+            // 拉起系统弹窗期间的前台切换不是“用户主动离开”，此时移除任务会
+            // 连带销毁授权回调（表现为打开闪退）
+            if (appSettings.hideFromRecents && !launchingSystemUi) finishAndRemoveTask()
         }
     }
 }
