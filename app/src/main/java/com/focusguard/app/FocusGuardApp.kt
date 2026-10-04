@@ -81,10 +81,11 @@ class FocusGuardApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
-        // 崩溃记录：闪退原因写进检测日志（可复制）+ 外部文件，别再靠猜
+        // 最先装崩溃处理与启动轨迹：越早越好，否则「启动期就死」的情况什么都留不下
         runCatching { com.focusguard.app.util.CrashLogger.install(this) }
         installCrashHandler()
+        runCatching { com.focusguard.app.util.StartupTrace.begin(this) }
+        createNotificationChannel()
     }
 
     /**

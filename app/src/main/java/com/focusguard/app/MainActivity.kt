@@ -169,12 +169,41 @@ class MainActivity : ComponentActivity() {
         // ── 待办到期提醒重排（打开应用即兜底，防系统清理闹钟）────
         runCatching { com.focusguard.app.service.MemoReminder.sync(this) }
 
+        // ── 启动轨迹 + 安全模式 ────────────────────────
+        // 若上一轮启动没跑完（进程被杀/启动期死掉，且不会产生 Java 崩溃日志），
+        // 这一轮就别再自动拉起服务与系统弹窗，先保证应用能正常打开。
+        val safeMode = com.focusguard.app.util.StartupTrace.lastRunCrashed(this)
+        if (safeMode) {
+            android.util.Log.w("MainActivity", "上次启动异常中断，本次以安全模式启动")
+            val trace = com.focusguard.app.util.StartupTrace.read(this)
+            runCatching {
+                com.focusguard.app.data.LogStore(this).addLog(
+                    com.focusguard.app.data.DetectionLog(
+                        classification = "NEUTRAL",
+                        confidence = 1f,
+                        reason = "上次启动未跑完（可能是被杀/启动期崩溃），已用安全模式打开。轨迹：\n$trace",
+                        action = "NONE",
+                        source = "ERROR",
+                        appLabel = ""
+                    )
+                )
+            }
+            runCatching {
+                android.widget.Toast.makeText(
+                    this, "上次启动异常，已用安全模式打开（详情见「检测日志」页，可复制）",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+        com.focusguard.app.util.StartupTrace.mark(this, "main.onCreate safeMode=$safeMode")
+
         // ── 守护自动恢复 ──────────────────────────────
         // 曾开启 AI 守护但服务已中断（进程被杀 / MediaProjection 被系统回收）
         // → 打开应用时自动重新请求屏幕录制授权并恢复检测。
         // 这是"解锁后不再自动检测"的闭环修复：用户下次打开应用即恢复。
         try {
-            if (appSettings.serviceRunning &&
+            if (!safeMode &&
+                appSettings.serviceRunning &&
                 !com.focusguard.app.service.MonitorService.isRunning &&
                 !autoReauthAttempted
             ) {
@@ -191,7 +220,9 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "自动恢复守护失败：${e.message}")
         }
+        com.focusguard.app.util.StartupTrace.mark(this, "autoReauth done")
 
+        com.focusguard.app.util.StartupTrace.mark(this, "setContent")
         setContent {
             com.focusguard.app.ui.theme.ThemeState.ensureLoaded(this)
             // 上次若出过错：直接把原因弹出来、可一键复制（取不到日志文件时的唯一入口）
@@ -830,6 +861,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onResume() {
+        com.focusguard.app.util.StartupTrace.markHealthy(this)
         // 从系统弹窗/设置页回来：不再是“正在拉起系统界面”
         android.util.Log.d("MainActivity", "onResume（此前是否在拉系统界面=$launchingSystemUi）")
         launchingSystemUi = false
@@ -843,7 +875,7 @@ class MainActivity : ComponentActivity() {
             if (com.focusguard.app.service.MonitorService.isRunning &&
                 !com.focusguard.app.service.MonitorService.isLoopAlive()
             ) {
-                com.focusguard.app.service.MonitorService.resurrect(this)
+                if (!safeMode) com.focusguard.app.service.MonitorService.resurrect(this)
             }
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "复活守护失败：${e.message}")
