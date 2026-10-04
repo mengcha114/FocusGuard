@@ -33,16 +33,31 @@ object MainThreadWatch {
         if (started) return
         started = true
         val app = context.applicationContext
-        ackAt = SystemClock.elapsedRealtime()
+        val pm = app.getSystemService(android.os.PowerManager::class.java)
+        ackAt = SystemClock.uptimeMillis()
         Thread {
             while (true) {
-                mainHandler.post { ackAt = SystemClock.elapsedRealtime() }
+                // 注意用 uptimeMillis：它**不含息屏深睡**。用 elapsedRealtime 时，
+                // 手机一息屏应答就被深睡推迟，会被误记成「主线程卡顿」，
+                // 于是用户「退出重进」时误进安全模式（实测反馈）。
+                mainHandler.post { ackAt = SystemClock.uptimeMillis() }
                 Thread.sleep(INTERVAL_MS)
-                val lag = SystemClock.elapsedRealtime() - ackAt
-                if (lag >= WARN_MS) report(app, lag)
+                val screenOn = runCatching { pm?.isInteractive ?: true }.getOrDefault(true)
+                val lag = SystemClock.uptimeMillis() - ackAt
+                if (screenOn && lag >= WARN_MS) {
+                    strikes++
+                    // 连续两次才认定：单次抖动不算
+                    if (strikes >= 2) report(app, lag)
+                } else {
+                    strikes = 0
+                }
             }
         }.apply { name = "main-thread-watch"; isDaemon = true }.start()
     }
+
+    /** 连续卡顿计数（单次不算）。 */
+    @Volatile
+    private var strikes = 0
 
     private fun report(app: Context, lagMs: Long) {
         val now = System.currentTimeMillis()
