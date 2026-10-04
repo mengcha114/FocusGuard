@@ -11,6 +11,22 @@ FocusGuard 是一款 Android 自律辅助应用。它会定期看一眼屏幕，
 
 ---
 
+## 两个版本怎么选（下载哪个）
+
+功能完全一样，只有**答题内容**不同。两个包名不同，可以同时安装、互不影响：
+
+| 安装包 | 答题方式 | 适合谁 |
+| --- | --- | --- |
+| **学段版** `app-edu-debug.apk`（约 21.0 MB） | 内置真实题库，按**年级 + 学科**出题，高中会按**选科**筛选；含选择、多选、填空 | 学生自用：和课本知识挂钩 |
+| **通用版** `app-general-debug.apk`（约 20.6 MB） | 不装题库，出**繁琐的高强度计算题**（纯算术推导，越答越费劲） | 通用场景：不依赖学段 |
+
+- 题库来自 TAL-SCQ5K、AGIEval 等开源数据，构建时已把公式转成普通字符，**离线也能出题**
+- 学段版首次打开会强制选择年级（之后只能调高），通用版不需要选年级
+- 包名：学段版 `com.focusguard.app`，通用版 `com.focusguard.app.general`；同一签名，同包可覆盖安装升级
+- 下载：[Releases](https://github.com/mengcha114/FocusGuard/releases/latest)（每个版本都附这两个 APK）
+
+---
+
 ## 主要功能
 
 1. **AI 判断你在干什么**
@@ -41,7 +57,8 @@ FocusGuard 是一款 Android 自律辅助应用。它会定期看一眼屏幕，
 ```bash
 # 需要 JDK 17 + Android SDK
 ./gradlew assembleDebug
-# 产物：app/build/outputs/apk/debug/app-debug.apk
+# 产物：app/build/outputs/apk/edu/debug/app-edu-debug.apk      （学段版）
+#       app/build/outputs/apk/general/debug/app-general-debug.apk（通用版）
 ```
 
 CI：GitHub Actions 自动构建，APK 从 Actions 产物或 Releases 页面下载。
