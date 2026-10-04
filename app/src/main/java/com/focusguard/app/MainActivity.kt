@@ -188,13 +188,15 @@ class MainActivity : ComponentActivity() {
         startupSafeMode = safeMode
         if (safeMode) {
             android.util.Log.w("MainActivity", "上次启动异常中断，本次以安全模式启动")
+            val prevTrace = com.focusguard.app.util.StartupTrace.readPrev(this)
             val trace = com.focusguard.app.util.StartupTrace.read(this)
             runCatching {
                 com.focusguard.app.data.LogStore(this).addLog(
                     com.focusguard.app.data.DetectionLog(
                         classification = "NEUTRAL",
                         confidence = 1f,
-                        reason = "上次启动未跑完（可能是被杀/启动期崩溃），已用安全模式打开。轨迹：\n$trace",
+                        reason = "上次启动未跑完（可能是被杀/启动期崩溃），已用安全模式打开。" +
+                            "\n上一轮轨迹（出错的这次）：\n$prevTrace\n本轮轨迹：\n$trace",
                         action = "NONE",
                         source = "ERROR",
                         appLabel = ""
@@ -249,7 +251,9 @@ class MainActivity : ComponentActivity() {
                     onCopyDiag = {
                         runCatching {
                             val diag = "版本 v" + com.focusguard.app.BuildConfig.VERSION_NAME +
-                                "\n启动轨迹：\n" + com.focusguard.app.util.StartupTrace.read(this) +
+                                "\n上一轮轨迹（出错的那次）：\n" +
+                                com.focusguard.app.util.StartupTrace.readPrev(this) +
+                                "\n本轮轨迹：\n" + com.focusguard.app.util.StartupTrace.read(this) +
                                 "\n最近日志：\n" + com.focusguard.app.data.LogStore(this)
                                     .getAllLogs().takeLast(8).joinToString("\n") {
                                         it.getTimeFormatted() + " " + it.reason.take(120)
