@@ -185,8 +185,14 @@ class MainActivity : ComponentActivity() {
             var crashText by remember {
                 // 只在「有还没提示过的崩溃」时弹一次（否则每次打开都弹，用户反馈的问题）
                 mutableStateOf(
-                    if (com.focusguard.app.FocusGuardApp.hasUnseenCrash(this)) {
-                        com.focusguard.app.FocusGuardApp.readCrashLog(this)
+                    val fresh = crashModified > 0L &&
+                        System.currentTimeMillis() - crashModified < 10 * 60_000L
+                    if (fresh && com.focusguard.app.FocusGuardApp.hasUnseenCrash(this)) {
+                        "版本 v" + com.focusguard.app.BuildConfig.VERSION_NAME +
+                            "（记录于 " + java.text.SimpleDateFormat(
+                                "MM-dd HH:mm", java.util.Locale.getDefault()
+                            ).format(java.util.Date(crashModified)) + "）\n" +
+                            com.focusguard.app.FocusGuardApp.readCrashLog(this)
                     } else {
                         ""
                     }
