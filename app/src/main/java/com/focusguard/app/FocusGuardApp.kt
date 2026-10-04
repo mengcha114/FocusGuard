@@ -37,6 +37,36 @@ class FocusGuardApp : Application() {
         private const val MAX_CRASH_ENTRIES = 5
 
         /**
+         * 崩溃文件的最后修改时间；无文件返回 0。
+         *
+         * 配合 [ackCrashLog] 实现「每次崩溃只弹窗提示一次」——
+         * 否则弹窗每次打开应用都会出现（用户反馈的问题）。
+         */
+        fun crashLogModifiedAt(context: android.content.Context): Long = try {
+            val f = File(context.filesDir, CRASH_FILE)
+            if (f.exists()) f.lastModified() else 0L
+        } catch (e: Exception) {
+            0L
+        }
+
+        /** 记下「这条崩溃已经提示过」，避免重复弹窗。 */
+        fun ackCrashLog(context: android.content.Context, modifiedAt: Long) {
+            context.applicationContext
+                .getSharedPreferences("focus_guard_crash_ack", android.content.Context.MODE_PRIVATE)
+                .edit().putLong("ack_mtime", modifiedAt).apply()
+        }
+
+        /** 是否还有「没提示过」的崩溃。 */
+        fun hasUnseenCrash(context: android.content.Context): Boolean {
+            val modified = crashLogModifiedAt(context)
+            if (modified <= 0L) return false
+            val ack = context.applicationContext
+                .getSharedPreferences("focus_guard_crash_ack", android.content.Context.MODE_PRIVATE)
+                .getLong("ack_mtime", 0L)
+            return modified > ack
+        }
+
+        /**
          * 读取崩溃日志全文（日志页展示用）。无崩溃记录返回空串。
          */
         fun readCrashLog(context: android.content.Context): String {

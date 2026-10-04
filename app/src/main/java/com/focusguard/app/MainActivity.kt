@@ -179,12 +179,25 @@ class MainActivity : ComponentActivity() {
         setContent {
             com.focusguard.app.ui.theme.ThemeState.ensureLoaded(this)
             // 上次若出过错：直接把原因弹出来、可一键复制（取不到日志文件时的唯一入口）
+            val crashModified = remember {
+                com.focusguard.app.FocusGuardApp.crashLogModifiedAt(this)
+            }
             var crashText by remember {
-                mutableStateOf(com.focusguard.app.FocusGuardApp.readCrashLog(this))
+                // 只在「有还没提示过的崩溃」时弹一次（否则每次打开都弹，用户反馈的问题）
+                mutableStateOf(
+                    if (com.focusguard.app.FocusGuardApp.hasUnseenCrash(this)) {
+                        com.focusguard.app.FocusGuardApp.readCrashLog(this)
+                    } else {
+                        ""
+                    }
+                )
             }
             if (crashText.isNotBlank()) {
                 AlertDialog(
-                    onDismissRequest = { crashText = "" },
+                    onDismissRequest = {
+                        com.focusguard.app.FocusGuardApp.ackCrashLog(this, crashModified)
+                        crashText = ""
+                    },
                     title = { Text("上次运行出错了（原因已复制到剪贴板）") },
                     text = {
                         Text(
@@ -201,11 +214,15 @@ class MainActivity : ComponentActivity() {
                                     android.content.ClipData.newPlainText("crash", crashText)
                                 )
                             }
+                            com.focusguard.app.FocusGuardApp.ackCrashLog(this, crashModified)
                             crashText = ""
                         }) { Text("复制原因") }
                     },
                     dismissButton = {
-                        TextButton(onClick = { crashText = "" }) { Text("关闭") }
+                        TextButton(onClick = {
+                            com.focusguard.app.FocusGuardApp.ackCrashLog(this, crashModified)
+                            crashText = ""
+                        }) { Text("关闭") }
                     }
                 )
             }
