@@ -468,6 +468,14 @@ gacha
     
     // Permission states
     /**
+     * 离开应用时把自己从最近任务里移除（防被顺手划掉=杀进程导致守护中断）。默认开。
+     * 实现方式：MainActivity.onUserLeaveHint → finishAndRemoveTask()。
+     */
+    var hideFromRecents: Boolean
+        get() = prefs.getBoolean("hide_from_recents", true)
+        set(value) = prefs.edit().putBoolean("hide_from_recents", value).apply()
+
+    /**
      * 没有 Shizuku/Dhizuku 授权时，用无障碍代点系统「强行停止」把被锁应用真正停掉。
      * 默认开（这类用户没有冻结能力，只能靠这个）；会短暂跳一下应用信息页（被封锁页盖住）。
      */

@@ -5,7 +5,6 @@ import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 /**
@@ -26,8 +25,18 @@ object DhizukuUpgrade {
     private const val SLOW_INTERVAL_MS = 30_000L
     private const val FAST_WINDOW_MS = 3 * 60_000L
 
-    /** 是否处于「已降级、等待升级」状态（锁机页据此显示恢复中徽章）。Compose 状态，界面会实时刷新。 */
-    var pending by mutableStateOf(false)
+    /**
+     * 是否处于「已降级、等待升级」状态（锁机页据此显示「⏳ 恢复中」徽章）。
+     *
+     * 注意：**这里必须是普通线程安全字段，不能用 Compose 快照状态**。
+     * 该值由守护后台线程写入（markPending/clear/tick），而锁机页会在
+     * BoxWithConstraints 的测量期读取它——跨线程写 + 测量期读快照状态会抛
+     * `IllegalStateException: Reading a state that was created after the snapshot was taken`
+     * 并导致「打开锁机页闪退」（用户实测堆栈已确认）。
+     * 锁机页每秒重组一次，所以徽章仍会在 ≤1 秒内更新。
+     */
+    @Volatile
+    var pending: Boolean = false
         private set
 
     @Volatile private var since = 0L

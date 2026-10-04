@@ -82,12 +82,10 @@
                 android:resource="@xml/file_paths" />
         </provider>
         
-        <!-- 不进入最近任务：用户无法从最近任务里把它划掉（划掉=杀进程，
-             守护与检测都会中断，只能等系统或自愈闹钟重启）。
-             应用图标仍可正常启动。 -->
+        <!-- 是否从最近任务里隐藏由设置项「隐藏最近任务」控制（默认隐藏：
+             防止被顺手划掉=杀进程导致守护中断），这里不再写死 -->
         <activity
             android:name=".MainActivity"
-            android:excludeFromRecents="true"
             android:exported="true"
             android:theme="@style/Theme.FocusGuard">
             <intent-filter>

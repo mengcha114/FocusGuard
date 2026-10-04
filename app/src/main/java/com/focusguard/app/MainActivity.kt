@@ -778,6 +778,18 @@ class MainActivity : ComponentActivity() {
         com.focusguard.app.service.MonitorService.requestImmediateCheck(this)
     }
 
+    /**
+     * 离开应用时从最近任务里移除自己（设置「隐藏最近任务」可关）。
+     * 不是杀进程：守护服务照常运行，只是任务列表里看不到我们。
+     * 注意排除「我们自己拉起系统弹窗/设置页」导致的前台切换。
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        runCatching {
+            if (appSettings.hideFromRecents && !launchingSystemUi) finishAndRemoveTask()
+        }
+    }
+
     override fun onResume() {
         // 从系统弹窗/设置页回来：不再是“正在拉起系统界面”
         android.util.Log.d("MainActivity", "onResume（此前是否在拉系统界面=$launchingSystemUi）")
