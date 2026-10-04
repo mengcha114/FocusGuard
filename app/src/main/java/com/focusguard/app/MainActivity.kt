@@ -101,6 +101,9 @@ class MainActivity : ComponentActivity() {
     /** 停止守护前的答题验证状态（防误停/防被监管对象随意停止）。 */
     private var showStopVerify by mutableStateOf(false)
 
+    /** 锁机页没能到前台时，是否用兜底页顶住（避免"打开就退回桌面"的体感）。 */
+    private var fallbackLockPage by mutableStateOf(false)
+
     /** 本次启动是否为「安全模式」（上次启动没跑完 → 不再自动拉起服务与系统弹窗）。 */
     private var startupSafeMode = false
 
@@ -158,8 +161,11 @@ class MainActivity : ComponentActivity() {
 
             // 锁机仍在生效 → 直接跳转锁机页并结束自己，不渲染主界面
             if (lockState.isLocked && lockState.shouldBlockNow) {
-                com.focusguard.app.enforce.LockScreenActivity.show(this)
-                finish()
+                // 这是**有意交接**给锁机页，不是崩溃：先写轨迹（含正常结束标记），
+                // 否则下次启动会把它误判成"上次没跑完"→ 误进安全模式 + 误写崩溃日志
+                com.focusguard.app.util.StartupTrace.markHealthy(this)
+                com.focusguard.app.util.StartupTrace.mark(this, "main.redirectLock")
+                redirectToLockWithFallback()
                 return
             }
         } catch (e: Exception) {
@@ -231,6 +237,19 @@ class MainActivity : ComponentActivity() {
         com.focusguard.app.util.StartupTrace.mark(this, "setContent")
         setContent {
             com.focusguard.app.ui.theme.ThemeState.ensureLoaded(this)
+            if (fallbackLockPage) {
+                // 锁机中但锁机页没起来：显示"锁机进行中"兜底页（含自动重试与手动入口）
+                LockRedirectFallback(
+                    onOpenLock = {
+                        runCatching {
+                            com.focusguard.app.enforce.LockScreenActivity.show(
+                                this, forceActivity = true
+                            )
+                        }
+                    }
+                )
+                return@setContent
+            }
             // 上次若出过错：直接把原因弹出来、可一键复制（取不到日志文件时的唯一入口）
             val crashModified = remember {
                 com.focusguard.app.FocusGuardApp.crashLogModifiedAt(this)
@@ -738,6 +757,30 @@ class MainActivity : ComponentActivity() {
     }
 
     /** 首次 Dhizuku 授权后重启主进程，清理授权前的 Binder/DPM 缓存。 */
+    /**
+     * 打开应用时锁机仍在生效：先拉锁机页，**确认它真的到前台**再关掉自己。
+     *
+     * 清后台后 Dhizuku/悬浮窗可能还没就绪，锁机页会拉不起来；此前直接 `finish()`
+     * 的结果就是用户只看到"退回桌面"（长期反馈的"打开就闪退"）。
+     * 拉不起来时改用兜底页顶住，并每 2 秒自动重试。
+     */
+    private fun redirectToLockWithFallback() {
+        runCatching { com.focusguard.app.enforce.LockScreenActivity.show(this) }
+        android.os.Handler(mainLooper).postDelayed({
+            val up = runCatching {
+                com.focusguard.app.enforce.LockScreenActivity.foreground ||
+                    com.focusguard.app.enforce.LockOverlayManager.isShowing
+            }.getOrDefault(false)
+            if (up) {
+                finish()
+            } else {
+                fallbackLockPage = true
+                com.focusguard.app.util.StartupTrace.mark(this, "main.lockFallback")
+                android.util.Log.w("MainActivity", "锁机页未到前台，改用兜底页顶住")
+            }
+        }, 600L)
+    }
+
     private fun restartAfterDhizukuAuthorization() {
         android.os.Handler(mainLooper).postDelayed({
             // 紧邻实际重启动作再次检查，消除初始化/Toast 延迟期间进入锁机的竞态。
@@ -898,6 +941,51 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "onResume 锁机检查失败：${e.message}")
+        }
+    }
+}
+
+/**
+ * 锁机兜底页：锁机生效但锁机页没能到前台时顶住界面，并每 2 秒自动重试拉起。
+ *
+ * 目的：清后台后 Dhizuku/悬浮窗可能还没就绪，锁机页会拉不起来；
+ * 此前直接 finish() 的结果就是用户只看到"退回桌面"（长期反馈的"打开就闪退"）。
+ */
+@Composable
+private fun LockRedirectFallback(onOpenLock: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(2_000L)
+            runCatching { com.focusguard.app.enforce.LockScreenActivity.show(ctx) }
+        }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.padding(28.dp)
+        ) {
+            Text(
+                "锁机进行中",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                "正在恢复锁机界面…若一直停在这里，点下面的按钮",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Button(onClick = onOpenLock, shape = RoundedCornerShape(12.dp)) {
+                Text("打开锁机界面")
+            }
         }
     }
 }
