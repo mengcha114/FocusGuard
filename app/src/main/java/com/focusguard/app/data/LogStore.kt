@@ -54,6 +54,28 @@ class LogStore(context: Context) {
     companion object {
         private const val MAX_LOGS = 500
         private const val FILE_NAME = "detection_logs.json"
+
+        /**
+         * 进程内缓存。
+         *
+         * 主界面首帧会连续调用 `getTodayCheckCount` / `getTodayFocusScore` /
+         * `getTodayViolations` / `getAllLogs` 等多个查询，而这些方法此前各自
+         * **重新读取并解析整份日志文件**（最多 500 条、每条带长文本）——
+         * 在低端机上足以把主线程卡住，正是「打开就闪退、且没有任何崩溃日志」的典型来源。
+         */
+        @Volatile
+        private var cached: List<DetectionLog>? = null
+
+        private val cacheLock = Any()
+
+        internal fun cached(file: java.io.File, loader: () -> List<DetectionLog>): List<DetectionLog> {
+            cached?.let { return it }
+            return synchronized(cacheLock) { cached ?: loader().also { cached = it } }
+        }
+
+        internal fun updateCache(logs: List<DetectionLog>) = synchronized(cacheLock) { cached = logs }
+
+        internal fun invalidateCache() = synchronized(cacheLock) { cached = null }
     }
 
     private val appContext = context.applicationContext
@@ -61,7 +83,7 @@ class LogStore(context: Context) {
     private val lock = Any()
 
     fun addLog(log: DetectionLog) = synchronized(lock) {
-        val logs = readLogs().toMutableList()
+        val logs = cached(logFile) { readLogs() }.toMutableList()
         // 理由可能被 AI 写成引用屏幕内容（如"尾号 6225 的银行卡"），按设置脱敏后落盘
         val redact = runCatching { Settings(appContext).redactLogs }.getOrDefault(true)
         val safe = if (redact) {
@@ -72,9 +94,10 @@ class LogStore(context: Context) {
             logs.subList(MAX_LOGS, logs.size).clear()
         }
         writeLogs(logs)
+        updateCache(logs)
     }
 
-    fun getAllLogs(): List<DetectionLog> = synchronized(lock) { readLogs() }
+    fun getAllLogs(): List<DetectionLog> = synchronized(lock) { cached(logFile) { readLogs() } }
 
     fun getTodayLogs(): List<DetectionLog> {
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
@@ -106,6 +129,7 @@ class LogStore(context: Context) {
 
     fun clearLogs() = synchronized(lock) {
         if (logFile.exists()) logFile.delete()
+        invalidateCache()
     }
 
     /**
@@ -113,7 +137,7 @@ class LogStore(context: Context) {
      * 每行一条：时间 | 分类 | 置信度 | 动作 | 来源 | 应用 | 原因
      */
     fun exportText(): String = synchronized(lock) {
-        val logs = readLogs()
+        val logs = cached(logFile) { readLogs() }
         if (logs.isEmpty()) return "（暂无日志）"
         val sb = StringBuilder()
         sb.append("专注卫士检测日志（共 ${logs.size} 条）\n")
