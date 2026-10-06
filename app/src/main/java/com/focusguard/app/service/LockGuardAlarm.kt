@@ -38,7 +38,7 @@ object LockGuardAlarm {
     private const val HEALTHY_INTERVAL_MS = 30_000L
 
     /** 异常恢复间隔（进程被杀/防线丢失）：快速拉活。供服务启动时注册首个闹钟。 */
-    const val RECOVERY_INTERVAL_MS = 5_000L
+    const val RECOVERY_INTERVAL_MS = 2_000L
 
     /** 注册下一个闹钟。用单调时钟（ELAPSED_REALTIME_WAKEUP）防时间篡改；重启后由 BootReceiver 重新注册。 */
     fun schedule(context: Context, intervalMs: Long) {
@@ -99,6 +99,14 @@ object LockGuardAlarm {
                 // 锁机仍在 → 确保守护服务活着（进程被杀后由闹钟拉活）
                 LockGuardService.ensureRunning(appCtx)
 
+                // 屏幕已熄灭：只保活不补防线。补防线会重建窗口、把屏幕点亮
+                //（用户实测「息屏后自动亮屏」的根因之一）。亮屏后 guardTick /
+                // 下一次巡检会重新把锁机页置顶。
+                if (!com.focusguard.app.util.ScreenState.isInteractive(appCtx)) {
+                    schedule(appCtx, HEALTHY_INTERVAL_MS)
+                    return
+                }
+
                 // 防线在位性检查：悬浮窗丢了直接补挂（进程活着但窗口被系统清理）
                 val overlayOk = com.focusguard.app.enforce.LockOverlayManager.isShowing
                 val activityOk = com.focusguard.app.enforce.LockScreenActivity.foreground
@@ -120,7 +128,7 @@ object LockGuardAlarm {
                     }
                     Log.w(TAG, "自愈闹钟：Dhizuku/LockTask 路径防线丢失，拉起锁机 Activity")
                     com.focusguard.app.enforce.LockScreenActivity
-                        .show(appCtx, forceActivity = true)
+                        .reassert(appCtx, forceActivity = true)
                 } else if (!lockTaskOn && !preferActivity && !overlayOk && !activityOk &&
                     com.focusguard.app.enforce.LockOverlayManager.canShow(appCtx) &&
                     !challengeActive && !friendUnlockActive

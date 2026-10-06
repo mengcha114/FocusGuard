@@ -154,6 +154,7 @@ class MainActivity : ComponentActivity() {
         com.focusguard.app.util.StartupTrace.mark(this, "main.enter")
         appSettings = AppSettings(this)
         com.focusguard.app.util.StartupTrace.mark(this, "main.settings")
+        applyScreenshotBlock()
 
         // 从崩溃通知点进来：直接把原因复制到剪贴板（用户只要长按粘贴发我即可）
         if (intent?.getBooleanExtra("copy_crash", false) == true) {
@@ -682,6 +683,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 主界面是否禁止截屏/录屏（可在设置里关）。
+     *
+     * 锁机页 / 答题页 / 封锁页 / 两个悬浮窗是**强制**禁止的（不受开关影响）；
+     * 只有主界面（设置、聊天、日志、备忘录）跟随开关——万一某台手机的输入法
+     * 与 FLAG_SECURE 冲突，用户还能自己关掉。
+     */
+    private fun applyScreenshotBlock() {
+        runCatching {
+            if (appSettings.blockScreenshots) {
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+    }
+
     /** 把系统真实权限同步回 Settings 标记（overlay、screen capture）。 */
     private fun syncPermissionFlags() {
         if (com.focusguard.app.util.PermissionChecker.canDrawOverlays(this)) {
@@ -979,25 +997,19 @@ class MainActivity : ComponentActivity() {
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // 延后 800ms 再决定，并核对"现在前台到底是谁"：系统授权框/权限页（我们自己
-        // 拉起的）也会让我们离开前台，只靠一个标志位判断时，遇到 ROM 不通知就变成
-        // "应用把自己关掉"（用户眼里的闪退）。宁可这次不隐藏，也不能误关自己。
-        val gen = ++leaveHintGen
-        android.os.Handler(mainLooper).postDelayed({
-            runCatching {
-                if (gen != leaveHintGen) return@runCatching
-                if (!appSettings.hideFromRecents || launchingSystemUi || isFinishing) {
-                    return@runCatching
-                }
-                val fg = com.focusguard.app.service.ForegroundAppDetector.current(this)
-                if (fg == null || fg == packageName) return@runCatching
-                if (com.focusguard.app.enforce.ProjectionConsent.isConsentHost(fg)) {
-                    return@runCatching
-                }
-                com.focusguard.app.util.StartupTrace.mark(this, "main.hideTask")
-                finishAndRemoveTask()
-            }
-        }, 800L)
+        // 立即隐藏（用户要求"退出后马上从最近任务消失"）。安全闸门只有两个：
+        // ① launchingSystemUi —— 我们自己刚拉起系统弹窗/设置页，此刻离开前台
+        //    不是用户意图；② 系统授权框正盖在顶上。
+        // 不再延后、也不再因为"前台取不到"而跳过：onUserLeaveHint 本身已经证明
+        // 用户离开了（先把锁机页/封锁页这类不能误关的场景交给上面的闸门）。
+        if (!appSettings.hideFromRecents || launchingSystemUi || isFinishing) return
+        val fg = runCatching {
+            com.focusguard.app.service.ForegroundAppDetector.current(this)
+        }.getOrNull()
+        if (fg != null && com.focusguard.app.enforce.ProjectionConsent.isConsentHost(fg)) return
+        leaveHintGen++
+        com.focusguard.app.util.StartupTrace.mark(this, "main.hideTask")
+        runCatching { finishAndRemoveTask() }
     }
 
     override fun onPause() {
@@ -1057,7 +1069,7 @@ private fun LockRedirectFallback(onOpenLock: () -> Unit) {
     LaunchedEffect(Unit) {
         while (true) {
             kotlinx.coroutines.delay(2_000L)
-            runCatching { com.focusguard.app.enforce.LockScreenActivity.show(ctx) }
+            runCatching { com.focusguard.app.enforce.LockScreenActivity.reassert(ctx) }
         }
     }
     Box(

@@ -472,8 +472,11 @@ class MonitorService : Service() {
             // 锁机页被切到后台后仍非空 ⇒ 这层兜底永远不会触发。
             if (com.focusguard.app.enforce.LockScreenActivity.foreground) return
 
+            // 屏幕已熄灭：不拉起（拉起会把屏幕点亮）。亮屏后由下一次巡检恢复。
+            if (!com.focusguard.app.util.ScreenState.isInteractive(this)) return
+
             Log.d(TAG, "锁机状态激活但无任何防线在前台，自动重新拉起")
-            com.focusguard.app.enforce.LockScreenActivity.show(this)
+            com.focusguard.app.enforce.LockScreenActivity.reassert(this)
         } catch (e: Exception) {
             Log.w(TAG, "锁机兜底拉起失败：${e.message}")
         }

@@ -177,9 +177,14 @@ class UnlockChallengeActivity : ComponentActivity() {
             Log.w(TAG, "设置窗口标志失败：${e.message}")
         }
 
-        // 注意：这里绝不能加 FLAG_SECURE。
-        // FLAG_SECURE 在部分 ROM 上会阻止输入法窗口正常附着，
-        // 是"打开输入法就闪退"的直接成因。
+        // 防截屏/录屏：答题页禁止截屏（外部相机/AI 拍不到题目，也进不了最近任务缩略图）。
+        // 旧注释说"绝不能加"是因为担心输入法附着闪退——现在答题 UI 是自绘键盘、
+        // 不依赖系统输入法，该前提已不成立。
+        try {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } catch (e: Exception) {
+            Log.w(TAG, "设置防截屏标志失败：${e.message}")
+        }
 
         // 与锁机页一致启用 edge-to-edge：背景延伸到状态栏/刘海区域，内容层
         // 再自行避让 Insets，避免答题页顶部出现一条空缺。

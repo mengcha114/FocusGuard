@@ -29,6 +29,10 @@ class BootReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "BootReceiver"
+
+        /** 最近一次处理的时刻，用于给「开机/解锁/快启/升级」这几种前后脚到达的广播去重。 */
+        @Volatile
+        private var lastHandledAt = 0L
         // 注意：本接收器不是 directBootAware（LockState 等数据在凭据加密存储里，
         // 开机解锁前读不到），所以不收 LOCKED_BOOT_COMPLETED —— 收了也没用。
         private val TRIGGER_ACTIONS = setOf(
@@ -48,9 +52,26 @@ class BootReceiver : BroadcastReceiver() {
         Log.d(TAG, "收到启动广播：$action")
         val app = context.applicationContext
 
+        // 去重：BOOT_COMPLETED 与 USER_UNLOCKED 往往前后脚到达（QUICKBOOT 亦然），
+        // 重复拉起会造成锁机页闪动
+        val now = System.currentTimeMillis()
+        if (now - lastHandledAt < 60_000L) {
+            Log.d(TAG, "启动广播去重（${now - lastHandledAt}ms 内已处理过）")
+            return
+        }
+        lastHandledAt = now
+
         try {
             val lockState = LockState(app)
             val usageRuleStore = UsageRuleStore.shared(app)
+
+            // 0. 锁机仍在生效 → **最先**拉起锁机页：重启后用户最关心的就是它，
+            //    服务启动/看门狗注册都是异步的，没必要排在前面等（此前排在最后，
+            //    白白多等了几十毫秒到几百毫秒）
+            if (lockState.isLocked && lockState.shouldBlockNow) {
+                Log.d(TAG, "开机后锁机状态仍有效，立即恢复锁机页与悬浮窗")
+                runCatching { LockScreenActivity.show(app) }
+            }
 
             // 1. 有锁机 / 硬封锁规则 / 「仅锁该软件」临时封锁 → 启动守护服务
             val hasBlockRule = usageRuleStore.allRules().any { it.hardBlockMinutes != null }
@@ -64,13 +85,12 @@ class BootReceiver : BroadcastReceiver() {
                 LockGuardService.start(app)
             }
 
-            // 2. 无论如何都注册看门狗与 5 秒自愈闹钟（秒级拉活防破解）
+            // 2. 无论如何都注册看门狗与自愈闹钟（秒级拉活防破解）。
+            //    首拍用 1 秒（此前直接排 5 秒，等于让"重启后锁机页出现"白等最多 5 秒），
+            //    之后由闹钟自己按 RECOVERY/HEALTHY 间隔续环。
             GuardWatchdogWorker.schedule(app)
             try {
-                com.focusguard.app.service.LockGuardAlarm.schedule(
-                    app,
-                    com.focusguard.app.service.LockGuardAlarm.RECOVERY_INTERVAL_MS
-                )
+                com.focusguard.app.service.LockGuardAlarm.schedule(app, 1_000L)
             } catch (e: Exception) {
                 Log.w(TAG, "注册开机自愈闹钟失败：${e.message}")
             }
@@ -80,12 +100,6 @@ class BootReceiver : BroadcastReceiver() {
                 com.focusguard.app.service.MemoReminder.sync(app)
             } catch (e: Exception) {
                 Log.w(TAG, "待办提醒重排失败：${e.message}")
-            }
-
-            // 3. 锁机状态仍在 → 立即恢复锁机页/全屏悬浮窗
-            if (lockState.isLocked && lockState.shouldBlockNow) {
-                Log.d(TAG, "开机后锁机状态仍有效，恢复锁机页与悬浮窗")
-                LockScreenActivity.show(app)
             }
 
             // 4. 屏幕录制（MediaProjection）授权**不可能跨重启保留**：

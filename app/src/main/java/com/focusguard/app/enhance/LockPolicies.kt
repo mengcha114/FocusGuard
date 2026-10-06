@@ -120,19 +120,19 @@ object LockPolicies {
     ) {
         AUTO_TIME(
             "auto_time", "强制自动时间",
-            "锁机期间强制「自动设置时间/时区」，改时间缩短不了锁机（原生能力，不需要 Shizuku）", true
+            "锁机期间强制「自动设置时间/时区」，改时间缩短不了锁机（原生能力，不需要 Shizuku）。默认关", false
         ),
         NO_INSTALL(
             "no_install", "禁止安装应用",
-            "锁机期间装不了任何新应用（分屏/虚拟机/破解工具都进不来）；本应用的更新也会被挡", true
+            "锁机期间装不了任何新应用（分屏/虚拟机/破解工具都进不来）；本应用的更新也会被挡。默认关", false
         ),
         NO_APPS_CONTROL(
             "no_apps_control", "禁止管理应用",
-            "锁机期间在设置里不能强行停止/清除其它应用的数据", true
+            "锁机期间在设置里不能强行停止/清除其它应用的数据。默认关", false
         ),
         NO_DEBUG(
             "no_debug", "禁止 USB 调试",
-            "锁机期间关掉开发者选项与 adb（电脑连不上就卸不了/停不了）；Shizuku 在运行时不施加，否则它会掉线", true
+            "锁机期间关掉开发者选项与 adb（电脑连不上就卸不了/停不了）；Shizuku 在运行时不施加，否则它会掉线。默认关（会改系统设置）", false
         ),
         NO_USB(
             "no_usb", "禁止 USB 传文件",
@@ -168,7 +168,7 @@ object LockPolicies {
         ),
         CRACK_FREEZE(
             "crack_freeze", "冻结破解工具",
-            "锁机期间冻结「冰箱/小黑屋/Island/黑阈/Auto.js/自动点击器/多开分身/虚拟机/远程控制/修改器」等能用来破解或自动答题的工具；锁机结束自动解冻", true
+            "锁机期间冻结「冰箱/小黑屋/Island/黑阈/Auto.js/自动点击器/多开分身/虚拟机/远程控制/修改器」等能用来破解或自动答题的工具；锁机结束自动解冻。默认关", false
         ),
         CRACK_HIDE(
             "crack_hide", "隐藏破解工具",
@@ -181,7 +181,7 @@ object LockPolicies {
         ),
         CRACK_DETECT(
             "crack_detect", "破解环境检测（只留痕）",
-            "锁机期间检测 root / Xposed / 调试器并写入检测日志；不做拒绝解锁，避免误伤与死锁", true
+            "锁机期间检测 root / Xposed / 调试器并写入检测日志；不做拒绝解锁，避免误伤与死锁。默认关", false
         )
     }
 
@@ -392,6 +392,8 @@ object LockPolicies {
     /** 锁机结束：撤销全部限制、解冻应用。失败的项保留记录，下次服务启动再试。 */
     fun onLockEnd(context: Context) {
         val app = context.applicationContext
+        // 陌生人守卫加的冻结/隐藏先还原（它记的是自己那一份，引用计数在内部处理）
+        runCatching { com.focusguard.app.enforce.LockTopGuard.releaseAll(app) }
         val p = prefs(app)
         runCatching { revertHardening(app) }.onFailure { Log.w(TAG, "撤销加固失败：${it.message}") }
         val editor = p.edit()

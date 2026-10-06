@@ -803,6 +803,69 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
                 Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary)
             }
+
+            Spacer(Modifier.height(10.dp))
+            var updateMsg by remember { mutableStateOf<String?>(null) }
+            var updateUrl by remember { mutableStateOf<String?>(null) }
+            var checking by remember { mutableStateOf(false) }
+            Button(
+                onClick = {
+                    if (checking) return@Button
+                    checking = true
+                    updateMsg = "正在检查…"
+                    updateUrl = null
+                    Thread {
+                        val result = runCatching {
+                            com.focusguard.app.update.UpdateChecker.check()
+                        }
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            checking = false
+                            settings.lastUpdateCheckAt = System.currentTimeMillis()
+                            result.onSuccess { info ->
+                                if (info == null) {
+                                    updateMsg = "已是最新版本 v" +
+                                        com.focusguard.app.update.UpdateChecker.currentVersion()
+                                } else {
+                                    updateMsg = "发现新版本 " + info.tag + "，点下面的按钮下载"
+                                    updateUrl = info.downloadUrl
+                                }
+                            }.onFailure { e ->
+                                updateMsg = "检查更新失败：" + (e.message ?: e.javaClass.simpleName)
+                            }
+                        }
+                    }.start()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = com.focusguard.app.ui.theme.cardContainer()
+                )
+            ) {
+                Text(if (checking) "检查中…" else "检测更新", fontSize = 15.sp)
+            }
+            updateMsg?.let {
+                Spacer(Modifier.height(6.dp))
+                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary)
+            }
+            updateUrl?.let { url ->
+                Spacer(Modifier.height(6.dp))
+                Button(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse(url)
+                                )
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("下载新版本", fontSize = 15.sp)
+                }
+            }
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "包含设备信息、配置（密钥脱敏）、Token 统计与检测日志，排查问题时可分享给开发者",

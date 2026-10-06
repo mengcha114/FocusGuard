@@ -243,7 +243,17 @@ class LockScreenActivity : ComponentActivity() {
         }
 
         /** 兼容旧调用点：语义与 [show] 相同（都是置顶而非重建）。 */
-        fun reassert(context: Context) = show(context)
+        /**
+         * 「把锁机页保持在最上面」的自愈入口。
+         *
+         * 与 [show] 的唯一区别：**屏幕已熄灭时什么都不做**。息屏会让锁机页
+         * onPause（foreground=false），各条自愈路径若照常重新拉起，会重建带
+         * TURN_SCREEN_ON 的窗口 → 把屏幕重新点亮（用户实测「息屏后自动亮屏」）。
+         */
+        fun reassert(context: Context, forceActivity: Boolean = false) {
+            if (!com.focusguard.app.util.ScreenState.isInteractive(context)) return
+            show(context, forceActivity)
+        }
 
         /**
          * 覆盖层按钮的统一解锁入口（供 LockGuardService 回调）。
@@ -387,9 +397,11 @@ class LockScreenActivity : ComponentActivity() {
                         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
                 )
             }
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            // 防截屏/录屏：锁机页不进入系统截屏与最近任务缩略图（Activity 兜底路径）
-            // 答题页刻意不加（部分 ROM 会阻断输入法附着导致闪退）
+            // 注意：这里**不再加** FLAG_KEEP_SCREEN_ON —— 它会让屏幕永不超时
+            //（用户实测「锁机期间无法息屏」）。息屏是用户自己的权利：我们只在
+            //  锁机开始时点亮一次屏幕（setTurnScreenOn），此后不阻止系统息屏；
+            //  息屏期间也不许任何自愈路径重新拉起界面（见 util/ScreenState）。
+            // 防截屏/录屏：锁机页不进入系统截屏、第三方录屏与最近任务缩略图
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         } catch (e: Exception) {
             Log.w(TAG, "设置窗口标志失败：${e.message}")

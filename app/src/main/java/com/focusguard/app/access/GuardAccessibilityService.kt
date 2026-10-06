@@ -256,6 +256,17 @@ class GuardAccessibilityService : AccessibilityService() {
         // 状态栏拦截条随锁机状态挂载/移除（拦截下拉起始手势的物理屏障）
         ensureStatusBarBlock()
 
+
+        // 陌生人守卫：焦点窗口不是我们自己（有人盖在锁机页上方，如语音助手）→
+        // 交给 LockTopGuard 计数与升级处理（白名单/冷却/熔断都在里面）；
+        // 普通的顶回仍由下面的既有逻辑负责。
+        runCatching {
+            val above = rootInActiveWindow?.packageName?.toString().orEmpty()
+            if (above.isNotBlank() && above != packageName) {
+                com.focusguard.app.enforce.LockTopGuard.onForeignAboveLock(this, above)
+            }
+        }
+
         // 无论何种事件、无论是否在答题界面，只要下拉了系统通知栏/控制中心，一律强制收起
         val pkgName = event.packageName?.toString() ?: ""
         if (pkgName == "com.android.systemui" || pkgName in blockedSystemPackages) {

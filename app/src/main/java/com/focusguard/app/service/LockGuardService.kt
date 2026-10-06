@@ -593,6 +593,16 @@ class LockGuardService : Service() {
                 return
             }
 
+
+            // 陌生人守卫（兜底）：焦点窗口不是我们 → 有人盖在锁机页上方。
+            // 无障碍事件是快路径，这里每 300ms 再兜一次，防事件丢失。
+            runCatching {
+                val above = com.focusguard.app.enforce.LockTopGuard.focusedWindowPackage()
+                if (!above.isNullOrBlank() && above != packageName) {
+                    com.focusguard.app.enforce.LockTopGuard.onForeignAboveLock(this, above)
+                }
+            }
+
             // ── 悬浮窗内答题模式：完全放行（v3.0.0） ────────
             // 答题 UI 就画在悬浮窗里，窗口本身即防线。此时不做任何
             // 拉起/隐藏动作，只在窗口被 ROM 回收时重建（重建保留进度）。
@@ -906,7 +916,7 @@ class LockGuardService : Service() {
                 if (lockState.isLocked && lockState.shouldBlockNow &&
                     !com.focusguard.app.enforce.LockScreenActivity.friendUnlockActive
                 ) {
-                    LockScreenActivity.show(applicationContext)
+                    LockScreenActivity.reassert(applicationContext)
                 }
             }
         } catch (e: Exception) {

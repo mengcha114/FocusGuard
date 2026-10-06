@@ -92,7 +92,7 @@ class GuardWatchdogWorker(
                 !LockScreenActivity.friendUnlockActive
             ) {
                 Log.d(TAG, "检测到锁机激活但锁机页缺失，拉起锁机页")
-                LockScreenActivity.show(context)
+                LockScreenActivity.reassert(context)
             }
 
             Result.success()

@@ -1274,10 +1274,12 @@ object LockOverlayManager {
             //    窗口真正铺到屏幕最顶端，视觉上无缺口）
             // FLAG_WATCH_OUTSIDE_TOUCH：捕获窗口外触摸（下拉通知栏的起手动作）
             // 不加 TURN_SCREEN_ON / KEEP_SCREEN_ON——否则息屏会被强行点亮
+            // FLAG_SECURE：锁机悬浮窗（含悬浮窗内答题 UI）禁止截屏与第三方录屏
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_SECURE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START

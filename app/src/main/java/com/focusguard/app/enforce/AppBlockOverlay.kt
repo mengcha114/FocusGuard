@@ -452,10 +452,12 @@ object AppBlockOverlay {
             type,
             // 与锁机悬浮窗同样的取向：focusable 才能吞返回键；铺满状态栏/刘海区域；
             // WATCH_OUTSIDE_TOUCH 捕获窗口外触摸（下拉通知栏的起手动作）
+            // FLAG_SECURE：封锁悬浮窗禁止截屏与第三方录屏
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_SECURE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
