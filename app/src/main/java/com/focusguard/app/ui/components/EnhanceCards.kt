@@ -253,6 +253,23 @@ fun LockHardeningCard() {
             if (!guardedSecurityOff(stranger, value, apply)) apply()
         }
 
+        // 开机后自动恢复守护（默认开）：拉起应用并在界面就绪后自动请求录屏授权
+        var autoResume by remember { mutableStateOf(settings.autoResumeGuardOnBoot) }
+        SwitchRow(
+            title = "开机后自动恢复守护",
+            hint = "重启手机后会自己打开应用并把屏幕录制授权弹出来、由无障碍替你点确认，" +
+                "不用手动操作；关掉则只留一条「点这里恢复」的通知。" +
+                "部分手机的自启动管理会拦开机广播，那样就只能手动恢复",
+            checked = autoResume,
+            enabled = true
+        ) { value ->
+            autoResume = value
+            settings.autoResumeGuardOnBoot = value
+            android.widget.Toast.makeText(
+                context, "已自动保存（下次开机生效）", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+
         Text(
             "锁机期间的系统加固（逐项即时保存、**不需要答题**；只在锁机期间生效，锁机结束自动撤销）",
             fontSize = 12.sp,

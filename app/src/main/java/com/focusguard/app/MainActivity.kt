@@ -182,6 +182,10 @@ class MainActivity : ComponentActivity() {
         // 曾用 `appSettings.serviceRunning`（持久化的意愿标记）兜底 —— 重启后服务
         // 并没有跑，界面却一直显示「停止守护」，点了也没有反应（用户实测）。
         serviceRunning = com.focusguard.app.service.MonitorService.isRunning
+        // 开机自动恢复守护：BootReceiver 带标记把界面拉起来
+        if (intent?.getBooleanExtra(EXTRA_AUTO_RESUME_GUARD, false) == true) {
+            pendingAutoResumeGuard = true
+        }
 
         // vc63 一次性迁移：历史版本已经授权 Dhizuku 的用户不会再次触发授权
         // 回调，因此首次运行本版本时主动完成初始化并重启一次。标志在准备成功后
@@ -668,6 +672,9 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleMemoIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_AUTO_RESUME_GUARD, false)) {
+            pendingAutoResumeGuard = true
+        }
     }
 
     /**
@@ -1054,6 +1061,28 @@ class MainActivity : ComponentActivity() {
         // 截屏开关改动后回到主界面立即生效
         applyScreenshotBlock()
         permissionRefreshTick++
+        // 开机自动恢复守护：界面真正就绪后再延迟 800ms 请求授权（窗口已获得焦点），
+        // 避免"在 onCreate 里弹授权框"那条曾导致部分 ROM 闪退的路径。
+        if (pendingAutoResumeGuard) {
+            pendingAutoResumeGuard = false
+            com.focusguard.app.util.StartupTrace.mark(this, "main.autoResumeIntent")
+            android.os.Handler(mainLooper).postDelayed({
+                val skip = when {
+                    startupSafeMode -> "safeMode"
+                    isLockActiveNow() -> "locked"
+                    com.focusguard.app.service.MonitorService.isRunning -> "running"
+                    appSettings.apiKey.isBlank() -> "noKey"
+                    !appSettings.autoResumeGuardOnBoot -> "disabled"
+                    else -> null
+                }
+                if (skip != null) {
+                    com.focusguard.app.util.StartupTrace.mark(this, "main.autoResumeSkip $skip")
+                    return@postDelayed
+                }
+                com.focusguard.app.util.StartupTrace.mark(this, "main.autoResumeStart")
+                startGuard()
+            }, 800L)
+        }
         // 守护按钮状态按**真实值**校正：延后 800ms（刚点「开始守护」时服务还在启动中，
         // 立刻刷新会把按钮又变回「开始守护」），之后每 3 秒再校一次
         serviceTickHandler.removeCallbacks(serviceTickRunnable)
