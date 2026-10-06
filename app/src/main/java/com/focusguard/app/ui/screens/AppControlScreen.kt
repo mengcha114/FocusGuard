@@ -54,6 +54,8 @@ fun AppControlScreen() {
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var batchMsg by remember { mutableStateOf<String?>(null) }
     var showBatchVerify by remember { mutableStateOf(false) }
+    var showBatchSheet by remember { mutableStateOf(false) }
+    var pendingBatchAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val batchScope = rememberCoroutineScope()
 
     // 读取已安装应用（含自动识别出的分类）
@@ -138,52 +140,61 @@ fun AppControlScreen() {
                 }
             }
         } else {
-            // ── 批量操作条 ──
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = {
-                    batchMode = !batchMode
-                    if (!batchMode) selected = emptySet()
-                    batchMsg = null
-                }) { Text(if (batchMode) "退出批量" else "批量操作", fontSize = 13.sp) }
-                if (batchMode) {
-                    TextButton(onClick = {
-                        selected = if (selected.size == filteredApps.size) emptySet()
-                        else filteredApps.map { it.packageName }.toSet()
-                    }) { Text(if (selected.size == filteredApps.size) "取消全选" else "全选", fontSize = 13.sp) }
-                    TextButton(onClick = {
-                        selected = filteredApps.map { it.packageName }.toSet() - selected
-                    }) { Text("反选", fontSize = 13.sp) }
-                    Spacer(Modifier.weight(1f))
-                    Text("已选 ${selected.size}", fontSize = 12.sp)
+            // ── 批量操作：入口做成整行按钮（此前只是一个不起眼的文字按钮）──
+            if (!batchMode) {
+                Button(
+                    onClick = {
+                        batchMode = true
+                        selected = emptySet()
+                        batchMsg = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("批量设置应用（可多选）", fontSize = 14.sp) }
+            } else {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "已选 ${selected.size} / ${filteredApps.size}",
+                                fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = {
+                                selected = if (selected.size == filteredApps.size) emptySet()
+                                else filteredApps.map { it.packageName }.toSet()
+                            }) { Text(if (selected.size == filteredApps.size) "取消全选" else "全选", fontSize = 13.sp) }
+                            TextButton(onClick = {
+                                selected = filteredApps.map { it.packageName }.toSet() - selected
+                            }) { Text("反选", fontSize = 13.sp) }
+                            TextButton(onClick = {
+                                batchMode = false
+                                selected = emptySet()
+                                batchMsg = null
+                            }) { Text("退出", fontSize = 13.sp) }
+                        }
+                        Button(
+                            onClick = { showBatchSheet = true },
+                            enabled = selected.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                if (selected.isEmpty()) "先勾选要设置的应用"
+                                else "下一步：批量设置（${selected.size} 个）",
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
                 }
             }
             batchMsg?.let {
                 Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary)
-            }
-            if (batchMode) {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    // 收紧方向：直接生效（设为娱乐类 = 会被 AI 盯上）
-                    Button(
-                        onClick = {
-                            val store = AppCategoryStore.shared(context)
-                            selected.forEach { store.setUserOverride(it, AppCategory.GAME) }
-                            AppInventory.invalidate()
-                            batchMsg = "已把 ${selected.size} 个应用标为娱乐类"
-                        },
-                        enabled = selected.isNotEmpty(),
-                        modifier = Modifier.weight(1f)
-                    ) { Text("设为娱乐类", fontSize = 13.sp) }
-                    Spacer(Modifier.width(8.dp))
-                    // 放宽方向：批量清除管控规则 ⇒ 先答题
-                    OutlinedButton(
-                        onClick = { showBatchVerify = true },
-                        enabled = selected.isNotEmpty(),
-                        modifier = Modifier.weight(1f)
-                    ) { Text("清除管控", fontSize = 13.sp) }
-                }
             }
             LazyColumn(
                 modifier = Modifier.weight(1f),
@@ -209,26 +220,20 @@ fun AppControlScreen() {
                     )
                 }
             }
-            // 批量清除管控规则：属于放宽限制 ⇒ 复用同一套答题规则
+            // 批量改动管控规则：与单应用弹窗一致——保存规则需要答题（防篡改）
             if (showBatchVerify) {
+                val pending = pendingBatchAction
                 com.focusguard.app.ui.components.VerifyDialog(
-                    title = "批量清除管控需要先答题",
-                    description = "清除管控规则属于放宽限制。本题由应用本地题库按你的年级出题，" +
-                        "与 AI 无关；答错立即换题，错 2 次要等 5 分钟。",
-                    confirmText = "验证并清除",
+                    title = "批量修改管控需要先答题",
+                    description = "应用管控规则改了就等于放行/收紧这些应用，需要先答对一道题。" +
+                        "本题由应用本地题库按你的年级出题，与 AI 无关；答错立即换题，错 2 次要等 5 分钟。",
+                    confirmText = "验证并应用",
                     onPassed = {
                         showBatchVerify = false
-                        val ruleStore = UsageRuleStore.shared(context)
-                        val blockStore = AppBlockStore(context)
-                        val n = selected.size
-                        selected.forEach {
-                            blockStore.clear(it)
-                            ruleStore.removeRule(it)
-                            ruleStore.resetToday(it)
-                            com.focusguard.app.enforce.AppBlockActivity.dismissIfShowing(it)
-                        }
-                        com.focusguard.app.enforce.AppBlockOverlay.hide()
-                        batchMsg = "已清除 $n 个应用的管控规则"
+                        pending?.invoke()
+                        pendingBatchAction = null
+                        batchMode = false
+                        selected = emptySet()
                         batchScope.launch {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 val store = AppCategoryStore.shared(context)
@@ -237,6 +242,47 @@ fun AppControlScreen() {
                         }
                     },
                     onCancel = { showBatchVerify = false }
+                )
+            }
+            // 批量设置窗口（应用类型 / 允许使用时长 / 最多使用时长 / 清除管控）
+            if (showBatchSheet) {
+                BatchEditSheet(
+                    count = selected.size,
+                    onDismiss = { showBatchSheet = false },
+                    onApply = { category, trigger, hard, clear ->
+                        val targets = selected.toList()
+                        showBatchSheet = false
+                        pendingBatchAction = {
+                            val catStore = AppCategoryStore.shared(context)
+                            val ruleStore = UsageRuleStore.shared(context)
+                            val blockStore = AppBlockStore(context)
+                            targets.forEach { pkg ->
+                                if (clear) {
+                                    blockStore.clear(pkg)
+                                    ruleStore.removeRule(pkg)
+                                    ruleStore.resetToday(pkg)
+                                    com.focusguard.app.enforce.AppBlockActivity.dismissIfShowing(pkg)
+                                    return@forEach
+                                }
+                                if (category != null) catStore.setUserOverride(pkg, category)
+                                if (trigger != null || hard != null) {
+                                    val cur = ruleStore.getRule(pkg)
+                                    val t = trigger ?: cur?.triggerMinutes
+                                    val h = hard ?: cur?.hardBlockMinutes
+                                    if (t != null || h != null) {
+                                        runCatching { ruleStore.setRule(AppUsageRule(pkg, t, h)) }
+                                    }
+                                }
+                                blockStore.clear(pkg)
+                                ruleStore.resetToday(pkg)
+                            }
+                            if (clear) com.focusguard.app.enforce.AppBlockOverlay.hide()
+                            AppInventory.invalidate()
+                            batchMsg = if (clear) "已清除 ${targets.size} 个应用的管控规则"
+                            else "已更新 ${targets.size} 个应用的设置"
+                        }
+                        showBatchVerify = true
+                    }
                 )
             }
         }
@@ -292,6 +338,128 @@ fun AppControlScreen() {
     }
 }
 
+/** 批量设置弹窗：应用类型 / 允许使用时长 / 最多使用时长 / 清除管控（改动需答题，与单应用一致）。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BatchEditSheet(
+    count: Int,
+    onDismiss: () -> Unit,
+    onApply: (category: AppCategory?, trigger: Int?, hard: Int?, clear: Boolean) -> Unit
+) {
+    var selectedCategory by remember { mutableStateOf<AppCategory?>(null) }   // null = 不修改
+    var allowText by remember { mutableStateOf("") }                          // 空 = 不修改
+    var maxText by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "批量设置 · 已选 $count 个应用",
+                fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                "只填你想改的项；没填的保持原样。保存前需要答一道题（和单应用设置一样）。",
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+            )
+
+            Text("应用类型", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            val options = listOf(
+                null to "不修改",
+                AppCategory.GAME to "游戏",
+                AppCategory.STUDY to "学习/办公",
+                AppCategory.VIDEO to "视频",
+                AppCategory.SHORT_VIDEO to "短视频",
+                AppCategory.SOCIAL to "社交",
+                AppCategory.SYSTEM to "系统"
+            )
+            options.chunked(4).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowItems.forEach { (cat, label) ->
+                        FilterChip(
+                            shape = RoundedCornerShape(10.dp),
+                            selected = selectedCategory == cat,
+                            onClick = { selectedCategory = cat },
+                            label = { Text(label, fontSize = 12.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
+            Text("使用时长限制（可选）", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(
+                value = allowText,
+                onValueChange = { allowText = it; errorMsg = null },
+                label = { Text("允许使用时间（分钟）") },
+                placeholder = { Text("留空 = 不修改；如 30") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+            OutlinedTextField(
+                value = maxText,
+                onValueChange = { maxText = it; errorMsg = null },
+                label = { Text("最多使用时间（分钟）") },
+                placeholder = { Text("留空 = 不修改；如 60，超过后全屏封锁") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+            errorMsg?.let {
+                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+            }
+
+            Button(
+                onClick = {
+                    val trigger = allowText.trim().takeIf { it.isNotEmpty() }?.toIntOrNull()
+                    val hard = maxText.trim().takeIf { it.isNotEmpty() }?.toIntOrNull()
+                    if (allowText.trim().isNotEmpty() && trigger == null) {
+                        errorMsg = "「允许使用时间」要填数字（分钟）"; return@Button
+                    }
+                    if (maxText.trim().isNotEmpty() && hard == null) {
+                        errorMsg = "「最多使用时间」要填数字（分钟）"; return@Button
+                    }
+                    if (trigger != null && hard != null && hard < trigger) {
+                        errorMsg = "「最多使用时间」不能小于「允许使用时间」"; return@Button
+                    }
+                    if (selectedCategory == null && trigger == null && hard == null) {
+                        errorMsg = "至少要改一项（类型 / 时长）"; return@Button
+                    }
+                    onApply(selectedCategory, trigger, hard, false)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("应用到 $count 个应用", fontSize = 15.sp) }
+
+            OutlinedButton(
+                onClick = { onApply(null, null, null, true) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) { Text("清除这 $count 个应用的管控（解除限时/封锁）", fontSize = 14.sp) }
+        }
+    }
+}
+
 /** 应用行：图标 + 名称 + 分类标签 + 时长规则标记。 */
 @Composable
 private fun AppControlRow(
@@ -315,12 +483,22 @@ private fun AppControlRow(
         runCatching { app.icon?.toBitmap(48, 48)?.asImageBitmap() }.getOrNull()
     }
 
+    val highlight = inBatch && checked
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(
+            if (highlight) 2.dp else 1.dp,
+            if (highlight) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (highlight) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+            else com.focusguard.app.ui.theme.cardContainer()
+        )
     ) {
         Row(
             modifier = Modifier
@@ -328,6 +506,11 @@ private fun AppControlRow(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 批量模式：最前面给一个勾选框，选中态再叠高亮底色 + 边框（此前完全分不出来）
+            if (inBatch) {
+                Checkbox(checked = checked, onCheckedChange = null)
+                Spacer(Modifier.width(4.dp))
+            }
             if (iconBitmap != null) {
                 Image(
                     bitmap = iconBitmap,
@@ -365,6 +548,21 @@ private fun AppControlRow(
                 )
             }
 
+            if (highlight) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "已选",
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+            }
             if (hasRule) {
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
