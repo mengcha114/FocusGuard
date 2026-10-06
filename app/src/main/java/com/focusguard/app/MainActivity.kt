@@ -414,7 +414,7 @@ class MainActivity : ComponentActivity() {
                             appSettings.updatePromptedTag = info.tag
                             pendingUpdate = null
                             runCatching {
-                                startActivity(
+                                this@MainActivity.startActivity(
                                     android.content.Intent(
                                         android.content.Intent.ACTION_VIEW,
                                         android.net.Uri.parse(info.downloadUrl)
@@ -435,7 +435,8 @@ class MainActivity : ComponentActivity() {
                                 appSettings.autoCheckUpdate = false
                                 pendingUpdate = null
                                 android.widget.Toast.makeText(
-                                    this, "已关闭自动检测更新（设置里可重新打开）",
+                                    this@MainActivity,
+                                    "已关闭自动检测更新（设置里可重新打开）",
                                     android.widget.Toast.LENGTH_LONG
                                 ).show()
                             }) { Text("不再提示") }
