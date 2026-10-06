@@ -68,9 +68,31 @@ class BootReceiver : BroadcastReceiver() {
             // 0. 锁机仍在生效 → **最先**拉起锁机页：重启后用户最关心的就是它，
             //    服务启动/看门狗注册都是异步的，没必要排在前面等（此前排在最后，
             //    白白多等了几十毫秒到几百毫秒）
+            // 先挂悬浮窗再拉锁机页：开机瞬间 Dhizuku 状态未知，show() 会走 startActivity，
+            // 而后台启动 Activity 在 Android 10+ 会被静默拦掉（只能等守护首拍/闹钟重试，秒级）；
+            // 悬浮窗是 TYPE_APPLICATION_OVERLAY，不需要后台启动豁免，addView 毫秒级。
             if (lockState.isLocked && lockState.shouldBlockNow) {
-                Log.d(TAG, "开机后锁机状态仍有效，立即恢复锁机页与悬浮窗")
-                runCatching { LockScreenActivity.show(app) }
+                Log.d(TAG, "开机后锁机状态仍有效，先挂悬浮窗再拉锁机页")
+                runCatching {
+                    com.focusguard.app.util.StartupTrace.mark(app, "boot.lockRestore")
+                    com.focusguard.app.enforce.LockOverlayManager.show(
+                        context = app,
+                        lockState = lockState,
+                        force = true,
+                        onStartChallenge = {
+                            com.focusguard.app.enforce.LockScreenActivity
+                                .startChallengeFromOverlay(app, LockState(app))
+                        },
+                        onRequestPause = {
+                            com.focusguard.app.enforce.LockScreenActivity.showForPause(app)
+                        }
+                    )
+                    com.focusguard.app.util.StartupTrace.mark(app, "boot.overlayShown")
+                }
+                runCatching {
+                    LockScreenActivity.show(app)
+                    com.focusguard.app.util.StartupTrace.mark(app, "boot.activityShown")
+                }
             }
 
             // 1. 有锁机 / 硬封锁规则 / 「仅锁该软件」临时封锁 → 启动守护服务

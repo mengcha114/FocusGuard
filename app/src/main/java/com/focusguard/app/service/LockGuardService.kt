@@ -405,8 +405,10 @@ class LockGuardService : Service() {
         if (guardJob?.isActive == true) return
         guardJob = scope.launch {
             Log.d(TAG, "守护循环启动，巡检间隔 ${CHECK_INTERVAL_MS}ms")
+            var firstTick = true
             while (isActive) {
-                delay(CHECK_INTERVAL_MS)
+                // 首拍立即执行：开机/被杀拉活后不必再等 300ms 才第一次补防线
+                if (firstTick) firstTick = false else delay(CHECK_INTERVAL_MS)
                 if (!isActive) break
                 try {
                     guardTick()

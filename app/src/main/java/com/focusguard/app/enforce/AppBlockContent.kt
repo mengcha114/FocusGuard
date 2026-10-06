@@ -239,6 +239,8 @@ private fun InlineUnlockQuiz(
     val context = LocalContext.current
     val generator = remember { ChallengeGenerator(context) }
     val guard = remember { AttemptGuard(context, AttemptGuard.SCOPE_VERIFY) }
+    // AI 生成解析是一次性挂起调用，需要协程作用域（主线程调度）
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     var question by remember { mutableStateOf<ChallengeQuestion>(generator.generate(2)) }
     var answer by remember { mutableStateOf("") }
@@ -249,7 +251,7 @@ private fun InlineUnlockQuiz(
     var refreshLeft by remember { mutableIntStateOf(guard.refreshLeft) }
     var secondsLeft by remember { mutableIntStateOf(question.timeLimitSec) }
     val cooling = cooldownSec > 0
-    val multi = question.answer.length > 1
+    val multi = question.answer.uppercase().toSet().count { it in 'A'..'H' } >= 2
 
     fun nextQuestion(exclude: String? = question.kind) {
         question = generator.generate(2, excludeTopic = exclude)

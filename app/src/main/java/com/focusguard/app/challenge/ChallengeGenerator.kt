@@ -250,7 +250,7 @@ class ChallengeGenerator(context: Context? = null) {
     /** 判定用户作答是否正确，容忍全/半角、空格、千分位、单位后缀等常见差异。 */
     fun isAnswerCorrect(userAnswer: String, expected: String): Boolean {
         // 去重后 ≥2 个字母才算多选：避免 "AA" 这种被当成多选、单选选对却判错
-        if (expected.uppercase().filter { it in 'A'..'H' }.distinct().size >= 2) {
+        if (expected.uppercase().toSet().count { it in 'A'..'H' } >= 2) {
             val got = userAnswer.uppercase().filter { it in 'A'..'H' }.toSet()
             return got.isNotEmpty() && got == expected.toSet()
         }
