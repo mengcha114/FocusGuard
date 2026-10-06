@@ -229,6 +229,8 @@ def make(grade, subject, q, opts, ans, exp, diff, src, module=""):
         return None
     if IMG_PAT.search(q) or IMG_PAT.search(exp):
         return None
+    if "\\frac" in q or "\\dfrac" in q or "\\tfrac" in q or "\\frac" in exp:
+        return None                                  # 还有没转干净的公式：宁缺勿滥
     if diff < 3:
         return None
     st = "SCIENCE" if subject in SCIENCE else ("HUMANITIES" if subject in HUMANITIES else "ALL")
@@ -333,7 +335,11 @@ def load_tal():
             analysis = clean(it.get("answer_analysis", ""))
             # TAL 数据集里混有 Math League / WMO 等纯英文原题（中文用户答不了），
             # 题干与解析都几乎没有中文的一律丢弃
-            if cjk_count(problem) < 10:
+            # TAL 里混有 Math League / Math kangaroo / WMO 等纯英文原题（中文用户答不了）
+            if cjk_count(problem) < 15 or re.search(
+                r"Math League|Math kangaroo|Mathematical Olympiad|Question *#|World Mathematical",
+                problem, re.I,
+            ):
                 continue
             m = make(grade, "数学", problem, opts if opts else None,
                      ans, analysis, diff, "TAL-SCQ5K", module)

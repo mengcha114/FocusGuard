@@ -108,20 +108,11 @@ fun LockHardeningCard() {
         var hideRecents by remember { mutableStateOf(settings.hideFromRecents) }
         SwitchRow(
             title = "隐藏最近任务",
-            hint = "离开后把自己从最近任务里移除，防止被顺手划掉（划掉 = 杀进程，守护与锁机都会中断）。" +
-                "关掉后本应用会正常出现在最近任务里",
-            checked = hideRecents,
-            enabled = true
-        ) { value ->
-            val apply = {
-                hideRecents = value
-                settings.hideFromRecents = value
-                android.widget.Toast.makeText(
-                    context, "已自动保存", android.widget.Toast.LENGTH_SHORT
-                ).show()
-            }
-            if (!guardedSecurityOff(hideRecents, value, apply)) apply()
-        }
+            hint = "已在系统层面写死：本应用始终不出现在最近任务里（防止被顺手划掉 = 杀进程，" +
+                "守护与锁机都会中断）。这个开关保留作记录，不再生效",
+            checked = true,
+            enabled = false
+        ) { _ -> }
 
         // 没有 Shizuku/Dhizuku 的用户：用系统「强行停止」把被锁应用真正停掉
         var forceStop by remember { mutableStateOf(settings.forceStopUnlocked) }
