@@ -95,14 +95,22 @@ class GradeStore internal constructor(private val prefs: SharedPreferences) {
      * 设定学段与选科。
      * @return 是否成功（调低学段、锁机中均会被拒绝）
      */
-    fun set(target: Grade, targetStream: Stream = Stream.ALL, locked: Boolean): Boolean {
+    fun set(
+        target: Grade,
+        targetStream: Stream = Stream.ALL,
+        locked: Boolean,
+        targetTerm: Term = term
+    ): Boolean {
         if (locked && isChosen) return false
         val cur = grade
         // 学段只能调高不能调低；同年级允许调整选科
         if (cur != null && target.level < cur.level) return false
+        // 学期：同年级内不能回退（上→下可以）；年级调高时任意学期都允许
+        if (cur != null && target.level == cur.level && targetTerm.id < term.id) return false
         prefs.edit()
             .putInt(KEY_LEVEL, target.level)
             .putString(KEY_STREAM, targetStream.id)
+            .putInt(KEY_TERM, targetTerm.id)
             .putLong(KEY_CONFIRMED_AT, System.currentTimeMillis())
             .commit()
         return true

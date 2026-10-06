@@ -31,6 +31,7 @@ fun GradePickerDialog(mandatory: Boolean, onDone: () -> Unit, onDismiss: () -> U
     val options = remember { store.selectable() }
     var selectedGrade by remember { mutableStateOf<GradeStore.Grade?>(null) }
     var selectedStream by remember { mutableStateOf(GradeStore.Stream.ALL) }
+    var selectedTerm by remember { mutableStateOf(store.term) }
     var confirming by remember { mutableStateOf(false) }
     var countdown by remember { mutableIntStateOf(5) }
     LaunchedEffect(confirming) {
@@ -89,6 +90,23 @@ fun GradePickerDialog(mandatory: Boolean, onDone: () -> Unit, onDismiss: () -> U
                         )
                     }
                 }
+
+                // 学期：和年级/选科一起在"下一步 → 确认"里落地（不即时生效）
+                Spacer(Modifier.height(4.dp))
+                Text("学期：", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                GradeStore.Term.entries.forEach { t ->
+                    FxOption(
+                        label = t.label,
+                        caption = if (t == GradeStore.Term.FIRST) {
+                            "只出上册与不限学期的题（下册内容还没学到）"
+                        } else {
+                            "上册内容也会出（含复习）"
+                        },
+                        selected = selectedTerm == t,
+                        onClick = { selectedTerm = t },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {
@@ -100,12 +118,22 @@ fun GradePickerDialog(mandatory: Boolean, onDone: () -> Unit, onDismiss: () -> U
             } else {
                 Button(
                     onClick = {
-                        if (g != null && store.set(g, selectedStream, LockState(context).isLocked)) onDone()
+                        if (g != null && store.set(
+                                g, selectedStream, LockState(context).isLocked, selectedTerm
+                            )
+                        ) {
+                            onDone()
+                        } else {
+                            android.widget.Toast.makeText(
+                                context, "学段只能调高；同一年级内学期只能往后调",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
                     },
                     enabled = countdown == 0 && g != null,
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    val label = "${g?.label}${if (needsStream) " · ${selectedStream.label.split(' ')[0]}" else ""}"
+                    val label = "${g?.label}${if (needsStream) " · ${selectedStream.label.split(' ')[0]}" else ""} · ${selectedTerm.label}"
                     Text(if (countdown > 0) "确认「$label」（$countdown）" else "确认「$label」")
                 }
             }
@@ -134,7 +162,11 @@ fun GradeSettingCard() {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.weight(1f)) {
             val streamSuffix = if ((grade?.level ?: 0) >= GradeStore.Grade.SENIOR_2.level) " (${stream.label.split(' ')[0]})" else ""
-            Text((grade?.label ?: "未选择") + streamSuffix, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                (grade?.label ?: "未选择") + streamSuffix + " · " + store.term.label,
+                fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
             // 该学段可用题量（题量偏少的学段让学生心里有数，避免误判为出错）。
             // 题库首次加载要解压解析，放到副作用里做，避免阻塞组合。
             val current = grade
@@ -161,34 +193,7 @@ fun GradeSettingCard() {
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            androidx.compose.foundation.layout.Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("学期", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                androidx.compose.foundation.layout.Spacer(Modifier.width(6.dp))
-                GradeStore.Term.entries.forEach { t ->
-                    androidx.compose.material3.TextButton(
-                        onClick = {
-                            if (store.setTerm(t, locked)) {
-                                term = t
-                                termRevision++
-                            } else {
-                                android.widget.Toast.makeText(
-                                    context, "学期只能往后调（上学期 → 下学期）",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        },
-                        enabled = !locked
-                    ) {
-                        Text(
-                            t.label,
-                            fontSize = 12.sp,
-                            color = if (term == t) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            // 学期与年级/选科一起在对话框里改（那里有"下一步 → 确认"两步，避免误触）
         }
         OutlinedButton(onClick = { show = true }, enabled = canRaise) { Text(if (grade == null) "选择" else "调高") }
     }
