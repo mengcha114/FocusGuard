@@ -120,7 +120,9 @@ object UpdateChecker {
             .find(page)?.groupValues?.get(1).orEmpty()
         val titleVer = Regex("v\\d+(?:\\.\\d+)+").find(title)?.value
         if (titleVer != null) {
-            if (compareVersions(currentVersion(), titleVer) <= 0) return Probe(true, null)
+            // 注意方向：本地 >= 远端 ⇒ 已是最新；本地 < 远端 ⇒ 有更新。
+            // （此前这里写成了 <= 0 就返回"已是最新"，导致测试版通道永远提示"已是最新"）
+            if (compareVersions(currentVersion(), titleVer) >= 0) return Probe(true, null)
             return Probe(true, UpdateInfo(
                 tag = titleVer + " 测试版",
                 notes = notes.ifBlank { "这是每次构建自动覆盖的测试版，点「去下载」安装。" },
