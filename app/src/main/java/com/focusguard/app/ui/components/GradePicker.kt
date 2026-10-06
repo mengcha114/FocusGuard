@@ -124,6 +124,9 @@ fun GradeSettingCard() {
     val store = remember { GradeStore(context) }
     var grade by remember { mutableStateOf(store.grade) }
     var stream by remember { mutableStateOf(store.stream) }
+    // 学期：上学期只出上册与不限学期的题（下册内容还没学到）
+    var term by remember { mutableStateOf(store.term) }
+    var termRevision by remember { mutableIntStateOf(0) }
     var show by remember { mutableStateOf(false) }
     val locked = remember { LockState(context).isLocked }
     val canRaise = store.selectable().isNotEmpty() && !locked
@@ -135,8 +138,8 @@ fun GradeSettingCard() {
             // 该学段可用题量（题量偏少的学段让学生心里有数，避免误判为出错）。
             // 题库首次加载要解压解析，放到副作用里做，避免阻塞组合。
             val current = grade
-            var count by remember(current) { mutableStateOf(-1) }
-            LaunchedEffect(current) {
+            var count by remember(current, term, termRevision) { mutableStateOf(-1) }
+            LaunchedEffect(current, term, termRevision) {
                 count = if (current == null) 0 else runCatching {
                     com.focusguard.app.challenge.QuestionBank
                         .find(context, current, store.stream).size
@@ -158,6 +161,34 @@ fun GradeSettingCard() {
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            androidx.compose.foundation.layout.Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("学期", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                androidx.compose.foundation.layout.Spacer(Modifier.width(6.dp))
+                GradeStore.Term.entries.forEach { t ->
+                    androidx.compose.material3.TextButton(
+                        onClick = {
+                            if (store.setTerm(t, locked)) {
+                                term = t
+                                termRevision++
+                            } else {
+                                android.widget.Toast.makeText(
+                                    context, "学期只能往后调（上学期 → 下学期）",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        enabled = !locked
+                    ) {
+                        Text(
+                            t.label,
+                            fontSize = 12.sp,
+                            color = if (term == t) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
         }
         OutlinedButton(onClick = { show = true }, enabled = canRaise) { Text(if (grade == null) "选择" else "调高") }
     }

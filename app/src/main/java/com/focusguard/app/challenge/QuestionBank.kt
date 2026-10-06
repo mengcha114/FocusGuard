@@ -19,6 +19,8 @@ object QuestionBank {
     data class Item(
         /** 年级，与 [GradeStore.Grade.level] 一致。 */
         val grade: Int,
+        /** 学期：1 上册 / 2 下册 / 0 不限学期。 */
+        val sem: Int,
         val subject: String,
         /** SCIENCE / HUMANITIES / ALL */
         val stream: String,
@@ -84,6 +86,7 @@ object QuestionBank {
             val opts = o.getJSONArray("o")
             Item(
                 grade = o.getInt("g"),
+                sem = o.optInt("sem", 0),
                 subject = o.getString("s"),
                 stream = o.getString("st"),
                 topic = o.optString("t", o.getString("s")),
@@ -114,7 +117,12 @@ object QuestionBank {
         val streamOn = grade.level >= GradeStore.Grade.SENIOR_2.level
         fun streamOk(it: Item) = !streamOn || stream == GradeStore.Stream.ALL ||
             it.stream == "ALL" || it.stream == stream.id
-        var pool = items.filter { it.grade == grade.level && streamOk(it) || it.grade == 0 }
+        // 学期过滤：上学期只出"上册 / 不限学期"的题；下学期含上册（复习）。
+        val termId = context?.let { GradeStore(it).term.id } ?: GradeStore.Term.SECOND.id
+        fun semOk(it: Item) = it.sem == 0 || it.sem <= termId
+        var pool = items.filter {
+            (it.grade == grade.level && semOk(it) && streamOk(it)) || it.grade == 0
+        }
         if (pool.size < MIN_POOL && grade.level > 1) {
             pool = pool + items.filter { it.grade == grade.level - 1 && it.difficulty >= 2 && streamOk(it) }
         }

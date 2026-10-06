@@ -33,6 +33,16 @@ class GradeStore internal constructor(private val prefs: SharedPreferences) {
         }
     }
 
+    /** 上/下学期：影响出题的教材进度（上学期只出上册与不限学期的题，下学期也含上册）。 */
+    enum class Term(val id: Int, val label: String) {
+        FIRST(1, "上学期"),
+        SECOND(2, "下学期");
+
+        companion object {
+            fun of(id: Int): Term = entries.firstOrNull { it.id == id } ?: SECOND
+        }
+    }
+
     /** 高中（高二/高三）及大学的选科/专业偏向。 */
     enum class Stream(val id: String, val label: String, val hint: String) {
         ALL("ALL", "全科 / 通识", "以数学思维为主，涵盖文理通识"),
@@ -49,6 +59,7 @@ class GradeStore internal constructor(private val prefs: SharedPreferences) {
         private const val KEY_LEVEL = "grade_level"
         private const val KEY_STREAM = "grade_stream"
         private const val KEY_CONFIRMED_AT = "confirmed_at"
+        private const val KEY_TERM = "grade_term"
     }
 
     val grade: Grade?
@@ -56,6 +67,18 @@ class GradeStore internal constructor(private val prefs: SharedPreferences) {
 
     val stream: Stream
         get() = Stream.of(prefs.getString(KEY_STREAM, Stream.ALL.id))
+
+    /** 当前学期（默认下学期：一切已学内容都可出，避免"刚开学没题"）。 */
+    val term: Term
+        get() = Term.of(prefs.getInt(KEY_TERM, Term.SECOND.id))
+
+    /** 设置学期（锁机中禁止；同年级内 上→下 允许，下→上 拒绝）。 */
+    fun setTerm(target: Term, locked: Boolean): Boolean {
+        if (locked && isChosen) return false
+        if (target.id < term.id) return false
+        prefs.edit().putInt(KEY_TERM, target.id).apply()
+        return true
+    }
 
     val isChosen: Boolean get() = grade != null
 

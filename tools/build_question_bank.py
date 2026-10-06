@@ -264,7 +264,13 @@ UNAMBIGUOUS_1LEVEL = {
 
 # 奥数 / 思维 / 能力类：不分年级也不分学期（g=0 表示"任意年级可用"）
 # 高考真题：高三下
-GAOKAO_GRADE_SEM = (12, 2)
+GAOKAO_GRADE_SEM = (12, 0)      # 不限学期：高考真题是全学年复习材料
+
+# App 的年级档位（GradeStore.Grade.level）：小学=1 初中=2/3/4 高中=5/6/7 大学=8
+# QuestionBank.Item 的注释明确要求 g 与 GradeStore.Grade.level 一致，库内一律用这套档位。
+GRADE_TO_APP = {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1,
+                7: 2, 8: 3, 9: 4,
+                10: 5, 11: 6, 12: 7}
 
 CJK_PAT = re.compile(r"[\u4e00-\u9fff]")
 
@@ -305,6 +311,8 @@ def parse_options(question):
 SENIOR_ONLY = re.compile(
     r"f\s*\(\s*x\s*\)|f\s*[′']\s*\(|导函数|椭圆|双曲线|抛物线|数学归纳法"
     r"|空间向量|立体几何|正弦定理|余弦定理|对数函数|指数函数|复数[zi]|等比数列的通项"
+    # 高中数列记号：a_(n) / S_(n) / aₙ / S₁₀ 这类下标记法小学奥数不用
+    r"|[aA]\s*[_₍]\s*\(?\s*n\s*\)?|[sS]\s*[_₍]\s*\(?\s*n\s*\)?|的前\s*n\s*项和"
 )
 
 
@@ -336,6 +344,7 @@ def make(grade, subject, q, opts, ans, exp, diff, src, module="", sem=0):
     # t = 知识点/主题（App 的 QuestionBank 读它当 topic；题型由 App 按 o/a 自行判定）
     topic = module if module else subject
     grade = teach_grade(grade, q)
+    grade = GRADE_TO_APP.get(grade, 1)
     return {
         "g": grade, "sem": sem, "s": subject, "st": st, "t": topic, "d": diff,
         "q": q, "o": opts or [], "a": str(ans).strip(), "e": exp,

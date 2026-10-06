@@ -54,6 +54,7 @@ fun AppControlScreen() {
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var batchMsg by remember { mutableStateOf<String?>(null) }
     var showBatchVerify by remember { mutableStateOf(false) }
+    val batchScope = rememberCoroutineScope()
 
     // 读取已安装应用（含自动识别出的分类）
     LaunchedEffect(Unit) {
@@ -228,7 +229,7 @@ fun AppControlScreen() {
                         }
                         com.focusguard.app.enforce.AppBlockOverlay.hide()
                         batchMsg = "已清除 $n 个应用的管控规则"
-                        scope.launch {
+                        batchScope.launch {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 val store = AppCategoryStore.shared(context)
                                 apps = AppInventory.listLaunchableApps(context, store, forceRefresh = true)
