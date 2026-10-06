@@ -147,6 +147,12 @@ class MainActivity : ComponentActivity() {
     /** 开机自动恢复守护：待界面完全就绪后再执行（只在 onResume 之后触发一次）。 */
     private var pendingAutoResumeGuard by mutableStateOf(false)
 
+    /** 自动检测更新：发现的新版本（非空 ⇒ 弹提醒框）。 */
+    private var pendingUpdate by mutableStateOf<com.focusguard.app.update.UpdateChecker.UpdateInfo?>(null)
+
+    /** 本次进程是否已经自动查过更新（避免每次 onResume 都查）。 */
+    private var updateCheckedThisRun = false
+
     companion object {
         /** 待办到期通知点击后带上的 extra：主界面直接打开备忘录页。 */
         const val EXTRA_OPEN_MEMO = "open_memo"
@@ -379,6 +385,44 @@ class MainActivity : ComponentActivity() {
                             com.focusguard.app.FocusGuardApp.ackCrashLog(this, crashModified)
                             crashText = ""
                         }) { Text("关闭") }
+                    }
+                )
+            }
+            // 自动检测到新版本：弹提醒（同一个版本只弹一次）
+            pendingUpdate?.let { info ->
+                AlertDialog(
+                    onDismissRequest = {
+                        appSettings.updatePromptedTag = info.tag
+                        pendingUpdate = null
+                    },
+                    title = { Text("发现新版本 " + info.tag) },
+                    text = {
+                        Text(
+                            text = (info.notes.ifBlank { "点「去下载」打开安装包下载页。" })
+                                .take(1200),
+                            fontSize = 12.sp,
+                            modifier = Modifier.verticalScroll(rememberScrollState())
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            appSettings.updatePromptedTag = info.tag
+                            pendingUpdate = null
+                            runCatching {
+                                startActivity(
+                                    android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(info.downloadUrl)
+                                    )
+                                )
+                            }
+                        }) { Text("去下载") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            appSettings.updatePromptedTag = info.tag
+                            pendingUpdate = null
+                        }) { Text("稍后") }
                     }
                 )
             }
@@ -1045,6 +1089,30 @@ class MainActivity : ComponentActivity() {
         runCatching { finishAndRemoveTask() }
     }
 
+    /**
+     * 自动检测更新（静默 + 24 小时节流）：
+     * 有新版且这个版本还没提醒过 ⇒ 设 [pendingUpdate] 弹一个提醒框（点「去下载」打开安装包直链）。
+     * 网络失败一律静默，不打扰用户。
+     */
+    private fun maybeCheckUpdate() {
+        if (updateCheckedThisRun) return
+        val now = System.currentTimeMillis()
+        if (now - appSettings.lastUpdateCheckAt < 24 * 60 * 60 * 1000L) return
+        updateCheckedThisRun = true
+        Thread {
+            val result = runCatching { com.focusguard.app.update.UpdateChecker.check() }
+            android.os.Handler(mainLooper).post {
+                appSettings.lastUpdateCheckAt = System.currentTimeMillis()
+                val info = result.getOrNull() ?: return@post
+                runCatching {
+                    com.focusguard.app.util.StartupTrace.mark(this, "main.updateFound " + info.tag)
+                }
+                if (info.tag == appSettings.updatePromptedTag) return@post
+                pendingUpdate = info
+            }
+        }.start()
+    }
+
     override fun onPause() {
         serviceTickHandler.removeCallbacks(serviceTickRunnable)
         super.onPause()
@@ -1061,6 +1129,8 @@ class MainActivity : ComponentActivity() {
         // 截屏开关改动后回到主界面立即生效
         applyScreenshotBlock()
         permissionRefreshTick++
+        // 自动检测更新（24 小时一次；有新版会弹提醒，可用「稍后」忽略）
+        maybeCheckUpdate()
         // 开机自动恢复守护：界面真正就绪后再延迟 800ms 请求授权（窗口已获得焦点），
         // 避免"在 onCreate 里弹授权框"那条曾导致部分 ROM 闪退的路径。
         if (pendingAutoResumeGuard) {

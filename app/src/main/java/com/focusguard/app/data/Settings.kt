@@ -509,6 +509,11 @@ gacha
         get() = prefs.getLong("last_update_check_at", 0L)
         set(value) = prefs.edit().putLong("last_update_check_at", value).apply()
 
+    /** 已经弹窗提醒过的版本号：同一个版本只提醒一次，避免每次打开都弹。 */
+    var updatePromptedTag: String
+        get() = prefs.getString("update_prompted_tag", "").orEmpty()
+        set(value) = prefs.edit().putString("update_prompted_tag", value).apply()
+
     /** 锁机期间把锁机页「屏幕固定」（系统自带能力，不需要 Shizuku/Dhizuku）：Home/最近任务/状态栏按不动。默认开。 */
     var pinningLock: Boolean
         get() = prefs.getBoolean("pinning_lock", true)

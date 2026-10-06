@@ -828,6 +828,8 @@ fun SettingsScreen(
                                 } else {
                                     updateMsg = "发现新版本 " + info.tag + "，点下面的按钮下载"
                                     updateUrl = info.downloadUrl
+                                    // 手动查过就不必再自动弹一次提醒
+                                    settings.updatePromptedTag = info.tag
                                 }
                             }.onFailure { e ->
                                 updateMsg = "检查更新失败：" + (e.message ?: e.javaClass.simpleName)
