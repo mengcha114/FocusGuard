@@ -76,7 +76,9 @@ def fetch(url, path):
 # ── LaTeX → 纯文本（App 不渲染公式：锁机答题界面是纯文本 + 自绘键盘）──
 LATEX_SYMBOLS = {
     "\\times": "×", "\\div": "÷", "\\cdot": "·", "\\pm": "±", "\\mp": "∓",
-    "\\leq": "≤", "\\le": "≤", "\\geq": "≥", "\\ge": "≥", "\\neq": "≠",
+    "\\leqslant": "≤", "\\leq": "≤", "\\le": "≤",
+    "\\geqslant": "≥", "\\geq": "≥", "\\ge": "≥", "\\neq": "≠",
+    "\\begin": "", "\\end": "", "\\cases": "", "\\array": "", "\\matrix": "",
     "\\approx": "≈", "\\equiv": "≡", "\\infty": "∞", "\\propto": "∝",
     "\\alpha": "α", "\\beta": "β", "\\gamma": "γ", "\\delta": "δ",
     "\\theta": "θ", "\\lambda": "λ", "\\mu": "μ", "\\pi": "π",
@@ -184,6 +186,46 @@ def option_text(o):
     if isinstance(o, (list, tuple)) and o:
         return option_text(o[-1])
     return str(o)
+
+# ── 章节知识点 → (年级, 学期)。年级：10=高一 11=高二 12=高三；学期 1=上 2=下 0=不限 ──
+# 只收**课内**章节；奥数/思维类（拓展思维·能力·思想·素养）不分年级，用 g=0（任意年级）。
+CHAPTER_GRADE = {
+    # 小学课内
+    "数与运算": (4, 0), "数的认识": (4, 0), "测量": (3, 0), "数的运算": (4, 0),
+    "数学广角": (5, 0), "式与方程": (5, 1), "统计与概率": (5, 0), "常见的量": (3, 0),
+    "小数": (5, 1), "分数": (5, 2), "比和比例": (6, 1), "百分数": (6, 1),
+    "圆": (6, 1), "圆柱与圆锥": (6, 2), "负数": (6, 2), "因数与倍数": (5, 2),
+    # 初中
+    "数": (7, 1), "数与式": (7, 1), "式|整式的加减": (7, 1), "式|整式的乘除": (8, 1),
+    "式|因式分解": (8, 1), "式|分式": (8, 1), "式|二次根式": (8, 2), "式": (7, 1),
+    "方程与不等式|一元一次方程": (7, 1), "方程与不等式|二元一次方程（组）": (7, 2),
+    "方程与不等式|不等式（组）": (7, 2), "方程与不等式|分式方程": (8, 2),
+    "方程与不等式|一元二次方程": (9, 1), "方程与不等式|其他方程": (8, 2),
+    "方程与不等式": (7, 2), "几何图形初步": (7, 1), "实数": (7, 2),
+    "相交线与平行线": (7, 2), "平面直角坐标系": (7, 2), "三角形|全等三角形": (8, 1),
+    "三角形|勾股定理及应用": (8, 2), "三角形|等腰三角形": (8, 1),
+    "三角形|相似三角形": (9, 2), "三角形|锐角三角函数及解直角三角形": (9, 2),
+    "三角形|三角形及多边形": (7, 2), "三角形": (7, 2), "四边形": (8, 2),
+    "几何变换": (8, 1), "轴对称": (8, 1), "旋转": (9, 1),
+    "函数|一次函数": (8, 2), "函数|反比例函数": (9, 2), "函数|二次函数": (9, 1),
+    "函数|函数概念和图象": (8, 2), "函数|平面直角坐标系": (7, 2), "函数": (8, 2),
+    "统计与概率|数据的分析": (8, 2), "统计与概率|概率": (9, 1), "统计与概率": (8, 2),
+    "命题与证明": (8, 1), "综合与实践": (7, 0), "数与代数": (7, 0),
+    # 高中（人教 A 版顺序）
+    "集合": (10, 1), "常用逻辑用语": (10, 1), "等式与不等式|不等式": (10, 1),
+    "等式与不等式": (10, 1), "函数的概念与性质": (10, 1), "基本初等函数": (10, 1),
+    "三角函数": (10, 1), "平面向量": (10, 2), "复数": (10, 2),
+    "立体几何初步": (10, 2), "统计与概率|概率": (10, 2), "统计与概率|统计": (10, 2),
+    "数列": (11, 2), "导数模块": (11, 2), "函数的应用": (10, 1),
+    "直线和圆的方程": (11, 1), "圆锥曲线": (11, 1), "空间向量": (11, 1),
+    "计数原理": (12, 1), "排列组合与概率": (12, 1), "随机变量": (12, 1),
+    "解三角形": (10, 2), "数列与数学归纳法": (11, 2), "不等式": (10, 1),
+    "解析几何": (11, 1), "立体几何与空间向量": (11, 1), "几何证明选讲": (11, 0),
+}
+# 奥数 / 思维 / 能力类：不分年级也不分学期（g=0 表示"任意年级可用"）
+# 高考真题：高三下
+GAOKAO_GRADE_SEM = (12, 2)
+
 CJK_PAT = re.compile(r"[\u4e00-\u9fff]")
 
 
@@ -219,7 +261,7 @@ def parse_options(question):
     return head, opts
 
 
-def make(grade, subject, q, opts, ans, exp, diff, src, module=""):
+def make(grade, subject, q, opts, ans, exp, diff, src, module="", sem=0):
     if not q or not ans or not exp:
         return None
     if len(exp) < 20:
@@ -237,7 +279,7 @@ def make(grade, subject, q, opts, ans, exp, diff, src, module=""):
     # t = 知识点/主题（App 的 QuestionBank 读它当 topic；题型由 App 按 o/a 自行判定）
     topic = module if module else subject
     return {
-        "g": grade, "s": subject, "st": st, "t": topic, "d": diff,
+        "g": grade, "sem": sem, "s": subject, "st": st, "t": topic, "d": diff,
         "q": q, "o": opts or [], "a": str(ans).strip(), "e": exp,
         "src": src,
     }
@@ -277,7 +319,8 @@ def load_gaokao_bench():
                 if not ans or len(ans) > 20:
                     continue
                 head, opts = q, []
-            m = make(12, subject, head, opts, ans, exp, 4, "GAOKAO-Bench")
+            m = make(GAOKAO_GRADE_SEM[0], subject, head, opts, ans, exp, 4,
+                     "GAOKAO-Bench", sem=GAOKAO_GRADE_SEM[1])
             if m:
                 items.append(m)
     return items
@@ -306,10 +349,20 @@ def load_tal():
             if not module:
                 module = next((p for p in reversed(flat) if p in TAL_MODULE_GRADE), "数学")
             diff = min(int(it.get("difficulty") or 0) + 2, 5)   # TAL 0–4 → 2–6，取 >=3
-            buckets = LEVEL_BUCKET_LIST.get(level, [6])
-            idx = _tal_seq.get(level, 0)
-            _tal_seq[level] = idx + 1
-            grade = buckets[idx % len(buckets)]
+            # 真实年级：先按"章节(两级/一级)"查表，查不到再看是不是奥数/思维类
+            key2 = (flat[2] + "|" + flat[3]) if len(flat) > 3 else ""
+            key1 = flat[2] if len(flat) > 2 else ""
+            hit = CHAPTER_GRADE.get(key2) or CHAPTER_GRADE.get(key1)
+            if hit:
+                grade, sem = hit
+            elif root in ("拓展思维", "美国amc8", "美国AMC8", "海外竞赛体系", "Overseas Competition"):
+                grade, sem = 0, 0        # 奥数/竞赛：不分年级（g=0 = 任意年级可用）
+            elif root == "小升初":
+                grade, sem = 6, 2
+            elif flat and flat[-1] in ("思想", "能力", "七大能力", "素养", "学习能力"):
+                grade, sem = 0, 0
+            else:
+                grade, sem = 0, 0
             opts = []
             for i, raw in enumerate(it.get("options") or it.get("answer_option_list") or []):
                 letter = ""
@@ -336,13 +389,16 @@ def load_tal():
             # TAL 数据集里混有 Math League / WMO 等纯英文原题（中文用户答不了），
             # 题干与解析都几乎没有中文的一律丢弃
             # TAL 里混有 Math League / Math kangaroo / WMO 等纯英文原题（中文用户答不了）
+            # 英文竞赛原题（Math League / AMC / AIME / Think Cup 等）与中文占比过低的题一律丢弃
             if cjk_count(problem) < 15 or re.search(
-                r"Math League|Math kangaroo|Mathematical Olympiad|Question *#|World Mathematical",
+                r"Math League|Math kangaroo|Mathematical Olympiad|Question *#|World Mathematical"
+                r"|\bAMC\b|AMC *\d|\bAIME\b|Think Cup|Purple Comet|MathCounts|\bCEMC\b"
+                r"|\bSASMO\b|\bWMO\b|\bKangaroo\b",
                 problem, re.I,
-            ):
+            ) or cjk_count(problem) / max(1, len(problem)) < 0.25:
                 continue
             m = make(grade, "数学", problem, opts if opts else None,
-                     ans, analysis, diff, "TAL-SCQ5K", module)
+                     ans, analysis, diff, "TAL-SCQ5K", module, sem)
             if m:
                 items.append(m)
     return items
@@ -408,6 +464,10 @@ def main():
     print("  写出 %d 条 → %s（%.2f MB）" % (len(dedup), OUT, os.path.getsize(OUT) / 1048576))
     g = collections.Counter(x["g"] for x in dedup)
     print("  年级:", dict(sorted(g.items())))
+    sem = collections.Counter("%d%s" % (x["g"], {0: "不限", 1: "上", 2: "下"}[x.get("sem", 0)])
+                              for x in dedup if x["g"] != 0)
+    print("  年纪+学期 Top12:", sem.most_common(12))
+    print("  任意年级(g=0):", sum(1 for x in dedup if x["g"] == 0))
     s = collections.Counter(x["s"] for x in dedup)
     print("  学科:", dict(sorted(s.items(), key=lambda kv: -kv[1])))
     d = collections.Counter(x["d"] for x in dedup)

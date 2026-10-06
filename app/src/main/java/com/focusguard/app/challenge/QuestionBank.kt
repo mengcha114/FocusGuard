@@ -114,7 +114,7 @@ object QuestionBank {
         val streamOn = grade.level >= GradeStore.Grade.SENIOR_2.level
         fun streamOk(it: Item) = !streamOn || stream == GradeStore.Stream.ALL ||
             it.stream == "ALL" || it.stream == stream.id
-        var pool = items.filter { it.grade == grade.level && streamOk(it) }
+        var pool = items.filter { it.grade == grade.level && streamOk(it) || it.grade == 0 }
         if (pool.size < MIN_POOL && grade.level > 1) {
             pool = pool + items.filter { it.grade == grade.level - 1 && it.difficulty >= 2 && streamOk(it) }
         }
