@@ -57,9 +57,17 @@ fun UnlockChallengeScreen(
     // 换题计数持久化在 LockState：退出答题页重进不重置（锁机结束才归零）
     val lockState = remember { com.focusguard.app.data.LockState(context) }
 
-    var currentQuestion by remember { mutableStateOf(generator.generate(difficulty)) }
-    var userAnswer by remember { mutableStateOf("") }
-    var currentCorrectCount by remember { mutableIntStateOf(0) }
+    // 当前题目与「已答对几题」持久化在 LockState：退出答题页（甚至进程被杀）后重进，
+    // 仍是同一道题、进度继续累计（用户反馈：退出重进会换题、连对进度会丢）
+    var currentQuestion by remember {
+        mutableStateOf(
+            lockState.restoreChallengeQuestion() ?: generator.generate(difficulty).also {
+                lockState.saveChallengeQuestion(it)
+            }
+        )
+    }
+    var userAnswer by remember { mutableStateOf(lockState.challengeInput) }
+    var currentCorrectCount by remember { mutableIntStateOf(lockState.challengeCorrectCount) }
     var refreshCount by remember { mutableIntStateOf(lockState.challengeRefreshCount) }
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
@@ -76,12 +84,35 @@ fun UnlockChallengeScreen(
     var cooldownSec by remember { mutableIntStateOf(((lockState.cooldownRemainingMs + 999) / 1000).toInt()) }
     var freeWrongLeft by remember { mutableIntStateOf(lockState.freeWrongLeft) }
     val cooling = cooldownSec > 0
+    // 输入内容随改随存：退出重进时用户已选的选项/输入不丢
+    LaunchedEffect(userAnswer) { lockState.challengeInput = userAnswer }
+    // 出题后用已配置的 AI 校验难度/学段：不通过就重筛（最多 3 次），之后一律放行（不卡答题）
+    var validating by remember { mutableStateOf(true) }
+    LaunchedEffect(currentQuestion) {
+        validating = true
+        var q = currentQuestion
+        var tries = 0
+        while (tries < 3 && !com.focusguard.app.data.AiQuestionCheck.check(context, q.question, q.options)) {
+            tries++
+            q = generator.generate(difficulty)
+        }
+        if (q !== currentQuestion) {
+            currentQuestion = q
+            lockState.saveChallengeQuestion(q)
+            lockState.challengeInput = ""
+            userAnswer = ""
+        }
+        secondsLeft = currentQuestion.timeLimitSec
+        validating = false
+    }
 
     fun nextQuestion() {
         userAnswer = ""
         feedbackMessage = null
         currentQuestion = generator.generate(difficulty)
         secondsLeft = currentQuestion.timeLimitSec
+        lockState.saveChallengeQuestion(currentQuestion)
+        lockState.challengeInput = ""
     }
 
     /** 答错 / 超时统一处理：计数，次数用完则进入冷却。 */
@@ -117,8 +148,9 @@ fun UnlockChallengeScreen(
         nextQuestion()
     }
 
-    LaunchedEffect(currentQuestion, cooling) {
-        if (cooling) return@LaunchedEffect
+    LaunchedEffect(currentQuestion, cooling, validating) {
+        // 正在用 AI 筛选题目时不计时（否则会"筛选即超时"）
+        if (cooling || validating) return@LaunchedEffect
         secondsLeft = currentQuestion.timeLimitSec
         while (secondsLeft > 0) {
             kotlinx.coroutines.delay(1000L)
@@ -136,6 +168,7 @@ fun UnlockChallengeScreen(
             generator.easeDifficulty = false
             freeWrongLeft = lockState.freeWrongLeft
             currentCorrectCount += 1
+            lockState.challengeCorrectCount = currentCorrectCount
             if (currentCorrectCount >= targetCorrectCount) {
                 onUnlocked()
             } else {
@@ -251,9 +284,9 @@ fun UnlockChallengeScreen(
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        text = currentQuestion.question,
+                        text = if (validating) "正在筛选题目…" else currentQuestion.question,
                         fontSize = 18.sp,
-                        color = palette.text,
+                        color = if (validating) palette.faint else palette.text,
                         fontWeight = FontWeight.Medium,
                         lineHeight = 26.sp
                     )

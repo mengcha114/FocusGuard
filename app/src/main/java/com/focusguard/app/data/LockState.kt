@@ -51,7 +51,10 @@ class LockState internal constructor(
         private const val MAX_EXTEND_MS = 8 * 60 * 60_000L
 
         /** 单次锁机内「换一题」按钮可用次数上限（持久化：退出重进不重置）。 */
-        private const val KEY_CHALLENGE_REFRESHES = "challenge_refreshes"
+        private const val KEY_CHALLENGE_CORRECT = "challenge_correct"
+    private const val KEY_CHALLENGE_QUESTION = "challenge_question"
+    private const val KEY_CHALLENGE_INPUT = "challenge_input"
+    private const val KEY_CHALLENGE_REFRESHES = "challenge_refreshes"
 
         /** 连续答错多少次进入冷却（单一来源：AttemptGuard）。 */
         const val FREE_WRONG_ANSWERS = AttemptGuard.MAX_WRONG
@@ -219,6 +222,9 @@ class LockState internal constructor(
             .putString(KEY_LOCK_SOURCE, source)
             .putInt(KEY_LOCK_STRENGTH, level)
             .putInt(KEY_CHALLENGE_REFRESHES, 0)
+            .putInt(KEY_CHALLENGE_CORRECT, 0)
+            .putString(KEY_CHALLENGE_QUESTION, "")
+            .putString(KEY_CHALLENGE_INPUT, "")
             .putInt(KEY_PAUSE_USED, 0)
             .putLong(KEY_PAUSE_ELAPSED_BASE, 0L)
             .putLong(KEY_PAUSE_DURATION_MS, 0L)
@@ -247,6 +253,9 @@ class LockState internal constructor(
             .putLong(KEY_PAUSE_ELAPSED_BASE, 0L)
             .putLong(KEY_PAUSE_DURATION_MS, 0L)
             .putInt(KEY_CHALLENGE_REFRESHES, 0)
+            .putInt(KEY_CHALLENGE_CORRECT, 0)
+            .putString(KEY_CHALLENGE_QUESTION, "")
+            .putString(KEY_CHALLENGE_INPUT, "")
             .putBoolean(KEY_POMODORO_RUNNING, false)
             .putLong(KEY_SNAP_REMAINING, 0L)
             .putLong(KEY_SNAP_PHASE_REMAINING, 0L)
@@ -341,6 +350,57 @@ class LockState internal constructor(
     var challengeRefreshCount: Int
         get() = prefs.getInt(KEY_CHALLENGE_REFRESHES, 0)
         set(value) = prefs.edit().putInt(KEY_CHALLENGE_REFRESHES, value.coerceAtLeast(0)).apply()
+
+    // ── 锁机答题进度（跨退出/进程重启保留，锁机开始与结束清零）────────
+    // 用户反馈：退出锁机页再进会换题、连续答对 5 题的进度也会丢；这两个键就是修它。
+
+    /** 本次锁机已答对的题数。 */
+    var challengeCorrectCount: Int
+        get() = prefs.getInt(KEY_CHALLENGE_CORRECT, 0)
+        set(value) = prefs.edit().putInt(KEY_CHALLENGE_CORRECT, value.coerceAtLeast(0)).apply()
+
+    /** 当前题目的输入（选项字母或键盘输入），退出重进时恢复。 */
+    var challengeInput: String
+        get() = prefs.getString(KEY_CHALLENGE_INPUT, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_CHALLENGE_INPUT, value).apply()
+
+    /** 保存当前题目（JSON）；反序列化失败或空值时调用方重新出题。 */
+    fun saveChallengeQuestion(q: com.focusguard.app.challenge.ChallengeQuestion) {
+        runCatching {
+            val o = org.json.JSONObject()
+            o.put("q", q.question)
+            o.put("a", q.answer)
+            o.put("e", q.explanation)
+            o.put("k", q.kind)
+            o.put("t", q.timeLimitSec)
+            o.put("s", q.subject)
+            val arr = org.json.JSONArray()
+            q.options.forEach { arr.put(it) }
+            o.put("o", arr)
+            prefs.edit().putString(KEY_CHALLENGE_QUESTION, o.toString()).apply()
+        }
+    }
+
+    /** 取回上次保存的题目；没有/损坏返回 null。 */
+    fun restoreChallengeQuestion(): com.focusguard.app.challenge.ChallengeQuestion? =
+        runCatching {
+            val raw = prefs.getString(KEY_CHALLENGE_QUESTION, "").orEmpty()
+            if (raw.isBlank()) return null
+            val o = org.json.JSONObject(raw)
+            val opts = mutableListOf<String>()
+            o.optJSONArray("o")?.let { arr ->
+                for (i in 0 until arr.length()) opts.add(arr.getString(i))
+            }
+            com.focusguard.app.challenge.ChallengeQuestion(
+                question = o.getString("q"),
+                answer = o.getString("a"),
+                explanation = o.optString("e"),
+                kind = o.optString("k"),
+                timeLimitSec = o.optInt("t", 120),
+                options = opts,
+                subject = o.optString("s")
+            )
+        }.getOrNull()
 
     // ── 答错冷却（防暴力试答） ────────────────────────
     // 实际计数与冷却逻辑在 [AttemptGuard]（与设置验证弹窗共用同一套规则）：

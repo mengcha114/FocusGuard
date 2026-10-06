@@ -7,6 +7,7 @@ import android.util.Log
 import com.focusguard.app.data.DetectionLog
 import com.focusguard.app.data.LogStore
 import com.focusguard.app.enhance.DhizukuEnhancer
+import com.focusguard.app.enforce.ForceStopHelper
 import com.focusguard.app.enhance.LockPolicies
 
 /**
@@ -138,8 +139,15 @@ object LockTopGuard {
             failUntil = now + FAIL_COOLDOWN_MS
             failCount = 0
         }
-        val what = if (isSystemApp(app, pkg)) "系统应用" else "该应用"
-        report(app, pkg, "无法限制（$what，或缺少冻结权限），已改为反复顶回锁机页")
+        // 冻结（需要 Dhizuku 设备所有者）和隐藏对系统应用基本都会失败 —— 用户实测
+        // 「提示要冻结语音助手，但它还能用」。这里降级到**无障碍代点系统「强行停止」**：
+        // 不依赖任何授权，是目前对系统助手最现实的“真正停掉”。覆盖层保持不撤。
+        if (assistant || isSystemApp(app, pkg)) {
+            runCatching { ForceStopHelper.requestStop(app, pkg) }
+            report(app, pkg, "冻结/隐藏不可用（系统应用或缺少权限），已请求系统「强行停止」")
+        } else {
+            report(app, pkg, "无法限制（缺少冻结权限），已改为反复顶回锁机页")
+        }
         return true
     }
 

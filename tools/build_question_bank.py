@@ -180,6 +180,70 @@ def latex_to_text(s):
     return t.strip()
 
 
+def normalize_answer(ans):
+    """把答案归一化成纯字母串：['A'] / ["A","B"] / A / ab 等都归一。"""
+    if ans is None:
+        return ""
+    t = str(ans).strip()
+    t = t.replace("[", " ").replace("]", " ").replace("{", " ").replace("}", " ")
+    t = t.replace("'", " ").replace('"', " ").replace(",", " ").replace("，", " ")
+    letters = re.findall(r"[A-Ea-e]", t)
+    if letters:
+        return "".join(sorted({c.upper() for c in letters}))
+    # 不是字母：原样返回（可能数字/文本），由调用方决定是否丢弃
+    return t.strip().upper()
+
+
+def answer_letter_by_content(ans, opts):
+    """TAL 的 answer_value 常是"内容"（如 3、45元）⇒ 找出内容匹配的选项字母。"""
+    if not ans or not opts:
+        return ""
+    target = re.sub(r"\s+", "", str(ans)).strip()
+    for o in opts:
+        body = re.sub(r"^[A-E][.、．)）]\s*", "", str(o))
+        if re.sub(r"\s+", "", body) == target:
+            m = re.match(r"^([A-E])", str(o).strip())
+            if m:
+                return m.group(1)
+    return ""
+
+
+def split_inline_options(text):
+    """从题干里切出内联选项（支持 A. / A． / A、 / A) / （A） / tab 分隔 / 同一行）。"""
+    if not text:
+        return None
+    t = str(text)
+    # 找出所有“字母 + 分隔符”的位置，且字母必须从 A 开始连续
+    marks = []
+    for m in re.finditer(r"[（(]?\s*([A-E])\s*[.、．:：)）]\s*", t):
+        marks.append((m.group(1), m.start(), m.end()))
+    if len(marks) < 2:
+        return None
+    seq = [x for x in marks if x[0] == "A"]
+    if not seq:
+        return None
+    start = seq[0][1]
+    picked = []
+    expect = ord("A")
+    for letter, st, en in marks:
+        if st < start:
+            continue
+        if ord(letter) == expect:
+            picked.append((letter, st, en))
+            expect += 1
+    if len(picked) < 2:
+        return None
+    head = t[:picked[0][1]].strip()
+    opts = []
+    for i, (letter, st, en) in enumerate(picked):
+        end = picked[i + 1][1] if i + 1 < len(picked) else len(t)
+        body = re.sub(r"\s+", " ", t[en:end]).strip()
+        if not body:
+            return None
+        opts.append(letter + ". " + body)
+    return head, opts
+
+
 def option_text(o):
     """TAL 的选项是对象（含 aoVal / content）；GAOKAO 侧是字符串。统一取出正文。"""
     if o is None:
@@ -270,7 +334,8 @@ GAOKAO_GRADE_SEM = (12, 0)      # 不限学期：高考真题是全学年复习�
 # QuestionBank.Item 的注释明确要求 g 与 GradeStore.Grade.level 一致，库内一律用这套档位。
 GRADE_TO_APP = {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1,
                 7: 2, 8: 3, 9: 4,
-                10: 5, 11: 6, 12: 7}
+                10: 5, 11: 6, 12: 7,
+                13: 8}          # 13 = 大学及以上（App 的 level 8）
 
 CJK_PAT = re.compile(r"[\u4e00-\u9fff]")
 
@@ -324,25 +389,54 @@ def teach_grade(grade, q):
 
 
 def make(grade, subject, q, opts, ans, exp, diff, src, module="", sem=0):
-    if not q or not ans or not exp:
+    if not q or not ans:
         return None
-    if len(exp) < 20:
-        return None
+    if src != "CMMLU":
+        # 非 CMMLU：必须带解析（用户要求"必须有详细的解题过程"）
+        if not exp or len(exp) < 20:
+            return None
+    # CMMLU 无解析：按用户拍板放行（App 侧会提供"用 AI 生成解析"）
     cap = 1200 if subject in LONG_TEXT_SUBJECTS else 500
     if len(q) > cap:
         return None
     if IMG_PAT.search(q) or IMG_PAT.search(exp):
         return None
+    # 残留的表格/环境标记会让题干读不懂（如 "tabular|c|c|c| & 目的 & 操作" / "方程组cases x+y=12"）
+    unreadable = re.compile(r"tabular|cases|\\begin|\\end|\|c\|\||\|l\||\|r\||&\s*&|mathord|hfill")
+    if unreadable.search(q) or unreadable.search(str(ans)):
+        return None
     if "\\frac" in q or "\\dfrac" in q or "\\tfrac" in q or "\\frac" in exp:
         return None                                  # 还有没转干净的公式：宁缺勿滥
     if diff < 3:
-        return None
+        return None      # 只收中难以上（用户要求"偏难"，不要基础题）
     # App 的难度语义是 1 易 / 2 中 / 3 难（ChallengeGenerator 传 maxDifficulty=3），
     # 我们的 3=中难、4=期末/高考、5=压轴 统一压到 2/3 两档，否则 4/5 永远抽不到
     diff = 2 if diff <= 3 else 3
     st = "SCIENCE" if subject in SCIENCE else ("HUMANITIES" if subject in HUMANITIES else "ALL")
     # t = 知识点/主题（App 的 QuestionBank 读它当 topic；题型由 App 按 o/a 自行判定）
     topic = module if module else subject
+    # 答案归一化 + 与选项一致性校验（有选项 ⇒ 答案必须是选项字母）
+    # 判断题（只有 2 个选项）太简单，直接丢掉
+    if opts and len(opts) < 3:
+        return None
+    # 理科"纯考概念且过简单"的题：既没有数字/运算符，题干又很短 ⇒ 丢弃
+    if subject in ("数学", "物理", "化学", "生物") and opts:
+        has_number = bool(re.search(r"\d", q))
+        has_symbol = any(sym in q for sym in ("=", "+", "-", "×", "÷", "≤", "≥", "√", "^", "/", "%"))
+        if not has_number and not has_symbol and len(q) < 40:
+            return None
+    if opts:
+        norm = normalize_answer(ans)
+        if not re.fullmatch(r"[A-E]{1,5}", norm):
+            return None
+        letters_in_opts = {re.match(r"^([A-E])", str(o).strip()).group(1)
+                           for o in opts if re.match(r"^([A-E])", str(o).strip())}
+        if not set(norm) <= letters_in_opts:
+            return None
+        ans = norm
+    else:
+        norm = normalize_answer(ans)
+        ans = norm
     grade = teach_grade(grade, q)
     grade = GRADE_TO_APP.get(grade, 1)
     return {
@@ -383,9 +477,14 @@ def load_gaokao_bench():
             exp = clean(ex.get("analysis", "") or ex.get("explanation", ""))
             head, opts = parse_options(q)
             if opts is None:
-                if not ans or len(ans) > 20:
-                    continue
-                head, opts = q, []
+                split = split_inline_options(q)
+                if split:
+                    head, opts = split
+                else:
+                    na = normalize_answer(ans)
+                    if not re.fullmatch(r"[0-9A-Za-z+\-*/.,%=() ]{1,20}", na):
+                        continue          # 无选项又敲不出来 ⇒ 丢弃
+                    head, opts = q, []
             m = make(GAOKAO_GRADE_SEM[0], subject, head, opts, ans, exp, 4,
                      "GAOKAO-Bench", sem=GAOKAO_GRADE_SEM[1])
             if m:
@@ -466,11 +565,190 @@ def load_tal():
                 problem, re.I,
             ) or cjk_count(problem) / max(1, len(problem)) < 0.25:
                 continue
+            if opts and not re.fullmatch(r"[A-E]{1,5}", normalize_answer(ans)):
+                alt = answer_letter_by_content(ans, opts)
+                if alt:
+                    ans = alt
             m = make(grade, "数学", problem, opts if opts else None,
                      ans, analysis, diff, "TAL-SCQ5K", module, sem)
             if m:
                 items.append(m)
     return items
+
+
+# CMMLU 科目 → (中文学科名, 学段组)：小学=1；高中=按 5/6/7 轮转；大学=8
+CMMLU_MAP = {
+    # —— 小学（level 1）——
+    "elementary_chinese": ("语文", "小学"),
+    "elementary_mathematics": ("数学", "小学"),
+    "elementary_commonsense": ("常识", "小学"),
+    "elementary_information_and_technology": ("信息技术", "小学"),
+    # —— 高中课内（level 5/6/7 轮转）——
+    "high_school_mathematics": ("数学", "高中"),
+    "high_school_physics": ("物理", "高中"),
+    "high_school_chemistry": ("化学", "高中"),
+    "high_school_biology": ("生物", "高中"),
+    "high_school_geography": ("地理", "高中"),
+    "high_school_politics": ("政治", "高中"),
+    # —— 高中语文/历史/政治/通识类 ——
+    "ancient_chinese": ("语文", "高中"), "modern_chinese": ("语文", "高中"),
+    "chinese_literature": ("语文", "高中"), "chinese_history": ("历史", "高中"),
+    "world_history": ("历史", "高中"), "chinese_foreign_policy": ("政治", "高中"),
+    "marxist_theory": ("政治", "高中"), "legal_and_moral_basis": ("政治", "高中"),
+    "philosophy": ("政治", "高中"), "logical": ("数学", "高中"),
+    "global_facts": ("常识", "高中"), "chinese_food_culture": ("常识", "高中"),
+    "sports_science": ("生物", "高中"), "arts": ("常识", "高中"),
+    "sociology": ("政治", "高中"), "ethnology": ("历史", "高中"),
+    "journalism": ("语文", "高中"), "public_relations": ("语文", "高中"),
+    "conceptual_physics": ("物理", "高中"), "world_religions": ("历史", "高中"),
+    # —— 大学及以上（level 8）——
+    "college_mathematics": ("高等数学", "大学"), "college_education": ("教育学", "大学"),
+    "college_law": ("法学", "大学"), "college_medicine": ("医学", "大学"),
+    "college_actuarial_science": ("精算", "大学"), "college_engineering_hydrology": ("水利工程", "大学"),
+    "college_medical_statistics": ("医学统计", "大学"),
+    "agronomy": ("农学", "大学"), "anatomy": ("解剖学", "大学"),
+    "astronomy": ("天文学", "大学"), "business_ethics": ("商业伦理", "大学"),
+    "clinical_knowledge": ("临床医学", "大学"), "computer_science": ("计算机", "大学"),
+    "computer_security": ("网络安全", "大学"), "construction_project_management": ("工程管理", "大学"),
+    "economics": ("经济学", "大学"), "electrical_engineering": ("电气工程", "大学"),
+    "genetics": ("遗传学", "大学"), "international_law": ("国际法", "大学"),
+    "management": ("管理学", "大学"), "marketing": ("市场营销", "大学"),
+    "nutrition": ("营养学", "大学"), "professional_accounting": ("会计学", "大学"),
+    "professional_law": ("法律职业", "大学"), "professional_medicine": ("临床职业", "大学"),
+    "professional_psychology": ("心理学", "大学"), "security_study": ("安全研究", "大学"),
+    "traditional_chinese_medicine": ("中医学", "大学"), "virology": ("病毒学", "大学"),
+    "food_science": ("食品科学", "大学"), "machine_learning": ("机器学习", "大学"),
+    "jurisprudence": ("法理学", "大学"), "human_sexuality": ("人类性学", "大学"),
+    "chinese_teacher_qualification": ("教师资格", "大学"), "education": ("教育学", "大学"),
+}
+# 只保留"课本知识"科目（用户反馈：出现不属于课本知识的内容，比如生物里的杂学）
+CMMLU_KEEP = {
+    "elementary_chinese", "elementary_mathematics", "elementary_commonsense",
+    "elementary_information_and_technology",
+    "high_school_mathematics", "high_school_physics", "high_school_chemistry",
+    "high_school_biology", "high_school_geography", "high_school_politics",
+    "ancient_chinese", "modern_chinese", "chinese_literature", "chinese_history",
+    "world_history", "chinese_foreign_policy", "marxist_theory",
+    "legal_and_moral_basis", "philosophy", "logical", "conceptual_physics",
+}
+# 明确排除：非课内 / 专业 / 通识杂学 / 驾考与公务员考试
+CMMLU_EXCLUDE = {"chinese_driving_rule", "chinese_civil_service_exam"}
+def cmmlu_keep(key):
+    return key in CMMLU_KEEP
+CMMLU_SCIENCE = {"物理", "化学", "生物", "科学", "医学", "解剖学", "病毒学", "遗传学",
+                 "临床医学", "中医学", "营养学", "农学", "天文学", "水利工程"}
+CMMLU_HUMANITIES = {"历史", "地理", "政治", "法学", "法理学", "国际法", "法律职业",
+                    "经济学", "管理学", "市场营销", "会计学", "商业伦理", "社会学"}
+
+
+def load_cmmlu():
+    """CMMLU：GitHub 仓库就是其 HF 数据集的镜像（本机只能走 GitHub）。无解析，按用户拍板放行。"""
+    api = "https://api.github.com/repos/haonan-li/CMMLU/git/trees/master?recursive=1"
+    paths = []
+    try:
+        tree = json.loads(http_get(api) or "{}")
+        paths = [e["path"] for e in tree.get("tree", [])
+                 if e.get("path", "").startswith("data/test/") and e["path"].endswith(".csv")]
+    except Exception:
+        paths = []
+    if not paths:      # 兜底：目录接口（tree 接口偶发失败时）
+        try:
+            lst = json.loads(http_get(
+                "https://api.github.com/repos/haonan-li/CMMLU/contents/data/test") or "[]")
+            paths = ["data/test/" + x["name"] for x in lst if x["name"].endswith(".csv")]
+        except Exception:
+            paths = []
+    if not paths:
+        print("    （CMMLU：目录获取失败）")
+        return []
+    # 先在本地缓存里补齐缺的 CSV（8 线程并行；串行 67 个太慢）
+    cache_dir = os.path.join(TMP, "cmmlu")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    def ensure_csv(path_item):
+        name = path_item.split("/")[-1].replace(".csv", "")
+        cp = os.path.join(cache_dir, name + ".csv")
+        if os.path.exists(cp) and os.path.getsize(cp) > 200:
+            return
+        raw_text = http_get("https://raw.githubusercontent.com/haonan-li/CMMLU/master/" + path_item)
+        if raw_text:
+            try:
+                with open(cp, "w", encoding="utf-8") as fh:
+                    fh.write(raw_text)
+            except Exception:
+                pass
+
+    try:
+        import concurrent.futures as _cf
+        with _cf.ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(ensure_csv, paths))
+    except Exception:
+        for pth in paths:
+            ensure_csv(pth)
+
+    out, skipped, idx = [], [], 0
+    for path in sorted(paths):
+        key = path.split("/")[-1].replace(".csv", "")
+        if key in CMMLU_EXCLUDE or not cmmlu_keep(key):
+            skipped.append(key)
+            continue
+        info = CMMLU_MAP.get(key)
+        if info is None:
+            skipped.append(key)
+            continue
+        cn, band = info
+        # 注意：这里的年级是"12 级标尺"，make() 里会统一映射到 App 档位（1~8）
+        if band == "小学":
+            grade, sem, diff = 2, 0, 2          # 小学课内偏基础 ⇒ 见下方难度门槛会被剔除
+        elif band == "高中":
+            grade, sem, diff = (10, 11, 12)[idx % 3], 0, 4   # 高中课内/高考风格 ⇒ 难
+            idx += 1
+        else:
+            grade, sem, diff = 13, 0, 4         # 大学及以上 ⇒ App level 8
+
+        raw = http_get("https://raw.githubusercontent.com/haonan-li/CMMLU/master/" + path)
+        if not raw:
+            skipped.append(key + "(下载失败)")
+            continue
+        for row in csv_reader(raw):
+            q = clean(row.get("Question", ""))
+            if len(q) < 8:
+                continue
+            opts = []
+            for L in ("A", "B", "C", "D"):
+                body = clean(row.get(L, ""))
+                if body:
+                    opts.append(L + ". " + body)
+            if len(opts) < 2:
+                continue
+            m = make(grade, cn, q, opts, row.get("Answer", ""), "", diff,
+                     "CMMLU", module="", sem=sem)
+            if m:
+                out.append(m)
+    if skipped:
+        print("    （CMMLU 跳过 %d 个科目：%s）" % (len(skipped), "、".join(sorted(skipped)[:8])))
+    return out
+
+
+def csv_reader(text):
+    """把 CMMLU 的 CSV 文本解析成 dict 列表（支持引号内的逗号/换行）。"""
+    import csv as _csv
+    import io
+    try:
+        return list(_csv.DictReader(io.StringIO(text)))
+    except Exception:
+        return []
+
+
+def http_get(url):
+    """构建期用的普通 GET（只读）。"""
+    import urllib.request
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "FocusGuard-bank-builder"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.read().decode("utf-8-sig", errors="replace")
+    except Exception:
+        return ""
 
 
 def load_legacy_agieval():
@@ -529,7 +807,8 @@ def load_agieval():
 def main():
     all_items = []
     for loader, name in ((load_gaokao_bench, "GAOKAO-Bench"), (load_tal, "TAL-SCQ5K"),
-                         (load_agieval, "AGIEval(在线)"), (load_legacy_agieval, "AGIEval(历史库)")):
+                         (load_legacy_agieval, "AGIEval(历史库)"),
+                         (load_cmmlu, "CMMLU")):
         got = loader()
         print("  %-14s %d 条" % (name, len(got)))
         all_items += got

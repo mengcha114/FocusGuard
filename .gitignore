@@ -18,3 +18,5 @@ local.properties
 # 仓库公开后不内置签名密钥；CI 从 GitHub Actions Secrets 恢复长期证书。
 # 本机长期证书保存在仓库外的受限目录，keystore/ 始终不得提交。
 keystore/
+__pycache__/
+*.pyc
