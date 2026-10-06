@@ -258,6 +258,7 @@ private fun InlineUnlockQuiz(
     }
 
     fun recordWrong(timeout: Boolean) {
+        val badQuestion = question          // 先捕获：下面 nextQuestion() 会换题
         val enteredCooldown = guard.recordWrong()
         wrongLeft = guard.wrongLeft
         feedbackIsError = true
@@ -273,6 +274,17 @@ private fun InlineUnlockQuiz(
         }
         cooldownSec = guard.cooldownSeconds
         nextQuestion()
+        // 本题库没有解析（如 CMMLU 那批）⇒ 用已配置的 AI 生成一次并缓存后再补进反馈
+        if (badQuestion.explanation.isBlank()) {
+            scope.launch {
+                val ai = com.focusguard.app.data.AiExplanation.get(
+                    context, badQuestion.question, badQuestion.options,
+                    badQuestion.answer, badQuestion.subject
+                )
+                feedback = feedback +
+                    (if (ai != null) "\n解析（AI 生成）：$ai" else "\n（本题暂无解析）")
+            }
+        }
     }
 
     fun submit(value: String) {

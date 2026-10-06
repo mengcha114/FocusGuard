@@ -34,7 +34,8 @@ object QuestionBank {
         val answer: String,
         val explanation: String
     ) {
-        val isMulti: Boolean get() = answer.length > 1
+        val isMulti: Boolean
+            get() = answer.trim().uppercase().filter { it in 'A'..'H' }.distinct().size >= 2
     }
 
     @Volatile private var cache: List<Item>? = null

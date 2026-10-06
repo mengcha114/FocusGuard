@@ -149,12 +149,23 @@ fun UnlockChallengeScreen(
                 }
             }
         } else {
-            onWrong(buildString {
-                append("回答错误。正确答案：${question.answer}")
-                if (question.explanation.isNotBlank()) {
-                    append("\n解析：${question.explanation}")
+            val head = "回答错误。正确答案：${question.answer}"
+            if (question.explanation.isNotBlank()) {
+                onWrong(head + "\n解析：${question.explanation}")
+            } else {
+                // 题库里没有解析（如 CMMLU 那批）⇒ 用已配置的 AI 生成一次并缓存
+                onWrong(head + "\n（本题库未收录解析，正在用 AI 生成…）")
+                scope.launch {
+                    val ai = com.focusguard.app.data.AiExplanation.get(
+                        context, question.question, question.options, question.answer,
+                        question.subject
+                    )
+                    onWrong(
+                        head + if (ai != null) "\n解析（AI 生成）：$ai"
+                        else "\n（本题暂无解析）"
+                    )
                 }
-            })
+            }
         }
     }
 
