@@ -473,6 +473,25 @@ def load_tal():
     return items
 
 
+def load_legacy_agieval():
+    """从历史题库里捞回的 AGIEval 高考真题（带解析）。年级=高三、不限学期、难度=难。"""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "legacy_agieval.json")
+    if not os.path.exists(path):
+        return []
+    out = []
+    try:
+        legacy = json.load(open(path, encoding="utf-8"))
+    except Exception:
+        return []
+    for x in legacy:
+        m = make(12, x.get("s", "数学"), clean(x.get("q", "")),
+                 (x.get("o") or None), x.get("a", ""), clean(x.get("e", "")), 4,
+                 "AGIEval", sem=0)
+        if m:
+            out.append(m)
+    return out
+
+
 def load_agieval():
     items = []
     base = "https://raw.githubusercontent.com/ruixiangcui/AGIEval/main/data/v1_1/"
@@ -509,7 +528,8 @@ def load_agieval():
 
 def main():
     all_items = []
-    for loader, name in ((load_gaokao_bench, "GAOKAO-Bench"), (load_tal, "TAL-SCQ5K"), (load_agieval, "AGIEval")):
+    for loader, name in ((load_gaokao_bench, "GAOKAO-Bench"), (load_tal, "TAL-SCQ5K"),
+                         (load_agieval, "AGIEval(在线)"), (load_legacy_agieval, "AGIEval(历史库)")):
         got = loader()
         print("  %-14s %d 条" % (name, len(got)))
         all_items += got

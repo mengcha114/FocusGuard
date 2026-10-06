@@ -81,7 +81,7 @@ class ChallengeGeneratorTest {
     }
 
     private fun item(g: Int, s: String, st: String, d: Int = 2, a: String = "B", t: String = s) =
-        QuestionBank.Item(g, s, st, t, d, "$s 第$g 年级题 $t $d $a", listOf("A. 1", "B. 2", "C. 3", "D. 4"), a, "")
+        QuestionBank.Item(g, 0, s, st, t, d, "$s 第$g 年级题 $t $d $a", listOf("A. 1", "B. 2", "C. 3", "D. 4"), a, "")
 
     @Test
     fun bankRespectsGradeAndStream() {
