@@ -110,14 +110,29 @@ object UpdateChecker {
     /** 测试版：固定 tag `ci-latest` 的发布页（预发布不进 atom 源）。 */
     private fun probeBeta(installedAt: Long): Probe {
         val page = httpGet(CI_PAGE) ?: return Probe(true, null)      // 404 ⇒ 还没有测试版
-        val published = parseTime(
-            Regex("datetime=\"([0-9T:\\-]+Z)\"").find(page)?.groupValues?.get(1)
-        )
-        if (published == 0L || published <= installedAt) return Probe(true, null)
         val notes = plain(
             Regex("markdown-body[^>]*>(.*?)</div>", RegexOption.DOT_MATCHES_ALL)
                 .find(page)?.groupValues?.get(1)
         ).take(1200)
+        // 优先按**版本号**比较：标题形如「CI 测试版 v3.11.27（自动覆盖）」。
+        // 不能用发布时间——GitHub 替换资产时 published_at 不变（用户实测会永远显示"已是最新"）。
+        val title = Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)
+            .find(page)?.groupValues?.get(1).orEmpty()
+        val titleVer = Regex("v\\d+(?:\\.\\d+)+").find(title)?.value
+        if (titleVer != null) {
+            if (compareVersions(currentVersion(), titleVer) <= 0) return Probe(true, null)
+            return Probe(true, UpdateInfo(
+                tag = titleVer + " 测试版",
+                notes = notes.ifBlank { "这是每次构建自动覆盖的测试版，点「去下载」安装。" },
+                downloadUrl = "$DL/ci-latest/${assetName()}",
+                pageUrl = CI_PAGE
+            ))
+        }
+        // 标题里没有版本号（老发布）才退回时间比较
+        val published = parseTime(
+            Regex("datetime=\"([0-9T:\\-]+Z)\"").find(page)?.groupValues?.get(1)
+        )
+        if (published == 0L || published <= installedAt) return Probe(true, null)
         return Probe(
             ok = true,
             info = UpdateInfo(

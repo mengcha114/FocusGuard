@@ -113,6 +113,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 读取版本号（供测试版通道比较新旧）
+        id: ver
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          V=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts | head -1)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "本次构建版本：$V"
+
       # CI 测试版通道：分支构建成功后自动发布/覆盖一个 pre-release（tag: ci-latest）。
       # App 里打开「测试版通道」就能检测到它，不用手动打正式标签。
       - name: 发布/刷新 CI 测试版（分支构建）
@@ -120,12 +128,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ci-latest
-          name: CI 测试版（每次构建自动覆盖）
+          # 标题里必须带版本号：App 靠它判断新旧（GitHub 替换资产时 published_at 不变，
+          # 只按时间比较会永远显示"已是最新"）
+          name: CI 测试版 v${{ steps.ver.outputs.version }}（自动覆盖）
           files: |
             app/build/outputs/apk/edu/debug/*.apk
             app/build/outputs/apk/general/debug/*.apk
           body: |
-            这是每次分支构建自动覆盖的测试版（不稳定，仅供尝鲜/内测）。
+            CI 测试版 v${{ steps.ver.outputs.version }}（每次构建自动覆盖，不稳定，仅供尝鲜/内测）。
             稳定版请看正式 Release（标题里带「正式版」的那些）。
 
             安装包说明（功能相同，只有答题内容不同）：
