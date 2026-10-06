@@ -72,10 +72,121 @@ def fetch(url, path):
     return path
 
 
+
+# ── LaTeX → 纯文本（App 不渲染公式：锁机答题界面是纯文本 + 自绘键盘）──
+LATEX_SYMBOLS = {
+    "\\times": "×", "\\div": "÷", "\\cdot": "·", "\\pm": "±", "\\mp": "∓",
+    "\\leq": "≤", "\\le": "≤", "\\geq": "≥", "\\ge": "≥", "\\neq": "≠",
+    "\\approx": "≈", "\\equiv": "≡", "\\infty": "∞", "\\propto": "∝",
+    "\\alpha": "α", "\\beta": "β", "\\gamma": "γ", "\\delta": "δ",
+    "\\theta": "θ", "\\lambda": "λ", "\\mu": "μ", "\\pi": "π",
+    "\\varphi": "φ", "\\rho": "ρ", "\\sigma": "σ", "\\omega": "ω",
+    "\\Delta": "Δ", "\\Omega": "Ω", "\\triangle": "△", "\\angle": "∠",
+    "\\perp": "⊥", "\\parallel": "∥", "\\sim": "∽", "\\cong": "≌",
+    "\\sum": "∑", "\\prod": "∏", "\\int": "∫", "\\in": "∈", "\\notin": "∉",
+    "\\subseteq": "⊆", "\\subset": "⊂", "\\cup": "∪", "\\cap": "∩",
+    "\\emptyset": "∅", "\\varnothing": "∅", "\\rightarrow": "→", "\\to": "→",
+    "\\leftarrow": "←", "\\Rightarrow": "⇒", "\\Leftrightarrow": "⇔",
+    "\\because": "∵", "\\therefore": "∴", "\\degree": "°",
+    "\\circ": "°", "\\ldots": "…", "\\cdots": "…", "\\dots": "…",
+    "\\quad": " ", "\\qquad": "  ", "\\!": "", "\\,": " ", "\\;": " ",
+    "\\left": "", "\\right": "", "\\displaystyle": "", "\\limits": "",
+}
+SUP = str.maketrans("0123456789+-=()n", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿ")
+SUB = str.maketrans("0123456789+-=()", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎")
+
+
+def _script(body, table):
+    if body and all(ch.translate(table) != ch for ch in body):
+        return body.translate(table)
+    return None
+
+
+def _read_group(t, i):
+    """从 t[i] == '{' 起读出配平的 {...}（支持嵌套），返回 (内容, 结束下标)。"""
+    if i >= len(t) or t[i] != "{":
+        return None, i
+    depth = 0
+    for j in range(i, len(t)):
+        if t[j] == "{":
+            depth += 1
+        elif t[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return t[i + 1:j], j + 1
+    return None, i
+
+
+def _convert_fracs(t):
+    """\\frac{a}{b} → (a)/(b)，支持嵌套与反复出现。"""
+    out, guard = t, 0
+    while guard < 40:
+        guard += 1
+        m = re.search(r"\\[dt]?frac", out)
+        if not m:
+            break
+        i = m.end()
+        while i < len(out) and out[i] == " ":
+            i += 1
+        a, i2 = _read_group(out, i)
+        if a is None:
+            break
+        while i2 < len(out) and out[i2] == " ":
+            i2 += 1
+        b, i3 = _read_group(out, i2)
+        if b is None:
+            break
+        out = out[:m.start()] + "(" + a + ")/(" + b + ")" + out[i3:]
+    return out
+
+
+def latex_to_text(s):
+    """把常见 LaTeX 写法转成可读纯文本（不追求完美，只求人能看懂）。"""
+    if s is None:
+        return ""
+    t = str(s)
+    t = _convert_fracs(t)                               # 分数（支持嵌套）
+    t = re.sub(r"\\sqrt\s*\{([^{}]*)\}", r"√(\1)", t)
+    t = re.sub(r"\\[a-zA-Z]*(?:mathrm|text|mathbf|mathit|mathbb|operatorname)\s*\{([^{}]*)\}",
+               r"\1", t)
+    def sup(m):
+        r = _script(m.group(1), SUP)
+        return r if r is not None else "^(" + m.group(1) + ")"
+    def sub(m):
+        r = _script(m.group(1), SUB)
+        return r if r is not None else "_(" + m.group(1) + ")"
+    t = re.sub(r"\^\s*\{([^{}]*)\}", sup, t)
+    t = re.sub(r"_\s*\{([^{}]*)\}", sub, t)
+    t = re.sub(r"\^\s*([0-9])", lambda m: _script(m.group(1), SUP) or m.group(0), t)
+    for k, v in LATEX_SYMBOLS.items():
+        t = t.replace(k, v)
+    t = re.sub(r"\\[a-zA-Z]+", "", t)                   # 其余未知命令直接去掉
+    t = t.replace("$$", "").replace("$", "")
+    t = t.replace("\\", " ").replace("\n\n\n", "\n\n")
+    t = t.replace("{", "").replace("}", "")              # 残留花括号一律去掉
+    t = re.sub(r"[ \t]{2,}", " ", t)
+    return t.strip()
+
+
+def option_text(o):
+    """TAL 的选项是对象（含 aoVal / content）；GAOKAO 侧是字符串。统一取出正文。"""
+    if o is None:
+        return ""
+    if isinstance(o, str):
+        return o
+    if isinstance(o, dict):
+        for k in ("content", "text", "option", "value", "body"):
+            if o.get(k) not in (None, ""):
+                return str(o[k])
+        return ""
+    if isinstance(o, (list, tuple)) and o:
+        return option_text(o[-1])
+    return str(o)
+
 def clean(text):
     if not text:
         return ""
-    s = str(text).replace("\r", "")
+    s = latex_to_text(text).replace("\r", "")
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
 
@@ -189,8 +300,19 @@ def load_tal():
             idx = _tal_seq.get(level, 0)
             _tal_seq[level] = idx + 1
             grade = buckets[idx % len(buckets)]
-            opts = it.get("options") or it.get("answer_option_list") or []
-            opts = [clean(o) for o in opts if clean(o)]
+            opts = []
+            for i, raw in enumerate(it.get("options") or it.get("answer_option_list") or []):
+                letter = ""
+                if isinstance(raw, dict):
+                    letter = str(raw.get("aoVal") or raw.get("key") or "").strip()
+                txt = clean(option_text(raw))
+                if not txt:
+                    continue
+                if not letter:
+                    letter = chr(ord("A") + len(opts))
+                if not re.match(r"^[A-E][.、．)）]\s*", txt):
+                    txt = letter + ". " + txt
+                opts.append(txt)
             if not opts and len(clean(it.get("problem", ""))) > 12:
                 head, parsed = parse_options(clean(it.get("problem", "")))
                 if parsed:
