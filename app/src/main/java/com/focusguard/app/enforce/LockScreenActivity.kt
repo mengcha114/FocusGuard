@@ -624,6 +624,15 @@ class LockScreenActivity : ComponentActivity() {
      * 3. **重试全部失败才交给悬浮窗常驻**（不再是"什么都没有"）。
      */
     private fun enterLockTaskAsync() {
+        // 非极客加固（不授权 Shizuku/Dhizuku 的用户）：没有设备所有者权限时改用
+        // 系统自带的「屏幕固定」（screen pinning）—— 固定后 Home / 最近任务 /
+        // 状态栏都按不动，只能靠系统自带的"按住返回+最近任务"退出手势离开。
+        // 该逃生手势**故意保留**：不熟悉手机的用户也不会被彻底困死。
+        runCatching {
+            if (!com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive) {
+                startLockTask()
+            }
+        }
         // 已生效 → 撤下过渡期悬浮窗即可
         if (com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive) {
             hideOverlayIfShowing()

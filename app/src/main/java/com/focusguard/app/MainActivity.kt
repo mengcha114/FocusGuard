@@ -1025,6 +1025,8 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // 从系统设置页返回后同步权限状态
         syncPermissionFlags()
+        // 截屏开关改动后回到主界面立即生效
+        applyScreenshotBlock()
         permissionRefreshTick++
         // 守护按钮状态按**真实值**校正：延后 800ms（刚点「开始守护」时服务还在启动中，
         // 立刻刷新会把按钮又变回「开始守护」），之后每 3 秒再校一次

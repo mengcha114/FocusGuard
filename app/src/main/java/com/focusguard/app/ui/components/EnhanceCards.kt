@@ -112,6 +112,22 @@ fun LockHardeningCard() {
             ).show()
         }
 
+        // 防「截屏后交给外部 AI 识别」：主界面也禁止截屏/录屏（锁机/答题/封锁页强制）
+        var blockShot by remember { mutableStateOf(settings.blockScreenshots) }
+        SwitchRow(
+            title = "禁止截屏与录屏",
+            hint = "截图/录屏会失败（外部相机拍到的也只能是黑屏），最近任务缩略图变空白；" +
+                "锁机页、答题页、封锁页一律强制禁止，这个开关只作用于主界面",
+            checked = blockShot,
+            enabled = true
+        ) { value ->
+            blockShot = value
+            settings.blockScreenshots = value
+            android.widget.Toast.makeText(
+                context, "已自动保存（返回主界面立即生效）", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+
         Text(
             "锁机期间的系统加固（逐项即时保存、**不需要答题**；只在锁机期间生效，锁机结束自动撤销）",
             fontSize = 12.sp,

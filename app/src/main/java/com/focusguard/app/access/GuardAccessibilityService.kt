@@ -81,6 +81,10 @@ class GuardAccessibilityService : AccessibilityService() {
         @Volatile
         private var lastWindowPackage: String? = null
 
+        /** 电源菜单（关机/重启）拦截节流。 */
+        @Volatile
+        private var lastPowerMenuBlockAt = 0L
+
         private val uninstallEntryPackages = listOf(
             "com.android.settings",                  // 应用信息 → 卸载 / 强行停止 / 关无障碍
             "com.android.packageinstaller",          // 卸载确认界面
@@ -256,6 +260,23 @@ class GuardAccessibilityService : AccessibilityService() {
         // 状态栏拦截条随锁机状态挂载/移除（拦截下拉起始手势的物理屏障）
         ensureStatusBarBlock()
 
+
+        // ── 非极客加固：电源菜单（长按电源键的关机/重启）收起 ──
+        // 不能关机/重启，就少了一条"重开机绕过锁机"的路；系统菜单属于 systemui/android，
+        // 只能靠无障碍把它收起来（不依赖 Shizuku/Dhizuku）。
+        runCatching {
+            val cls = event.className?.toString().orEmpty()
+            if (cls.contains("globalactions", ignoreCase = true)) {
+                val nowPm = System.currentTimeMillis()
+                if (nowPm - lastPowerMenuBlockAt >= 500L) {
+                    lastPowerMenuBlockAt = nowPm
+                    Log.d(TAG, "锁机期间拦截电源菜单（$pkgName/$cls）")
+                    com.focusguard.app.util.StartupTrace.mark(this, "lock.powerMenuBlocked")
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    sendBroadcast(android.content.Intent(android.content.Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+                }
+            }
+        }
 
         // 陌生人守卫：焦点窗口不是我们自己（有人盖在锁机页上方，如语音助手）→
         // 交给 LockTopGuard 计数与升级处理（白名单/冷却/熔断都在里面）；

@@ -488,6 +488,19 @@ gacha
         get() = prefs.getBoolean("auto_grant_projection", true)
         set(value) = prefs.edit().putBoolean("auto_grant_projection", value).apply()
 
+    /**
+     * 主界面是否禁止截屏/录屏（防「截屏交给外部 AI 识别」）。默认开。
+     * 锁机页 / 答题页 / 封锁页 / 悬浮窗强制禁止，不受这里影响。
+     */
+    var blockScreenshots: Boolean
+        get() = prefs.getBoolean("block_screenshots", true)
+        set(value) = prefs.edit().putBoolean("block_screenshots", value).apply()
+
+    /** 上次「检测更新」的时间（毫秒），用于节流。 */
+    var lastUpdateCheckAt: Long
+        get() = prefs.getLong("last_update_check_at", 0L)
+        set(value) = prefs.edit().putLong("last_update_check_at", value).apply()
+
     var screenCaptureGranted: Boolean
         get() = prefs.getBoolean(KEY_SCREEN_CAPTURE_GRANTED, false)
         set(value) = prefs.edit().putBoolean(KEY_SCREEN_CAPTURE_GRANTED, value).apply()
