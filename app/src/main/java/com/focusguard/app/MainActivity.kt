@@ -62,6 +62,9 @@ class MainActivity : ComponentActivity() {
     ) { result ->
         // 整段兜底：授权回调里任何异常都不能让应用死掉（用户实测"不授权录屏就闪退"）
         runCatching { com.focusguard.app.enforce.ProjectionConsent.disarm() }
+        // 回到"没在拉系统界面"的状态：某些 ROM 的授权框不产生 onPause/onResume，
+        // 只在 onResume 复位的话这个标志会永久为 true ⇒「隐藏最近任务」从此失效。
+        launchingSystemUi = false
         val ok = runCatching {
             if (result.resultCode == RESULT_OK && result.data != null) {
                 appSettings.screenCaptureGranted = true
@@ -129,9 +132,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** 「隐藏最近任务」的延后判定世代号：重复触发时只认最后一次。 */
-    private var leaveHintGen = 0
-
     /** 停止守护前的答题验证状态（防误停/防被监管对象随意停止）。 */
     private var showStopVerify by mutableStateOf(false)
 
@@ -144,9 +144,15 @@ class MainActivity : ComponentActivity() {
     /** 待办提醒通知 / 第三方分享进来的「打开备忘录」请求。 */
     private var pendingMemoOpen by mutableStateOf(false)
 
+    /** 开机自动恢复守护：待界面完全就绪后再执行（只在 onResume 之后触发一次）。 */
+    private var pendingAutoResumeGuard by mutableStateOf(false)
+
     companion object {
         /** 待办到期通知点击后带上的 extra：主界面直接打开备忘录页。 */
         const val EXTRA_OPEN_MEMO = "open_memo"
+
+        /** 开机自动恢复守护：由 BootReceiver 带上，界面就绪后再请求录屏授权。 */
+        const val EXTRA_AUTO_RESUME_GUARD = "auto_resume_guard"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -710,7 +716,6 @@ class MainActivity : ComponentActivity() {
     private fun requestPermission(permission: String) {
         // 要去系统界面了：这段期间别把自己当作“用户离开了应用”
         launchingSystemUi = true
-        leaveHintGen++  // 取消尚未落地的"隐藏任务"判定，避免在系统界面期间关掉自己
         when (permission) {
             "screen_capture" -> {
                 launchingSystemUi = true
@@ -995,6 +1000,21 @@ class MainActivity : ComponentActivity() {
      * 不是杀进程：守护服务照常运行，只是任务列表里看不到我们。
      * 注意排除「我们自己拉起系统弹窗/设置页」导致的前台切换。
      */
+    /**
+     * 退出后把自己从最近任务里移除的兜底。
+     *
+     * `onUserLeaveHint` 只覆盖"Home / 切走 / 最近任务键"这类主动离开；
+     * 按返回键、手势返回、通知页面返回等都只是普通 `finish()` ——
+     * 空任务在部分 ROM 上会继续留一张卡片。这里对所有 finish 路径兜底。
+     */
+    override fun onDestroy() {
+        if (appSettings.hideFromRecents && isFinishing) {
+            com.focusguard.app.util.StartupTrace.mark(this, "main.hideTask")
+            runCatching { finishAndRemoveTask() }
+        }
+        super.onDestroy()
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         // 立即隐藏（用户要求"退出后马上从最近任务消失"）。安全闸门只有两个：
@@ -1006,8 +1026,14 @@ class MainActivity : ComponentActivity() {
         val fg = runCatching {
             com.focusguard.app.service.ForegroundAppDetector.current(this)
         }.getOrNull()
-        if (fg != null && com.focusguard.app.enforce.ProjectionConsent.isConsentHost(fg)) return
-        leaveHintGen++
+        // 注意：com.android.systemui **既是**授权框宿主、也是最近任务/通知栏面板本身。
+        // 只看包名会把"用户按最近任务键去看"误判成"授权框在顶"⇒ 永远不隐藏；
+        // 所以要求我们确实刚拉起过授权框（arm 窗口内）才算数。
+        if (fg != null && com.focusguard.app.enforce.ProjectionConsent.isConsentHost(fg) &&
+            com.focusguard.app.enforce.ProjectionConsent.isArmed()
+        ) {
+            return
+        }
         com.focusguard.app.util.StartupTrace.mark(this, "main.hideTask")
         runCatching { finishAndRemoveTask() }
     }

@@ -112,7 +112,36 @@ class BootReceiver : BroadcastReceiver() {
                 Log.d(TAG, "重启后已清除屏幕录制授权标志（令牌无法跨重启保留）")
             }
             if (settings.serviceRunning) {
-                notifyReopen(app)
+                // 开机自动恢复守护（默认开，可在设置里关）：
+                // 把主界面拉起来并带一个标记，由界面在**完全就绪之后**再请求录屏授权
+                //（绝不在 onCreate 里弹授权框——v3.11.19 修过的闪退就是那条路径）。
+                // 被系统拦（后台启动限制 / 自启动管理）时退回「点通知恢复」。
+                var launched = false
+                if (settings.autoResumeGuardOnBoot && !lockState.isLocked) {
+                    launched = runCatching {
+                        app.startActivity(
+                            android.content.Intent(
+                                app, com.focusguard.app.MainActivity::class.java
+                            ).apply {
+                                addFlags(
+                                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                )
+                                putExtra(
+                                    com.focusguard.app.MainActivity.EXTRA_AUTO_RESUME_GUARD, true
+                                )
+                            }
+                        )
+                        com.focusguard.app.util.StartupTrace.mark(app, "boot.autoResumeLaunch")
+                        true
+                    }.getOrDefault(false)
+                    if (launched) {
+                        Log.d(TAG, "已拉起主界面自动恢复守护")
+                    } else {
+                        Log.w(TAG, "自动拉起主界面失败（系统限制），退回通知提醒")
+                    }
+                }
+                if (!launched) notifyReopen(app)
             }
         } catch (e: Exception) {
             Log.w(TAG, "启动广播处理失败：${e.message}")

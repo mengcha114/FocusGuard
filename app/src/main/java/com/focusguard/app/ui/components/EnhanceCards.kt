@@ -18,7 +18,9 @@ import com.focusguard.app.enhance.ShizukuEnhancer
 
 /**
  * 设置页的加固 / 增强 / 关于卡片。
- * 这些项直接读写各自的偏好，不参与「放宽限制」的答题验证（它们都是加紧限制）。
+ *
+ * 方向规则：**打开**这些开关是收紧限制 ⇒ 直接保存；**关闭**是放宽限制 ⇒
+ * 需要答题（复用 VerifyDialog / AttemptGuard 的同一套规则），锁机期间一律拒绝关闭。
  */
 @Composable
 fun LockHardeningCard() {
@@ -41,6 +43,26 @@ fun LockHardeningCard() {
     }
     val canFreeze = dzReady || ShizukuEnhancer.isReady()
 
+    // 待答题才能执行的"关闭防破解开关"动作（答对才落地，取消则开关状态与磁盘都不变）
+    var pendingSecurityOff by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    /**
+     * 返回 true = 已处理（要么弹了答题、要么锁机期拒绝），调用方不要再直接 apply。
+     */
+    fun guardedSecurityOff(currentlyOn: Boolean, next: Boolean, apply: () -> Unit): Boolean {
+        if (!com.focusguard.app.data.SecurityToggles.isSecuritySwitchOff(currentlyOn, next)) {
+            return false
+        }
+        if (com.focusguard.app.data.LockState(context).shouldBlockNow) {
+            android.widget.Toast.makeText(
+                context, "锁机期间不能关闭防破解开关", android.widget.Toast.LENGTH_LONG
+            ).show()
+            return true
+        }
+        pendingSecurityOff = apply
+        return true
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SwitchRow(
             title = "锁机期间冻结娱乐应用",
@@ -51,14 +73,32 @@ fun LockHardeningCard() {
             },
             checked = freeze && canFreeze,
             enabled = canFreeze
-        ) { on -> freeze = on; LockPolicies.setFreezeEnabled(context, on) }
+        ) { value ->
+            val apply = {
+                freeze = value
+                LockPolicies.setFreezeEnabled(context, value)
+                android.widget.Toast.makeText(
+                    context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            if (!guardedSecurityOff(freeze, value, apply)) apply()
+        }
 
         SwitchRow(
             title = "锁机期间禁止恢复出厂设置",
             hint = if (dzReady) "需 Dhizuku，仅锁机期间生效" else "需要 Dhizuku 授权",
             checked = blockReset && dzReady,
             enabled = dzReady
-        ) { on -> blockReset = on; LockPolicies.setBlockResetEnabled(context, on) }
+        ) { value ->
+            val apply = {
+                blockReset = value
+                LockPolicies.setBlockResetEnabled(context, value)
+                android.widget.Toast.makeText(
+                    context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            if (!guardedSecurityOff(blockReset, value, apply)) apply()
+        }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
 
@@ -73,11 +113,14 @@ fun LockHardeningCard() {
             checked = hideRecents,
             enabled = true
         ) { value ->
-            hideRecents = value
-            settings.hideFromRecents = value
-            android.widget.Toast.makeText(
-                context, "已自动保存", android.widget.Toast.LENGTH_SHORT
-            ).show()
+            val apply = {
+                hideRecents = value
+                settings.hideFromRecents = value
+                android.widget.Toast.makeText(
+                    context, "已自动保存", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            if (!guardedSecurityOff(hideRecents, value, apply)) apply()
         }
 
         // 没有 Shizuku/Dhizuku 的用户：用系统「强行停止」把被锁应用真正停掉
@@ -89,11 +132,14 @@ fun LockHardeningCard() {
             checked = forceStop,
             enabled = true
         ) { value ->
-            forceStop = value
-            settings.forceStopUnlocked = value
-            android.widget.Toast.makeText(
-                context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
-            ).show()
+            val apply = {
+                forceStop = value
+                settings.forceStopUnlocked = value
+                android.widget.Toast.makeText(
+                    context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            if (!guardedSecurityOff(forceStop, value, apply)) apply()
         }
 
         // 重启后不必手动授权录屏：由无障碍替用户点掉系统授权弹窗
@@ -121,11 +167,14 @@ fun LockHardeningCard() {
             checked = blockShot,
             enabled = true
         ) { value ->
-            blockShot = value
-            settings.blockScreenshots = value
-            android.widget.Toast.makeText(
-                context, "已自动保存（返回主界面立即生效）", android.widget.Toast.LENGTH_SHORT
-            ).show()
+            val apply = {
+                blockShot = value
+                settings.blockScreenshots = value
+                android.widget.Toast.makeText(
+                    context, "已自动保存（返回主界面立即生效）", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            if (!guardedSecurityOff(blockShot, value, apply)) apply()
         }
 
         // 锁机页「屏幕固定」（系统自带能力，不需要 Shizuku/Dhizuku）
@@ -137,11 +186,14 @@ fun LockHardeningCard() {
             checked = pinning,
             enabled = true
         ) { value ->
-            pinning = value
-            settings.pinningLock = value
-            android.widget.Toast.makeText(
-                context, "已自动保存（下次锁机生效）", android.widget.Toast.LENGTH_SHORT
-            ).show()
+            val apply = {
+                pinning = value
+                settings.pinningLock = value
+                android.widget.Toast.makeText(
+                    context, "已自动保存（下次锁机生效）", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            if (!guardedSecurityOff(pinning, value, apply)) apply()
         }
 
         // 拦住系统「退出屏幕固定」确认框（默认关：保留逃生手势）
@@ -153,11 +205,14 @@ fun LockHardeningCard() {
             checked = blockUnpin,
             enabled = true
         ) { value ->
-            blockUnpin = value
-            settings.blockPinningEscape = value
-            android.widget.Toast.makeText(
-                context, "已自动保存（下次锁机生效）", android.widget.Toast.LENGTH_SHORT
-            ).show()
+            val apply = {
+                blockUnpin = value
+                settings.blockPinningEscape = value
+                android.widget.Toast.makeText(
+                    context, "已自动保存（下次锁机生效）", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            if (!guardedSecurityOff(blockUnpin, value, apply)) apply()
         }
 
         // 锁机期间收起电源菜单（关机/重启）
@@ -169,11 +224,14 @@ fun LockHardeningCard() {
             checked = blockPower,
             enabled = true
         ) { value ->
-            blockPower = value
-            settings.blockPowerMenu = value
-            android.widget.Toast.makeText(
-                context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
-            ).show()
+            val apply = {
+                blockPower = value
+                settings.blockPowerMenu = value
+                android.widget.Toast.makeText(
+                    context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            if (!guardedSecurityOff(blockPower, value, apply)) apply()
         }
 
         // 陌生人/语音助手守卫
@@ -185,11 +243,14 @@ fun LockHardeningCard() {
             checked = stranger,
             enabled = true
         ) { value ->
-            stranger = value
-            settings.strangerGuard = value
-            android.widget.Toast.makeText(
-                context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
-            ).show()
+            val apply = {
+                stranger = value
+                settings.strangerGuard = value
+                android.widget.Toast.makeText(
+                    context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            if (!guardedSecurityOff(stranger, value, apply)) apply()
         }
 
         Text(
@@ -214,13 +275,15 @@ fun LockHardeningCard() {
                 checked = on,
                 enabled = true
             ) { value ->
-                on = value
-                LockPolicies.setHardeningEnabled(context, item, value)
-                // 加固/防破解开关都是**收紧**方向：即时生效、不需要答题
-                // （此前没有任何反馈，用户以为没保存）
-                android.widget.Toast.makeText(
-                    context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
-                ).show()
+                val apply = {
+                    on = value
+                    LockPolicies.setHardeningEnabled(context, item, value)
+                    android.widget.Toast.makeText(
+                        context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                // 打开（收紧）直接生效；关闭（放宽）需要答题
+                if (!guardedSecurityOff(on, value, apply)) apply()
             }
         }
         Text(
@@ -239,14 +302,32 @@ fun LockHardeningCard() {
                 checked = on,
                 enabled = true
             ) { value ->
-                on = value
-                LockPolicies.setHardeningEnabled(context, item, value)
-                // 加固/防破解开关都是**收紧**方向：即时生效、不需要答题
-                // （此前没有任何反馈，用户以为没保存）
-                android.widget.Toast.makeText(
-                    context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
-                ).show()
+                val apply = {
+                    on = value
+                    LockPolicies.setHardeningEnabled(context, item, value)
+                    android.widget.Toast.makeText(
+                        context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                // 打开（收紧）直接生效；关闭（放宽）需要答题
+                if (!guardedSecurityOff(on, value, apply)) apply()
             }
+        }
+
+        // 关闭防破解/硬化开关：先答题（与设置页"放宽限制"同一套 AttemptGuard 规则）
+        pendingSecurityOff?.let { apply ->
+            com.focusguard.app.ui.components.VerifyDialog(
+                title = "关闭防破解开关需要先答题",
+                description = "这些开关是锁机期间的防线，关闭属于放宽限制。本题由应用本地题库按你的年级" +
+                    "出题，与 AI 无关；答错立即换题，错 2 次要等 5 分钟。",
+                confirmText = "验证并关闭",
+                onPassed = {
+                    val action = pendingSecurityOff
+                    pendingSecurityOff = null
+                    action?.invoke()
+                },
+                onCancel = { pendingSecurityOff = null }
+            )
         }
     }
 }

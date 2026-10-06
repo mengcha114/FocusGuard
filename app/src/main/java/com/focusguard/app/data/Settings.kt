@@ -496,6 +496,14 @@ gacha
         get() = prefs.getBoolean("block_screenshots", true)
         set(value) = prefs.edit().putBoolean("block_screenshots", value).apply()
 
+    /**
+     * 开机后自动恢复守护：由 BootReceiver 打开主界面并在界面就绪后自动请求录屏授权
+     * （授权框由无障碍代点）。默认开；关掉则只留一条「点这里一键恢复」的通知。
+     */
+    var autoResumeGuardOnBoot: Boolean
+        get() = prefs.getBoolean("auto_resume_guard_on_boot", true)
+        set(value) = prefs.edit().putBoolean("auto_resume_guard_on_boot", value).apply()
+
     /** 上次「检测更新」的时间（毫秒），用于节流。 */
     var lastUpdateCheckAt: Long
         get() = prefs.getLong("last_update_check_at", 0L)

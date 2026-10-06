@@ -1057,7 +1057,14 @@ class MonitorService : Service() {
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            Intent(this, MainActivity::class.java).apply {
+                // 复用已有任务，避免堆叠出第二个 MainActivity（否则返回键只关掉栈顶，
+                // 任务非空 ⇒ 最近任务里继续留一张卡片）
+                addFlags(
+                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
