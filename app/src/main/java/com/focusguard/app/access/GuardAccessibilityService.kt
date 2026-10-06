@@ -270,7 +270,7 @@ class GuardAccessibilityService : AccessibilityService() {
                 val nowPm = System.currentTimeMillis()
                 if (nowPm - lastPowerMenuBlockAt >= 500L) {
                     lastPowerMenuBlockAt = nowPm
-                    Log.d(TAG, "锁机期间拦截电源菜单（$pkgName/$cls）")
+                    Log.d(TAG, "锁机期间拦截电源菜单（${event.packageName}/$cls）")
                     com.focusguard.app.util.StartupTrace.mark(this, "lock.powerMenuBlocked")
                     performGlobalAction(GLOBAL_ACTION_BACK)
                     sendBroadcast(android.content.Intent(android.content.Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
