@@ -112,3 +112,26 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # CI 测试版通道：分支构建成功后自动发布/覆盖一个 pre-release（tag: ci-latest）。
+      # App 里打开「测试版通道」就能检测到它，不用手动打正式标签。
+      - name: 发布/刷新 CI 测试版（分支构建）
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ci-latest
+          name: CI 测试版（每次构建自动覆盖）
+          files: |
+            app/build/outputs/apk/edu/debug/*.apk
+            app/build/outputs/apk/general/debug/*.apk
+          body: |
+            这是每次分支构建自动覆盖的测试版（不稳定，仅供尝鲜/内测）。
+            稳定版请看正式 Release（标题里带「正式版」的那些）。
+
+            安装包说明（功能相同，只有答题内容不同）：
+            学段版：内置题库，按年级+学科出题，高中按选科筛选
+            通用版：不含题库，出繁琐计算题
+          prerelease: true
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

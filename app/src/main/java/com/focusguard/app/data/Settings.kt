@@ -514,6 +514,16 @@ gacha
         get() = prefs.getString("update_prompted_tag", "").orEmpty()
         set(value) = prefs.edit().putString("update_prompted_tag", value).apply()
 
+    /** 是否自动检测更新（打开应用时静默查，24 小时一次）。默认开；弹窗里选过「不再提示」会关掉。 */
+    var autoCheckUpdate: Boolean
+        get() = prefs.getBoolean("auto_check_update", true)
+        set(value) = prefs.edit().putBoolean("auto_check_update", value).apply()
+
+    /** 测试版通道：检测 CI 构建的测试版（GitHub 上每次构建自动覆盖的 pre-release）。默认关。 */
+    var updateBetaChannel: Boolean
+        get() = prefs.getBoolean("update_beta_channel", false)
+        set(value) = prefs.edit().putBoolean("update_beta_channel", value).apply()
+
     /** 锁机期间把锁机页「屏幕固定」（系统自带能力，不需要 Shizuku/Dhizuku）：Home/最近任务/状态栏按不动。默认开。 */
     var pinningLock: Boolean
         get() = prefs.getBoolean("pinning_lock", true)

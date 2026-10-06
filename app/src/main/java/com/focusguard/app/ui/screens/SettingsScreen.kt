@@ -805,6 +805,39 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(10.dp))
+            // 自动检测更新（打开应用时静默查、24 小时一次）
+            var autoUpdate by remember { mutableStateOf(settings.autoCheckUpdate) }
+            com.focusguard.app.ui.components.SwitchRow(
+                title = "自动检测更新",
+                hint = "打开应用时静默检查一次（最多 24 小时一次）；发现新版本会弹提醒，" +
+                    "弹窗里选过「不再提示」会把它关掉",
+                checked = autoUpdate,
+                enabled = true
+            ) { value ->
+                autoUpdate = value
+                settings.autoCheckUpdate = value
+                android.widget.Toast.makeText(
+                    context, "已自动保存", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            // 测试版通道：CI 构建
+            var betaChannel by remember { mutableStateOf(settings.updateBetaChannel) }
+            com.focusguard.app.ui.components.SwitchRow(
+                title = "测试版通道（CI 构建）",
+                hint = "打开后检测的是每次构建自动覆盖的测试版（不稳定、可能有问题）；" +
+                    "关掉则只检测正式版。切换后会重新提醒一次",
+                checked = betaChannel,
+                enabled = true
+            ) { value ->
+                betaChannel = value
+                settings.updateBetaChannel = value
+                // 换通道后允许再提醒一次
+                settings.updatePromptedTag = ""
+                android.widget.Toast.makeText(
+                    context, "已自动保存", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            Spacer(Modifier.height(6.dp))
             var updateMsg by remember { mutableStateOf<String?>(null) }
             var updateUrl by remember { mutableStateOf<String?>(null) }
             var checking by remember { mutableStateOf(false) }

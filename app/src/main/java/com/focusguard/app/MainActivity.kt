@@ -395,7 +395,12 @@ class MainActivity : ComponentActivity() {
                         appSettings.updatePromptedTag = info.tag
                         pendingUpdate = null
                     },
-                    title = { Text("发现新版本 " + info.tag) },
+                    title = {
+                        Text(
+                            if (appSettings.updateBetaChannel) "发现新的测试版 " + info.tag
+                            else "发现新版本 " + info.tag
+                        )
+                    },
                     text = {
                         Text(
                             text = (info.notes.ifBlank { "点「去下载」打开安装包下载页。" })
@@ -419,10 +424,22 @@ class MainActivity : ComponentActivity() {
                         }) { Text("去下载") }
                     },
                     dismissButton = {
-                        TextButton(onClick = {
-                            appSettings.updatePromptedTag = info.tag
-                            pendingUpdate = null
-                        }) { Text("稍后") }
+                        Row {
+                            TextButton(onClick = {
+                                appSettings.updatePromptedTag = info.tag
+                                pendingUpdate = null
+                            }) { Text("稍后") }
+                            TextButton(onClick = {
+                                // 不再提示：连自动检测一起关掉（设置页里可以再打开）
+                                appSettings.updatePromptedTag = info.tag
+                                appSettings.autoCheckUpdate = false
+                                pendingUpdate = null
+                                android.widget.Toast.makeText(
+                                    this, "已关闭自动检测更新（设置里可重新打开）",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }) { Text("不再提示") }
+                        }
                     }
                 )
             }
@@ -1096,11 +1113,18 @@ class MainActivity : ComponentActivity() {
      */
     private fun maybeCheckUpdate() {
         if (updateCheckedThisRun) return
+        if (!appSettings.autoCheckUpdate) return
         val now = System.currentTimeMillis()
         if (now - appSettings.lastUpdateCheckAt < 24 * 60 * 60 * 1000L) return
         updateCheckedThisRun = true
+        val beta = appSettings.updateBetaChannel
+        val installedAt = runCatching {
+            packageManager.getPackageInfo(packageName, 0).lastUpdateTime
+        }.getOrDefault(0L)
         Thread {
-            val result = runCatching { com.focusguard.app.update.UpdateChecker.check() }
+            val result = runCatching {
+                com.focusguard.app.update.UpdateChecker.check(beta = beta, installedAt = installedAt)
+            }
             android.os.Handler(mainLooper).post {
                 appSettings.lastUpdateCheckAt = System.currentTimeMillis()
                 val info = result.getOrNull() ?: return@post

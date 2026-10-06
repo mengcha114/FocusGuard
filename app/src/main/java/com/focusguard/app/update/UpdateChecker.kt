@@ -14,8 +14,12 @@ import java.util.concurrent.TimeUnit
  */
 object UpdateChecker {
 
-    private const val API =
+    private const val API_LATEST =
         "https://api.github.com/repos/mengcha114/FocusGuard/releases/latest"
+
+    /** 测试版通道：CI 每次构建自动覆盖的 pre-release。 */
+    private const val API_BETA =
+        "https://api.github.com/repos/mengcha114/FocusGuard/releases/tags/ci-latest"
 
     data class UpdateInfo(
         val tag: String,
@@ -38,10 +42,16 @@ object UpdateChecker {
     /**
      * 有新版返回 [UpdateInfo]；已是最新返回 null。
      * 网络/解析失败抛异常，由调用方提示。
+     *
+     * @param beta 测试版通道：查 CI 构建的 pre-release（tag `ci-latest`）。
+     *   它的 tag 不是版本号，所以改用「发布时间晚于本机 APK 安装时间」判断；
+     *   本机没装过测试版时同样成立。
+     * @param installedAt 本机 APK 的安装/更新时间（毫秒），测试版通道用。
      */
-    fun check(): UpdateInfo? {
+    fun check(beta: Boolean = false, installedAt: Long = 0L): UpdateInfo? {
+        val url = if (beta) API_BETA else API_LATEST
         val request = Request.Builder()
-            .url(API)
+            .url(url)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "FocusGuard/" + currentVersion())
             .build()
@@ -52,7 +62,21 @@ object UpdateChecker {
             if (tag.isBlank()) throw IllegalStateException("响应缺少 tag_name")
             val page = json.optString("html_url")
             val notes = json.optString("body").trim()
-            if (compareVersions(currentVersion(), tag) >= 0) return null
+            if (beta) {
+                // 测试版：用发布时间判断（tag 是固定的 ci-latest，不是版本号）
+                val published = runCatching {
+                    java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+                        .parse(json.optString("published_at"))
+                        ?.time ?: 0L
+                }.getOrDefault(0L)
+                val nameVersion = Regex("v?(\\d+(?:\\.\\d+)+)")
+                    .find(json.optString("name"))?.groupValues?.get(1).orEmpty()
+                val newerByVersion = nameVersion.isNotBlank() &&
+                    compareVersions(currentVersion(), nameVersion) > 0
+                if (published <= installedAt && !newerByVersion) return null
+            } else if (compareVersions(currentVersion(), tag) >= 0) {
+                return null
+            }
             var url = page
             val assets = json.optJSONArray("assets")
             if (assets != null) {
@@ -65,7 +89,19 @@ object UpdateChecker {
                     }
                 }
             }
-            return UpdateInfo(tag = tag, notes = notes, downloadUrl = url, pageUrl = page)
+            val display = if (beta) {
+                "测试版（" + java.text.SimpleDateFormat(
+                    "MM-dd HH:mm", java.util.Locale.getDefault()
+                ).format(java.util.Date(json.optString("published_at").let {
+                    runCatching {
+                        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+                            .parse(it)?.time ?: 0L
+                    }.getOrDefault(0L)
+                })) + "）"
+            } else {
+                tag
+            }
+            return UpdateInfo(tag = display, notes = notes, downloadUrl = url, pageUrl = page)
         }
     }
 
