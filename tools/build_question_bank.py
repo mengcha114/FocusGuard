@@ -60,6 +60,14 @@ TAL_ROOT_LEVEL = {
 # 高考真题仍固定挂 12 年级（它们本来就是高三卷，不虚标）
 LEVEL_BUCKET_LIST = {"小学": [4, 5, 6], "初中": [7, 8, 9], "高中": [10, 11, 12]}
 _tal_seq = {}
+ROTATE_BUCKETS = {"小学": [4, 5, 6], "初中": [7, 8, 9], "高中": [10, 11, 12]}
+
+
+def rotate_grade(level):
+    buckets = ROTATE_BUCKETS.get(level, [5])
+    i = _tal_seq.get(level, 0)
+    _tal_seq[level] = i + 1
+    return buckets[i % len(buckets)]
 
 
 def fetch(url, path):
@@ -275,6 +283,9 @@ def make(grade, subject, q, opts, ans, exp, diff, src, module="", sem=0):
         return None                                  # 还有没转干净的公式：宁缺勿滥
     if diff < 3:
         return None
+    # App 的难度语义是 1 易 / 2 中 / 3 难（ChallengeGenerator 传 maxDifficulty=3），
+    # 我们的 3=中难、4=期末/高考、5=压轴 统一压到 2/3 两档，否则 4/5 永远抽不到
+    diff = 2 if diff <= 3 else 3
     st = "SCIENCE" if subject in SCIENCE else ("HUMANITIES" if subject in HUMANITIES else "ALL")
     # t = 知识点/主题（App 的 QuestionBank 读它当 topic；题型由 App 按 o/a 自行判定）
     topic = module if module else subject
@@ -356,13 +367,15 @@ def load_tal():
             if hit:
                 grade, sem = hit
             elif root in ("拓展思维", "美国amc8", "美国AMC8", "海外竞赛体系", "Overseas Competition"):
-                grade, sem = 0, 0        # 奥数/竞赛：不分年级（g=0 = 任意年级可用）
+                # 奥数/竞赛：没有学期、也不该发给低年级 ⇒ 用学段中位年级
+                # （小学=5、初中=8；配合 App 的"借下一级"覆盖 4~6 / 7~9）
+                grade, sem = rotate_grade(level), 0
             elif root == "小升初":
                 grade, sem = 6, 2
             elif flat and flat[-1] in ("思想", "能力", "七大能力", "素养", "学习能力"):
-                grade, sem = 0, 0
+                grade, sem = rotate_grade(level), 0
             else:
-                grade, sem = 0, 0
+                grade, sem = {"小学": 5, "初中": 8, "高中": 11}.get(level, 5), 0
             opts = []
             for i, raw in enumerate(it.get("options") or it.get("answer_option_list") or []):
                 letter = ""
