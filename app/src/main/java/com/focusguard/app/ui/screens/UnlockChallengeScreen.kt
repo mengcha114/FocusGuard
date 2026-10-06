@@ -70,6 +70,8 @@ fun UnlockChallengeScreen(
     var currentCorrectCount by remember { mutableIntStateOf(lockState.challengeCorrectCount) }
     var refreshCount by remember { mutableIntStateOf(lockState.challengeRefreshCount) }
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
+    /** AI 生成的解析：独立保存，不被错误提醒/换题清掉，用户可以慢慢看。 */
+    var aiExplanation by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var switching by remember { mutableStateOf(false) }
     // 通用版没有学段概念，显示模式名而不是兜底的学段
@@ -161,6 +163,7 @@ fun UnlockChallengeScreen(
 
     fun submit() {
         if (switching || cooling || lockState.isInCooldown) return
+        aiExplanation = null          // 上一题的解析清掉，避免和本次混淆
         val question = currentQuestion
         val correct = generator.isAnswerCorrect(userAnswer, question.answer)
         if (correct) {
@@ -183,20 +186,21 @@ fun UnlockChallengeScreen(
             }
         } else {
             val head = "回答错误。正确答案：${question.answer}"
-            if (question.explanation.isNotBlank()) {
-                onWrong(head + "\n解析：${question.explanation}")
-            } else {
-                // 题库里没有解析（如 CMMLU 那批）⇒ 用已配置的 AI 生成一次并缓存
-                onWrong(head + "\n（本题库未收录解析，正在用 AI 生成…）")
+            onWrong(
+                head + if (question.explanation.isNotBlank())
+                    "\n解析：${question.explanation}" else ""
+            )
+            if (question.explanation.isBlank()) {
+                // 无解析（如 CMMLU）：AI 生成后放进**独立区块**。
+                // 注意：这里不能再用 onWrong 回填——那样会多记一次答错，而且换题时消息会被清掉，
+                // 用户根本来不及看解析（用户实测反馈）。
+                aiExplanation = "正在用 AI 生成解析…"
+                val askQ = question
                 scope.launch {
                     val ai = com.focusguard.app.data.AiExplanation.get(
-                        context, question.question, question.options, question.answer,
-                        question.subject
+                        context, askQ.question, askQ.options, askQ.answer, askQ.subject
                     )
-                    onWrong(
-                        head + if (ai != null) "\n解析（AI 生成）：$ai"
-                        else "\n（本题暂无解析）"
-                    )
+                    aiExplanation = if (ai != null) "解析（AI 生成）：$ai" else "（本题暂无解析）"
                 }
             }
         }
@@ -289,6 +293,24 @@ fun UnlockChallengeScreen(
                         color = if (validating) palette.faint else palette.text,
                         fontWeight = FontWeight.Medium,
                         lineHeight = 26.sp
+                    )
+                }
+            }
+
+            // ── AI 解析（仅当本题没有解析时才出现；不随换题消失） ──
+            aiExplanation?.let { text ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = palette.surface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, palette.line)
+                ) {
+                    Text(
+                        text = text,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        color = palette.text,
+                        modifier = Modifier.padding(12.dp)
                     )
                 }
             }

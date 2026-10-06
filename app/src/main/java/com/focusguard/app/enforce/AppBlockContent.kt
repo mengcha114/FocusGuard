@@ -246,6 +246,8 @@ private fun InlineUnlockQuiz(
     var question by remember { mutableStateOf<ChallengeQuestion>(generator.generate(2)) }
     var answer by remember { mutableStateOf("") }
     var feedback by remember { mutableStateOf<String?>(null) }
+    /** AI 生成的解析（独立保存，不被错误提醒/换题清掉）。 */
+    var aiExplanation by remember { mutableStateOf<String?>(null) }
     var feedbackIsError by remember { mutableStateOf(false) }
     var cooldownSec by remember { mutableIntStateOf(guard.cooldownSeconds) }
     var wrongLeft by remember { mutableIntStateOf(guard.wrongLeft) }
@@ -279,19 +281,21 @@ private fun InlineUnlockQuiz(
         nextQuestion()
         // 本题库没有解析（如 CMMLU 那批）⇒ 用已配置的 AI 生成一次并缓存后再补进反馈
         if (badQuestion.explanation.isBlank()) {
+            // 独立区块：不拼进 feedback（feedback 会被换题/冷却清掉，用户来不及看）
+            aiExplanation = "正在用 AI 生成解析…"
             scope.launch {
                 val ai = com.focusguard.app.data.AiExplanation.get(
                     context, badQuestion.question, badQuestion.options,
                     badQuestion.answer, badQuestion.subject
                 )
-                feedback = feedback +
-                    (if (ai != null) "\n解析（AI 生成）：$ai" else "\n（本题暂无解析）")
+                aiExplanation = if (ai != null) "解析（AI 生成）：$ai" else "（本题暂无解析）"
             }
         }
     }
 
     fun submit(value: String) {
         if (cooling || value.isBlank()) return
+        aiExplanation = null
         if (generator.isAnswerCorrect(value, question.answer)) {
             guard.recordCorrect()
             guard.resetSession()
@@ -450,6 +454,24 @@ private fun InlineUnlockQuiz(
             color = if (feedbackIsError) palette.error else palette.accent,
             textAlign = TextAlign.Center
         )
+    }
+
+    // AI 生成的解析：独立区块，不随换题/冷却消失（用户要能慢慢看）
+    aiExplanation?.let { text ->
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp),
+            color = palette.card,
+            border = androidx.compose.foundation.BorderStroke(1.dp, palette.line)
+        ) {
+            Text(
+                text = text,
+                fontSize = 12.sp,
+                lineHeight = 19.sp,
+                color = palette.text,
+                modifier = Modifier.padding(10.dp)
+            )
+        }
     }
 
     Row(
