@@ -46,6 +46,11 @@ fun LogScreen() {
     val logStore = remember { LogStore(context) }
     var logs by remember { mutableStateOf(logStore.getAllLogs()) }
     var showDiagnostics by remember { mutableStateOf(false) }
+    // 刷新计数：点「刷新」后重新读日志 + 崩溃记录（此前进页面后只能退出去再进来才更新）
+    var refreshTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(refreshTick) {
+        logs = logStore.getAllLogs()
+    }
 
     Column(
         modifier = Modifier
@@ -70,7 +75,14 @@ fun LogScreen() {
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
                 )
             }
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { refreshTick++ }) {
+                    Text(
+                        "刷新",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 13.sp
+                    )
+                }
                 TextButton(onClick = { showDiagnostics = !showDiagnostics }) {
                     Text(
                         if (showDiagnostics) "隐藏诊断" else "AI 诊断",
@@ -147,8 +159,9 @@ fun LogScreen() {
             Spacer(Modifier.height(12.dp))
         }
 
-        // ── 崩溃日志（闪退排查用，有记录才显示） ──
-        val crashLog = remember { com.focusguard.app.FocusGuardApp.readCrashLog(context) }
+        // ── 崩溃日志（闪退排查用，有记录才显示；默认折叠，点标题展开） ──
+        val crashLog = remember(refreshTick) { com.focusguard.app.FocusGuardApp.readCrashLog(context) }
+        var crashExpanded by remember { mutableStateOf(false) }
         if (crashLog.isNotBlank()) {
             Card(
                 modifier = Modifier
@@ -161,18 +174,30 @@ fun LogScreen() {
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { crashExpanded = !crashExpanded },
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "崩溃日志（最近 ${
-                                crashLog.split("===== ").size - 1
-                            } 次闪退）",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (crashExpanded) Icons.Default.ExpandLess
+                                else Icons.Default.ExpandMore,
+                                contentDescription = if (crashExpanded) "收起" else "展开",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "崩溃日志（最近 ${
+                                    crashLog.split("===== ").size - 1
+                                } 次闪退）",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                         IconButton(
                             onClick = { copyToClipboard(context, crashLog) },
                             modifier = Modifier.size(28.dp)
@@ -185,15 +210,31 @@ fun LogScreen() {
                             )
                         }
                     }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = crashLog,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
-                        lineHeight = 15.sp,
-                        modifier = Modifier.verticalScroll(rememberScrollState())
-                    )
+                    // 折叠时只显示第一行摘要，避免一大段堆栈占满屏幕
+                    if (!crashExpanded) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = crashLog.lineSequence()
+                                .firstOrNull { it.isNotBlank() }
+                                ?.take(60)
+                                .orEmpty() + " ……（点击标题展开）",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                        )
+                    }
+                    AnimatedVisibility(visible = crashExpanded) {
+                        Column {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = crashLog,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                                lineHeight = 15.sp,
+                                modifier = Modifier.verticalScroll(rememberScrollState())
+                            )
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))
