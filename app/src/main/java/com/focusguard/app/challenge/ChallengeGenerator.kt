@@ -144,8 +144,11 @@ class ChallengeGenerator(context: Context? = null) {
         val stream = gradeStore?.stream ?: GradeStore.Stream.ALL
         val recentFp = loadFp()
 
-        // 0. 通用版：程序生成的繁复多步计算题（不依赖题库与年级）
-        if (!useBank) {
+        // 0. 通用版：程序生成的计算题（不依赖题库）。
+        //    注意：**中学及以上必须按学段出题** —— 此前一律走 GeneralQuestions（小学式大数四则），
+        //    用户实测"选高二却出小学题"。现在 ≥5 年级改用下面的计算题型池
+        //    （含对数/数列/导数/行列式/多项式求值等中学档繁复计算）。
+        if (!useBank && effectiveGrade.level < 5) {
             // 答错后降一档：连对 5 题的强度视为 2，其余为 1
             val strength = if (!easeDifficulty && level >= 3) 2 else 1
             return GeneralQuestions.generate(strength, excludeTopic)

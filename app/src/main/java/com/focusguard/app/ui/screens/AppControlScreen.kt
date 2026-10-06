@@ -49,6 +49,11 @@ fun AppControlScreen() {
     var apps by remember { mutableStateOf<List<InstalledApp>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var editingApp by remember { mutableStateOf<InstalledApp?>(null) }
+    // ── 批量操作（多选）──
+    var batchMode by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var batchMsg by remember { mutableStateOf<String?>(null) }
+    var showBatchVerify by remember { mutableStateOf(false) }
 
     // 读取已安装应用（含自动识别出的分类）
     LaunchedEffect(Unit) {
@@ -132,19 +137,106 @@ fun AppControlScreen() {
                 }
             }
         } else {
+            // ── 批量操作条 ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = {
+                    batchMode = !batchMode
+                    if (!batchMode) selected = emptySet()
+                    batchMsg = null
+                }) { Text(if (batchMode) "退出批量" else "批量操作", fontSize = 13.sp) }
+                if (batchMode) {
+                    TextButton(onClick = {
+                        selected = if (selected.size == filteredApps.size) emptySet()
+                        else filteredApps.map { it.packageName }.toSet()
+                    }) { Text(if (selected.size == filteredApps.size) "取消全选" else "全选", fontSize = 13.sp) }
+                    TextButton(onClick = {
+                        selected = filteredApps.map { it.packageName }.toSet() - selected
+                    }) { Text("反选", fontSize = 13.sp) }
+                    Spacer(Modifier.weight(1f))
+                    Text("已选 ${selected.size}", fontSize = 12.sp)
+                }
+            }
+            batchMsg?.let {
+                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary)
+            }
+            if (batchMode) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    // 收紧方向：直接生效（设为娱乐类 = 会被 AI 盯上）
+                    Button(
+                        onClick = {
+                            val store = AppCategoryStore.shared(context)
+                            selected.forEach { store.setUserOverride(it, AppCategory.GAME) }
+                            AppInventory.invalidate()
+                            batchMsg = "已把 ${selected.size} 个应用标为娱乐类"
+                        },
+                        enabled = selected.isNotEmpty(),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("设为娱乐类", fontSize = 13.sp) }
+                    Spacer(Modifier.width(8.dp))
+                    // 放宽方向：批量清除管控规则 ⇒ 先答题
+                    OutlinedButton(
+                        onClick = { showBatchVerify = true },
+                        enabled = selected.isNotEmpty(),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("清除管控", fontSize = 13.sp) }
+                }
+            }
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(filteredApps, key = { it.packageName }) { app ->
+                    val isSel = app.packageName in selected
                     AppControlRow(
                         app = app,
                         hasRule = remember(app.packageName) {
                             UsageRuleStore.shared(context).getRule(app.packageName) != null
                         },
-                        onClick = { editingApp = app }
+                        inBatch = batchMode,
+                        checked = isSel,
+                        onClick = {
+                            if (batchMode) {
+                                selected = if (isSel) selected - app.packageName
+                                else selected + app.packageName
+                            } else {
+                                editingApp = app
+                            }
+                        }
                     )
                 }
+            }
+            // 批量清除管控规则：属于放宽限制 ⇒ 复用同一套答题规则
+            if (showBatchVerify) {
+                com.focusguard.app.ui.components.VerifyDialog(
+                    title = "批量清除管控需要先答题",
+                    description = "清除管控规则属于放宽限制。本题由应用本地题库按你的年级出题，" +
+                        "与 AI 无关；答错立即换题，错 2 次要等 5 分钟。",
+                    confirmText = "验证并清除",
+                    onPassed = {
+                        showBatchVerify = false
+                        val ruleStore = UsageRuleStore.shared(context)
+                        val blockStore = AppBlockStore(context)
+                        val n = selected.size
+                        selected.forEach {
+                            blockStore.clear(it)
+                            ruleStore.removeRule(it)
+                            ruleStore.resetToday(it)
+                            com.focusguard.app.enforce.AppBlockActivity.dismissIfShowing(it)
+                        }
+                        com.focusguard.app.enforce.AppBlockOverlay.hide()
+                        batchMsg = "已清除 $n 个应用的管控规则"
+                        scope.launch {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                val store = AppCategoryStore.shared(context)
+                                apps = AppInventory.listLaunchableApps(context, store, forceRefresh = true)
+                            }
+                        }
+                    },
+                    onCancel = { showBatchVerify = false }
+                )
             }
         }
     }
@@ -201,7 +293,13 @@ fun AppControlScreen() {
 
 /** 应用行：图标 + 名称 + 分类标签 + 时长规则标记。 */
 @Composable
-private fun AppControlRow(app: InstalledApp, hasRule: Boolean, onClick: () -> Unit) {
+private fun AppControlRow(
+    app: InstalledApp,
+    hasRule: Boolean,
+    inBatch: Boolean = false,
+    checked: Boolean = false,
+    onClick: () -> Unit
+) {
     val (statusLabel, statusColor) = when (app.category) {
         AppCategory.GAME -> "游戏" to MaterialTheme.colorScheme.error
         AppCategory.STUDY -> "学习" to MaterialTheme.colorScheme.tertiary

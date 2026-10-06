@@ -805,6 +805,21 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "包含设备信息、配置（密钥脱敏）、Token 统计与检测日志，排查问题时可分享给开发者",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
+            )
+        }
+
+        // ═══════ 关于与更新 ═══════
+        SettingsSection(
+            title = "关于与更新",
+            icon = Icons.Default.Refresh,
+            defaultExpanded = false,
+            summary = "版本与更新"
+        ) {
             // 自动检测更新（打开应用时静默查、24 小时一次）
             var autoUpdate by remember { mutableStateOf(settings.autoCheckUpdate) }
             com.focusguard.app.ui.components.SwitchRow(
@@ -901,12 +916,6 @@ fun SettingsScreen(
                     Text("下载新版本", fontSize = 15.sp)
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "包含设备信息、配置（密钥脱敏）、Token 统计与检测日志，排查问题时可分享给开发者",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
-            )
         }
 
         // ── 自动保存 ─────────────────────────────────────────────
