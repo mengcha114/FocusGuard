@@ -128,6 +128,70 @@ fun LockHardeningCard() {
             ).show()
         }
 
+        // 锁机页「屏幕固定」（系统自带能力，不需要 Shizuku/Dhizuku）
+        var pinning by remember { mutableStateOf(settings.pinningLock) }
+        SwitchRow(
+            title = "锁机时固定锁机页",
+            hint = "用系统自带的「屏幕固定」把锁机页钉住：Home / 最近任务 / 下拉状态栏都按不动，" +
+                "不需要 Shizuku/Dhizuku；系统自带的\"按住返回+最近任务\"退出手势仍然有效（见下一项）",
+            checked = pinning,
+            enabled = true
+        ) { value ->
+            pinning = value
+            settings.pinningLock = value
+            android.widget.Toast.makeText(
+                context, "已自动保存（下次锁机生效）", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        // 拦住系统「退出屏幕固定」确认框（默认关：保留逃生手势）
+        var blockUnpin by remember { mutableStateOf(settings.blockPinningEscape) }
+        SwitchRow(
+            title = "拦住\"退出屏幕固定\"确认框",
+            hint = "屏幕固定是系统留的官方逃生手势（按住返回+最近任务）。拦住它更严，但" +
+                "答不出题又记不住密码时会彻底困住（只能长按电源键硬重启）。默认关",
+            checked = blockUnpin,
+            enabled = true
+        ) { value ->
+            blockUnpin = value
+            settings.blockPinningEscape = value
+            android.widget.Toast.makeText(
+                context, "已自动保存（下次锁机生效）", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        // 锁机期间收起电源菜单（关机/重启）
+        var blockPower by remember { mutableStateOf(settings.blockPowerMenu) }
+        SwitchRow(
+            title = "锁机时拦住关机/重启菜单",
+            hint = "长按电源键弹出的关机/重启菜单会被自动收起，少一条\"重启绕过锁机\"的路。" +
+                "长按电源键约 10 秒的硬件重启仍然拦不住",
+            checked = blockPower,
+            enabled = true
+        ) { value ->
+            blockPower = value
+            settings.blockPowerMenu = value
+            android.widget.Toast.makeText(
+                context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        // 陌生人/语音助手守卫
+        var stranger by remember { mutableStateOf(settings.strangerGuard) }
+        SwitchRow(
+            title = "锁机时限制盖在上方的应用",
+            hint = "语音助手等盖在锁机页上方时：先顶回锁机页；同一应用反复出现就冻结它" +
+                "（系统助手尽量隐藏）。系统 UI、桌面、输入法、电话、相机永不误伤",
+            checked = stranger,
+            enabled = true
+        ) { value ->
+            stranger = value
+            settings.strangerGuard = value
+            android.widget.Toast.makeText(
+                context, "已自动保存（锁机期间生效）", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+
         Text(
             "锁机期间的系统加固（逐项即时保存、**不需要答题**；只在锁机期间生效，锁机结束自动撤销）",
             fontSize = 12.sp,

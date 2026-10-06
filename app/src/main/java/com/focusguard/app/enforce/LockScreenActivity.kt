@@ -629,7 +629,9 @@ class LockScreenActivity : ComponentActivity() {
         // 状态栏都按不动，只能靠系统自带的"按住返回+最近任务"退出手势离开。
         // 该逃生手势**故意保留**：不熟悉手机的用户也不会被彻底困死。
         runCatching {
-            if (!com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive) {
+            if (com.focusguard.app.data.Settings(this).pinningLock &&
+                !com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
+            ) {
                 startLockTask()
             }
         }

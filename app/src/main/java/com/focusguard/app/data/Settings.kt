@@ -501,6 +501,30 @@ gacha
         get() = prefs.getLong("last_update_check_at", 0L)
         set(value) = prefs.edit().putLong("last_update_check_at", value).apply()
 
+    /** 锁机期间把锁机页「屏幕固定」（系统自带能力，不需要 Shizuku/Dhizuku）：Home/最近任务/状态栏按不动。默认开。 */
+    var pinningLock: Boolean
+        get() = prefs.getBoolean("pinning_lock", true)
+        set(value) = prefs.edit().putBoolean("pinning_lock", value).apply()
+
+    /** 锁机期间收起系统的电源菜单（长按电源键的关机/重启）。默认开。 */
+    var blockPowerMenu: Boolean
+        get() = prefs.getBoolean("block_power_menu", true)
+        set(value) = prefs.edit().putBoolean("block_power_menu", value).apply()
+
+    /**
+     * 拦住系统「要退出固定模式吗？」确认框。
+     * **默认关**：屏幕固定是系统留的官方逃生手势，拦掉后答不出题又记不住密码的用户
+     * 会被彻底困死（只能长按电源键硬重启）。想更狠再打开。
+     */
+    var blockPinningEscape: Boolean
+        get() = prefs.getBoolean("block_pinning_escape", false)
+        set(value) = prefs.edit().putBoolean("block_pinning_escape", value).apply()
+
+    /** 锁机期间限制盖在锁机页上方的陌生应用/语音助手（先顶回，反复出现才冻结）。默认开。 */
+    var strangerGuard: Boolean
+        get() = prefs.getBoolean("stranger_guard", true)
+        set(value) = prefs.edit().putBoolean("stranger_guard", value).apply()
+
     var screenCaptureGranted: Boolean
         get() = prefs.getBoolean(KEY_SCREEN_CAPTURE_GRANTED, false)
         set(value) = prefs.edit().putBoolean(KEY_SCREEN_CAPTURE_GRANTED, value).apply()

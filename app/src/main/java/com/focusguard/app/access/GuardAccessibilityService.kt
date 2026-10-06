@@ -85,6 +85,10 @@ class GuardAccessibilityService : AccessibilityService() {
         @Volatile
         private var lastPowerMenuBlockAt = 0L
 
+        /** 「退出屏幕固定」确认框拦截节流。 */
+        @Volatile
+        private var lastUnpinBlockAt = 0L
+
         private val uninstallEntryPackages = listOf(
             "com.android.settings",                  // 应用信息 → 卸载 / 强行停止 / 关无障碍
             "com.android.packageinstaller",          // 卸载确认界面
@@ -115,6 +119,11 @@ class GuardAccessibilityService : AccessibilityService() {
     }
 
     private var lockState: LockState? = null
+
+    /** 设置项懒加载（事件回调是高频路径，不能每次 new）。 */
+    private val appSettingsRef: com.focusguard.app.data.Settings by lazy {
+        com.focusguard.app.data.Settings(this)
+    }
 
     /** 窗口状态事件顶回节流（独立变量，避免与高频窗口列表事件互相吞）。 */
     private var lastStateReassertAt = 0L
@@ -265,15 +274,41 @@ class GuardAccessibilityService : AccessibilityService() {
         // 不能关机/重启，就少了一条"重开机绕过锁机"的路；系统菜单属于 systemui/android，
         // 只能靠无障碍把它收起来（不依赖 Shizuku/Dhizuku）。
         runCatching {
-            val cls = event.className?.toString().orEmpty()
-            if (cls.contains("globalactions", ignoreCase = true)) {
-                val nowPm = System.currentTimeMillis()
-                if (nowPm - lastPowerMenuBlockAt >= 500L) {
-                    lastPowerMenuBlockAt = nowPm
-                    Log.d(TAG, "锁机期间拦截电源菜单（${event.packageName}/$cls）")
-                    com.focusguard.app.util.StartupTrace.mark(this, "lock.powerMenuBlocked")
-                    performGlobalAction(GLOBAL_ACTION_BACK)
-                    sendBroadcast(android.content.Intent(android.content.Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+            if (appSettingsRef.blockPowerMenu) {
+                val cls = event.className?.toString().orEmpty()
+                if (cls.contains("globalactions", ignoreCase = true)) {
+                    val nowPm = System.currentTimeMillis()
+                    if (nowPm - lastPowerMenuBlockAt >= 500L) {
+                        lastPowerMenuBlockAt = nowPm
+                        Log.d(TAG, "锁机期间拦截电源菜单（${event.packageName}/$cls）")
+                        com.focusguard.app.util.StartupTrace.mark(this, "lock.powerMenuBlocked")
+                        performGlobalAction(GLOBAL_ACTION_BACK)
+                        sendBroadcast(
+                            android.content.Intent(android.content.Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── 可选（默认关）：拦住系统「要退出固定模式吗？」确认框 ──
+        // 屏幕固定的官方退出手势是"按住返回+最近任务"，系统会弹确认框。
+        // 默认放行（免得答不出题又记不住密码的用户被彻底困死）；打开开关后才收起它。
+        runCatching {
+            if (appSettingsRef.blockPinningEscape) {
+                val sb = StringBuilder()
+                for (i in 0 until event.text.size) sb.append(event.text[i]).append(' ')
+                val t = sb.toString()
+                val looksLikeUnpin = t.contains("退出固定") || t.contains("取消固定") ||
+                    t.contains("固定模式") || t.lowercase().contains("unpin")
+                if (looksLikeUnpin) {
+                    val nowUnpin = System.currentTimeMillis()
+                    if (nowUnpin - lastUnpinBlockAt >= 500L) {
+                        lastUnpinBlockAt = nowUnpin
+                        Log.d(TAG, "按设置收起「退出屏幕固定」确认框")
+                        com.focusguard.app.util.StartupTrace.mark(this, "lock.unpinBlocked")
+                        performGlobalAction(GLOBAL_ACTION_BACK)
+                    }
                 }
             }
         }

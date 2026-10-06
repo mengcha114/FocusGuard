@@ -107,6 +107,7 @@ object LockTopGuard {
      */
     fun onForeignAboveLock(context: Context, pkg: String): Boolean {
         val app = context.applicationContext
+        if (!com.focusguard.app.data.Settings(app).strangerGuard) return false
         if (isProtected(app, pkg)) return false
         val now = System.currentTimeMillis()
         if (now < failUntil) return false
