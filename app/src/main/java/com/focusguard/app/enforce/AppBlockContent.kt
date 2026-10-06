@@ -25,6 +25,7 @@ import com.focusguard.app.challenge.ChallengeGenerator
 import com.focusguard.app.challenge.ChallengeQuestion
 import com.focusguard.app.data.AttemptGuard
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 应用封锁界面：悬浮窗与封锁 Activity **共用同一套**，外观与答题规则完全一致。

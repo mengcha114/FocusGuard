@@ -35,8 +35,7 @@ object QuestionBank {
         val explanation: String
     ) {
         val isMulti: Boolean
-            get() = answer.trim().uppercase().count { it in 'A'..'H' && answer.trim().uppercase()
-                .indexOf(it) == answer.trim().uppercase().indexOfFirst { c -> c == it } } >= 2
+            get() = answer.uppercase().toSet().count { it in 'A'..'H' } >= 2
     }
 
     @Volatile private var cache: List<Item>? = null

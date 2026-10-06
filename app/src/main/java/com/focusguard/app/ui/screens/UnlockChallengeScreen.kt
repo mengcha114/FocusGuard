@@ -290,7 +290,7 @@ fun UnlockChallengeScreen(
                 // 选择题：把选项文字完整列出来（整行可点）。此前只画 A/B/C/D 字母键，
                 // 而题库题干不含选项，等于让用户盲猜。
                 if (currentQuestion.options.isNotEmpty()) {
-                    val multi = currentQuestion.answer.length > 1
+                    val multi = currentQuestion.answer.uppercase().toSet().count { it in 'A'..'H' } >= 2
                     com.focusguard.app.ui.components.OptionList(
                         options = currentQuestion.options,
                         selected = userAnswer,
