@@ -1,338 +1,277 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""构建本地题库 app/src/main/assets/question_bank.json.gz
-数据源（MIT）：TAL-SCQ5K（好未来，中文数学单选）、AGIEval 高考（微软）。
-规则：按真实来源判定年级（判断不了丢弃，宁少勿超纲）；去掉过易与过难；
-多空填空丢弃，物理多选保留为字母组合；LaTeX 转可读文本，转不干净丢弃。
-用法：python3 tools/build_question_bank.py [缓存目录]"""
-import collections, gzip, json, os, random, re, sys, urllib.request
+"""重建学段版题库（离线打包进 APK）。
 
-CACHE = sys.argv[1] if len(sys.argv) > 1 else "/tmp/qb"
+数据源（全部来自 GitHub，本机 HuggingFace 不可达）：
+  1. GAOKAO-Bench 2010-2022 客观题 + GAOKAO-Bench-Updates 2023/2024（Apache-2.0，含 analysis 详解）
+  2. TAL-SCQ5K 中文单选 3K+2K（MIT，含 difficulty 与 knowledge_point_routes ⇒ 学段标签）
+  3. AGIEval v1_1 gaokao-*（MIT 仓库，数据沿用原源；含 answer/options）
+
+筛选规则（用户要求：偏难但不要离谱 + 必须有详细解题过程 + 手机答得了）：
+  - 必须有解析（>=20 字）
+  - 只收可作答题型：有 2~4 个连续选项的选择题，或答案 <= 20 字的填空题
+  - 不含图片依赖（"如图"/"图1"/"如图所示" 等一律丢弃，App 不渲染图片）
+  - 难度档 d：3=单元测中难、4=期末/高考、5=压轴；入库门槛 d>=3，d==5 占比 <= 10%
+  - 学段桶：小学=6、初中=9、高中=12（App 侧"借下一级"规则保证相邻年级可用）
+
+输出：app/src/edu/assets/question_bank.json + 统计；许可声明见 question_bank_LICENSE.txt
+"""
+import json, hashlib, os, re, sys, urllib.request, collections
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "app/src/edu/assets/question_bank.json")
-LIC = os.path.join(ROOT, "app/src/edu/assets/question_bank_LICENSE.txt")
-TAL = "https://raw.githubusercontent.com/math-eval/TAL-SCQ5K/main/ch_single_choice_constructed_5K/"
-AGI = "https://raw.githubusercontent.com/ruixiangcui/AGIEval/main/data/v1/"
-os.makedirs(CACHE, exist_ok=True)
+TMP = "/tmp/qb"
+
+SUBJECTS = {
+    "Physics": "物理", "Chemistry": "化学", "Biology": "生物", "Math": "数学",
+    "Math_I": "数学", "Math_II": "数学", "Chinese": "语文", "Chinese_Lang_and_Usage": "语文",
+    "Chinese_Modern_Lit": "语文", "English": "英语", "History": "历史",
+    "Geography": "地理", "Political_Science": "政治",
+}
+SCIENCE = {"物理", "化学", "生物"}
+HUMANITIES = {"历史", "地理", "政治"}
+LONG_TEXT_SUBJECTS = {"语文", "英语", "历史", "地理", "政治"}
+IMG_PAT = re.compile(r"如图|图 *\d|如下图所示|见下图|图所示|ImagePath|\[图\]|图表")
+OPT_SPLIT = re.compile(r"(?m)^\s*([A-E])[.、．)）]\s*")
+TAL_MODULE_GRADE = {
+    # 小学奥数模块（按 TAL 知识点路由末段归类）
+    "应用题模块": 6, "数论模块": 6, "计数模块": 6, "行程模块": 6, "几何模块": 6,
+    "组合模块": 6, "计算模块": 6, "数学广角": 6, "数据处理": 6, "七大能力": 6,
+    "运算求解": 6, "对应思想": 6, "枚举思想": 6, "整体思想": 6, "赋值思想": 6,
+    "逐步调整思想": 6, "构造模型": 6, "符号代换": 6, "逆向思想": 6, "逻辑分析": 6,
+    "分类讨论思想": 6, "转化与化归的思想": 6, "数感认知": 6, "数的认识": 6,
+    "数的运算": 6, "数与运算": 6, "式与方程": 6, "实践应用": 6, "综合与实践": 6,
+    # 初中模块
+    "式": 9, "方程与不等式": 9, "三角形": 9, "几何图形初步": 9, "数": 9,
+    "数与式": 9, "四边形": 9, "命题与证明": 9, "几何变换": 9, "统计与概率": 9,
+    "配方法": 9, "函数": 9, "不等式": 9, "函数的概念与性质": 12, "数列与数学归纳法": 12,
+    "三角函数": 12, "立体几何初步": 12, "计数原理": 12, "复数与平面向量": 12,
+    "解析几何": 12, "圆锥曲线": 12, "数列": 12, "集合": 12, "多项式与方程": 12,
+    "排列组合与概率": 12, "立体几何与空间向量": 12, "直线和圆的方程": 12,
+    "随机现象": 12, "归纳总结": 6, "测量": 6, "图形认知": 6, "数论": 6,
+    "组合": 6, "数学": 12, "物理": 12, "化学": 12, "生物": 12,
+}
+# TAL 知识点路由首段 → 学段（这是原始数据里唯一可靠的学段信号）
+TAL_ROOT_LEVEL = {
+    "拓展思维": "小学", "知识标签": "小学", "小升初": "小学",
+    "课内体系": "初中", "美国amc8": "初中", "美国AMC8": "初中", "海外竞赛体系": "初中",
+    "竞赛": "高中", "Overseas Competition": "小学",
+}
+# 学段 → 年级桶：TAL 的题只在学段内轮转分配（保证 4~6 / 7~9 / 10~12 每个年级都有足够题），
+# 高考真题仍固定挂 12 年级（它们本来就是高三卷，不虚标）
+LEVEL_BUCKET_LIST = {"小学": [4, 5, 6], "初中": [7, 8, 9], "高中": [10, 11, 12]}
+_tal_seq = {}
 
 
-def fetch(url, name):
-    path = os.path.join(CACHE, name)
-    if not os.path.exists(path):
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=120) as r:
-            open(path, "wb").write(r.read())
-    return [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
+def fetch(url, path):
+    if os.path.exists(path) and os.path.getsize(path) > 200:
+        return path
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    req = urllib.request.Request(url, headers={"User-Agent": "FocusGuard-bank-builder"})
+    with urllib.request.urlopen(req, timeout=90) as r, open(path, "wb") as f:
+        f.write(r.read())
+    return path
 
 
-SUP = str.maketrans("0123456789+-=()nixyk", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱˣʸᵏ")
-SUB = str.maketrans("0123456789+-=()naeijkmoxt", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₙₐₑᵢⱼₖₘₒₓₜ")
-SYM = [
-    (r"\leqslant", "≤"), (r"\lt", "<"), (r"\gt", ">"), (r"\geqslant", "≥"), (r"\geqslant", "≥"), (r"\leq", "≤"), (r"\geq", "≥"), (r"\neq", "≠"),
-    (r"\le", "≤"), (r"\ge", "≥"), (r"\ne", "≠"), (r"\approx", "≈"), (r"\times", "×"),
-    (r"\cdots", "⋯"), (r"\ldots", "…"), (r"\dots", "…"), (r"\cdot", "·"), (r"\div", "÷"),
-    (r"\pm", "±"), (r"\infty", "∞"), (r"\notin", "∉"), (r"\in", "∈"), (r"\subseteq", "⊆"),
-    (r"\subsetneqq", "⫋"), (r"\subset", "⊂"), (r"\cup", "∪"), (r"\cap", "∩"), (r"\emptyset", "∅"),
-    (r"\varnothing", "∅"), (r"\forall", "∀"), (r"\exists", "∃"), (r"\Rightarrow", "⇒"),
-    (r"\Leftrightarrow", "⇔"), (r"\rightarrow", "→"), (r"\to", "→"), (r"\perp", "⊥"),
-    (r"\parallel", "∥"), (r"\angle", "∠"), (r"\triangle", "△"), (r"\odot", "⊙"), (r"\circ", "°"),
-    (r"\degree", "°"), (r"\prime", "′"), (r"\alpha", "α"), (r"\beta", "β"), (r"\gamma", "γ"),
-    (r"\delta", "δ"), (r"\Delta", "Δ"), (r"\theta", "θ"), (r"\lambda", "λ"), (r"\mu", "μ"),
-    (r"\pi", "π"), (r"\rho", "ρ"), (r"\sigma", "σ"), (r"\varphi", "φ"), (r"\phi", "φ"),
-    (r"\omega", "ω"), (r"\Omega", "Ω"), (r"\varepsilon", "ε"), (r"\epsilon", "ε"),
-    (r"\because", "∵"), (r"\therefore", "∴"), (r"\cong", "≅"), (r"\sim", "∼"), (r"\equiv", "≡"),
-    (r"\lg", "lg"), (r"\ln", "ln"), (r"\log", "log"), (r"\sin", "sin"), (r"\cos", "cos"),
-    (r"\tan", "tan"), (r"\max", "max"), (r"\min", "min"), (r"\lim", "lim"), (r"\%", "%"),
-    (r"\{", "{"), (r"\}", "}"), (r"\qquad", " "), (r"\quad", " "), (r"\,", " "), (r"\;", " "),
-    (r"\!", ""), (r"\ ", " "), (r"\mid", "|"), (r"\vert", "|"), (r"\|", "‖"),
-]
-WRAP_OK = re.compile(r"[\w.√π′]+")
+def clean(text):
+    if not text:
+        return ""
+    s = str(text).replace("\r", "")
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
 
 
-def brace(s, i):
-    depth = 0
-    for j in range(i, len(s)):
-        if s[j] == "{":
-            depth += 1
-        elif s[j] == "}":
-            depth -= 1
-            if depth == 0:
-                return s[i + 1:j], j + 1
-    raise ValueError("unbalanced")
+def parse_options(question):
+    """把内联选项（A. … B. …）拆出来，返回 (题干, [选项]) 或 (题干, None) 表示解析失败。"""
+    parts = OPT_SPLIT.split(question)
+    if len(parts) < 5:          # 至少要 A~D 四个选项：前导文本 + 4*(字母+内容)
+        return question, None
+    head = parts[0].strip()
+    opts, letters = [], []
+    for i in range(1, len(parts) - 1, 2):
+        letter, body = parts[i], parts[i + 1]
+        opts.append(letter + ". " + clean(body).replace("\n", " "))
+        letters.append(letter)
+    if len(opts) < 2 or len(opts) > 5:
+        return question, None
+    if letters != [chr(ord("A") + i) for i in range(len(letters))]:
+        return question, None
+    if len(head) < 8:
+        return question, None
+    return head, opts
 
 
-def arg(s, i):
-    while i < len(s) and s[i] == " ":
-        i += 1
-    if i < len(s) and s[i] == "{":
-        return brace(s, i)
-    if i < len(s) and s[i] == "\\":
-        m = re.match(r"\\[a-zA-Z]+", s[i:])
-        if m:
-            return s[i:i + m.end()], i + m.end()
-    return s[i:i + 1], i + 1
-
-
-def wrap(x):
-    return x if WRAP_OK.fullmatch(x) else "(" + x + ")"
-
-
-def conv(s):
-    """LaTeX 片段 → 可读文本（递归）。"""
-    for k in ("\\mathrm", "\\text", "\\mathbf", "\\mathit", "\\boldsymbol", "\\textbf",
-              "\\operatorname", "\\mathbb", "\\textrm"):
-        while k + "{" in s or k + " {" in s:
-            i = s.index(k)
-            j = s.index("{", i)
-            inner, e = brace(s, j)
-            s = s[:i] + inner + s[e:]
-    s = s.replace("\\{", "\u2983").replace("\\}", "\u2984")
-    for k in ("\\left", "\\right", "\\displaystyle", "\\limits"):
-        s = s.replace(k, "")
-    out, i = [], 0
-    while i < len(s):
-        if re.match(r"\\[dt]?frac", s[i:]):
-            j = i + re.match(r"\\[dt]?frac", s[i:]).end()
-            a, j = arg(s, j)
-            b, j = arg(s, j)
-            out.append(wrap(conv(a)) + "/" + wrap(conv(b)))
-            i = j
-        elif s.startswith("\\sqrt", i):
-            j, n = i + 5, ""
-            if j < len(s) and s[j] == "[":
-                k = s.index("]", j)
-                n, j = s[j + 1:k].translate(SUP), k + 1
-            a, j = arg(s, j)
-            root = {"3": "∛", "4": "∜"}.get(n.translate(str.maketrans("³⁴", "34")), n + "√")
-            out.append(root + wrap(conv(a)))
-            i = j
-        elif s.startswith("\\overrightarrow", i) or s.startswith("\\vec", i):
-            j = i + (15 if s.startswith("\\overrightarrow", i) else 4)
-            a, j = arg(s, j)
-            out.append("向量" + conv(a))
-            i = j
-        elif s.startswith("\\overline", i):
-            a, j = arg(s, i + 9)
-            out.append(conv(a) + "\u0305")
-            i = j
-        elif s[i] in "^_":
-            a, j = arg(s, i + 1)
-            a = conv(a)
-            t = a.translate(SUP if s[i] == "^" else SUB)
-            plain = not re.search(r"[A-Za-z]", t)
-            if plain:
-                out.append(t)
-            elif s[i] == "^":
-                out.append("^" + (a if re.fullmatch(r"[\w]+", a) else "(" + a + ")"))
-            else:
-                out.append(t if re.fullmatch(r"[\w]", a) else "_" + wrap(a))
-            i = j
-        elif s[i] == "\\":
-            for k, v in SYM:
-                if s.startswith(k, i) and not (k[-1].isalpha() and i + len(k) < len(s) and s[i + len(k)].isalpha()):
-                    out.append(v)
-                    i += len(k)
-                    break
-            else:
-                out.append(s[i])
-                i += 1
-        elif s[i] in "{}":
-            i += 1
-        else:
-            out.append(s[i])
-            i += 1
-    return "".join(out)
-
-
-def to_text(raw):
-    """整段文字（含 $...$ 公式）→ 可读文本；转不干净返回 None。"""
-    if raw is None:
+def make(grade, subject, q, opts, ans, exp, diff, src, module=""):
+    if not q or not ans or not exp:
         return None
-    s = str(raw)
-    if re.search(r"<img|\\begin|\\includegraphics|\\tikz|\\matrix|\\array|\\hline|如图|下图|图中|图示|图\s*\d|表格|下表", s):
+    if len(exp) < 20:
         return None
-    s = s.replace("$$", "$").replace("\\\\", "\n").replace("\\(", "$").replace("\\)", "$")
-    parts = s.split("$")
-    if len(parts) % 2 == 0:
+    cap = 1200 if subject in LONG_TEXT_SUBJECTS else 500
+    if len(q) > cap:
         return None
-    try:
-        res = "".join(conv(p) if k % 2 else p for k, p in enumerate(parts))
-    except (ValueError, IndexError):
+    if IMG_PAT.search(q) or IMG_PAT.search(exp):
         return None
-    res = res.replace("（\u3000\u3000）", "（ ）").replace("( )", "（ ）")
-    res = re.sub(r"[（(]\s*~\s*~?\s*[)）]", "（ ）", res).replace("~", " ")
-    res = res.replace("\u2983", "{").replace("\u2984", "}")
-    res = re.sub(r"``(.*?)''", r"“\1”", res).replace("``", "“").replace("''", "”")
-    res = re.sub(r"([∠△⊙]) ", r"\1", res)
-    res = re.sub(r"[ \t\u3000]+", " ", res)
-    res = re.sub(r"\n\s*\n+", "\n", res).strip()
-    # 残留反斜杠 = 未识别的 LaTeX 命令；花括号必须成对（集合记号）
-    if chr(92) in res or res.count("{") != res.count("}"):
+    if diff < 3:
         return None
-    return res
+    st = "SCIENCE" if subject in SCIENCE else ("HUMANITIES" if subject in HUMANITIES else "ALL")
+    # t = 知识点/主题（App 的 QuestionBank 读它当 topic；题型由 App 按 o/a 自行判定）
+    topic = module if module else subject
+    return {
+        "g": grade, "s": subject, "st": st, "t": topic, "d": diff,
+        "q": q, "o": opts or [], "a": str(ans).strip(), "e": exp,
+        "src": src,
+    }
 
 
-# 年级编码与 GradeStore.Grade.level 一致：1 小学 2 初一 3 初二 4 初三 5 高一 6 高二 7 高三 8 大学
-SRC_GRADE = [("高三", 7), ("高考", 7), ("高二", 6), ("高一", 5), ("中考", 4), ("初三", 4), ("九年级", 4),
-             ("初二", 3), ("八年级", 3), ("初一", 2), ("七年级", 2), ("小升初", 1), ("六年级", 1), ("五年级", 1)]
-# 无年级标签时按知识点判定学段（只收能确定的）
-KP_GRADE = [("导数", 7), ("圆锥曲线", 6), ("数列与数学归纳法", 6), ("排列组合与概率", 6), ("立体几何", 6),
-            ("复数与平面向量", 5), ("三角函数", 5), ("集合", 5), ("基本初等函数", 5), ("函数", 5)]
-# 竞赛 / 奥数来源：只在小学保留（奥数是小学常态），初中及以上视为超纲
-COMPETITION = re.compile(r"联赛|奥林匹克|奥赛|AMC|IMO|CMO|自主招生")
-# 一眼题：单步纯计算
-TRIVIAL = re.compile(r"^(计算|求)?[：:]?\s*[\d\s+\-×÷*/().=?？]+[=＝]?\s*[?？（(]?\s*[)）]?$")
-
-
-def tal_grade(r):
-    src = " ".join(r.get("competition_source_list") or [])
-    for k, g in SRC_GRADE:
-        if k in src:
-            return g, src
-    kp = " ".join(r.get("knowledge_point_routes") or [])
-    if "竞赛->知识点" in kp or "课内体系->知识点" in kp:
-        for k, g in KP_GRADE:
-            if k in kp:
-                return g, src
-    return None, src
-
-
-def topic_of(routes):
-    """知识点路径 → 模块名（用于换题互斥）。取第 3 段，如「函数」「数列与数学归纳法」。"""
-    if not routes:
-        return "综合"
-    parts = routes[0].split("->")
-    return parts[2] if len(parts) > 2 else parts[-1]
-
-
-def tal_keep(r, g, src, text):
-    d = int(r.get("difficulty") or 0)
-    if d == 0 or d >= 4:
-        return "difficulty"                       # 过易 / 竞赛压轴
-    if g >= 3 and d < 2 and len(text) < 40:
-        return "easy_for_grade"                   # 初二起：低难度短题视为过易
-    if d == 3 and g not in (1, 4, 7):
-        return "too_hard"                         # 难题只在小学奥数 / 高三保留
-    if g >= 2 and COMPETITION.search(src) and not re.search(r"期中|期末|月考|单元测试|学年", src):
-        return "competition"
-    if len(re.sub(r"\s", "", text)) < 18 or TRIVIAL.match(text):
-        return "trivial"
-    return None
-
-
-# AGIEval 学科 → (学科名, 选科)；数学所有人都出
-AGI_FILES = [("gaokao-mathqa.jsonl", "数学", "ALL"), ("gaokao-physics.jsonl", "物理", "SCIENCE"),
-             ("gaokao-chemistry.jsonl", "化学", "SCIENCE"), ("gaokao-biology.jsonl", "生物", "SCIENCE"),
-             ("gaokao-geography.jsonl", "地理", "HUMANITIES"), ("gaokao-history.jsonl", "历史", "HUMANITIES")]
-# 高二已学的高考数学知识（其余只放高三）
-SENIOR2_OK = re.compile(r"数列|等差|等比|椭圆|双曲线|抛物线|直线|圆|向量|三角|sin|cos|tan|集合|不等式|函数")
-SENIOR2_NOT = re.compile(r"导数|f′|f'|极值|单调区间|切线|积分|∫|围成|面积为|概率|分布|期望|二项|复数|排列|组合|充分|必要")
-# 文综只保留材料推理类
-REASONING = re.compile(r"材料|说明|反映|表明|体现|原因|影响|据此|推断|可知|意在|目的")
-
-
-def opts_of(raw_opts):
-    """统一为 ['A. xxx', ...]；任一选项转不干净返回 None。"""
-    out = []
-    for i, o in enumerate(raw_opts):
-        t = to_text(re.sub(r"^\s*\(?[A-H][).．、]\s*", "", o))
-        if not t or len(t) > 80:
-            return None
-        if re.search(r"[a-zA-Z0-9√)]\s*[√a-z]{2,}.*[√)][a-z0-9√]", t) and not re.search(r"[<>≤≥=,，、]", t) and len(t) > 12:
-            return None
-        out.append(f"{chr(65 + i)}. {t}")
-    return out
-
-
-def load_tal(drop):
+def load_gaokao_bench():
     items = []
-    for n in ["ch_single_choice_test_2K.jsonl", "ch_single_choice_train_3K.jsonl"]:
-        for r in fetch(TAL + n, n):
-            g, src = tal_grade(r)
-            if g is None:
-                drop["no_grade"] += 1; continue
-            opts = r.get("answer_option_list") or []
-            if not 3 <= len(opts) <= 5:
-                drop["option_count"] += 1; continue
-            q = to_text(r.get("problem"))
-            o = opts_of([x[0]["content"] for x in opts])
-            if not q or not o:
-                drop["latex"] += 1; continue
-            why = tal_keep(r, g, src, q)
-            if why:
-                drop[why] += 1; continue
-            ans = r.get("answer_value", "")
-            if len(ans) != 1 or ord(ans) - 65 >= len(o):
-                drop["answer"] += 1; continue
-            exp = to_text((r.get("answer_analysis") or [""])[0]) or ""
-            items.append(dict(g=g, s="数学", st="ALL", t=topic_of(r.get("knowledge_point_routes")),
-                              d=int(r["difficulty"]), q=q, o=o, a=ans, e=exp[:300], src="TAL-SCQ5K"))
+    files = []
+    for name in sorted(os.listdir(TMP)):
+        if name.endswith(".json") and ("MCQs" in name or "Cloze" in name or "Reading" in name or "Fill_in" in name or "Modern_Lit" in name):
+            files.append(os.path.join(TMP, name))
+    for d in ("up2023", "up2024"):
+        p = os.path.join(TMP, d)
+        if os.path.isdir(p):
+            files += [os.path.join(p, f) for f in sorted(os.listdir(p)) if f.endswith(".json")]
+    for path in files:
+        try:
+            data = json.load(open(path, encoding="utf-8"))
+        except Exception:
+            continue
+        key = os.path.basename(path).replace(".json", "")
+        subj_key = key.split("_", 1)[-1] if key[:4].isdigit() else key
+        subj_key = re.sub(r"^(20\d\d-20\d\d|20\d\d)_", "", key)
+        subject = None
+        for k, v in SUBJECTS.items():
+            if subj_key.startswith(k):
+                subject = v
+                break
+        if not subject:
+            continue
+        for ex in data.get("example", []):
+            q = clean(ex.get("question", ""))
+            ans = clean(ex.get("answer", ""))
+            exp = clean(ex.get("analysis", "") or ex.get("explanation", ""))
+            head, opts = parse_options(q)
+            if opts is None:
+                if not ans or len(ans) > 20:
+                    continue
+                head, opts = q, []
+            m = make(12, subject, head, opts, ans, exp, 4, "GAOKAO-Bench")
+            if m:
+                items.append(m)
     return items
 
 
-def load_agi(drop):
+def load_tal():
     items = []
-    for fname, subj, stream in AGI_FILES:
-        for r in fetch(AGI + fname, fname):
-            label = r.get("label")
-            ans = "".join(sorted(label)) if isinstance(label, list) else (label or "")
-            if not re.fullmatch(r"[A-D]{1,4}", ans):
-                drop["agi_answer"] += 1; continue
-            if r.get("passage"):
-                drop["agi_passage"] += 1; continue
-            q = to_text(r.get("question"))
-            o = opts_of(r.get("options") or [])
-            if not q or not o or len(o) != 4:
-                drop["agi_latex"] += 1; continue
-            if len(q) > 260:
-                drop["agi_long"] += 1; continue
-            if stream == "HUMANITIES" and not REASONING.search(q):
-                drop["agi_recall"] += 1; continue
-            # 高二 / 高三：未学内容只进高三
-            g = 6 if subj == "数学" and SENIOR2_OK.search(q) and not SENIOR2_NOT.search(q) else 7
-            src = (r.get("other") or {}).get("source", "高考")
-            exp = to_text(r.get("answer")) or ""
-            items.append(dict(g=g, s=subj, st=stream, t=subj, d=2, q=q, o=o, a=ans,
-                              e=(exp[:300] or f"本题出自{src}"), src=src))
+    for name in ("ch_single_choice_train_3K.jsonl", "ch_single_choice_test_2K.jsonl"):
+        path = fetch(f"https://raw.githubusercontent.com/math-eval/TAL-SCQ5K/main/ch_single_choice_constructed_5K/{name}",
+                     os.path.join(TMP, name))
+        for line in open(path, encoding="utf-8"):
+            try:
+                it = json.loads(line)
+            except Exception:
+                continue
+            routes = it.get("knowledge_point_routes") or []
+            flat = []
+            for r in routes:
+                # TAL 的路径用 "->" 分隔（也兼容 "/"）
+                flat += [p.strip() for p in re.split(r"->|/", str(r)) if p.strip()]
+            root = flat[0].strip() if flat else ""
+            level = TAL_ROOT_LEVEL.get(root)
+            if level is None:                              # 首段认不出就不收（宁缺勿滥）
+                continue
+            module = next((p for p in flat if p.endswith("模块")), "")
+            if not module:
+                module = next((p for p in reversed(flat) if p in TAL_MODULE_GRADE), "数学")
+            diff = min(int(it.get("difficulty") or 0) + 2, 5)   # TAL 0–4 → 2–6，取 >=3
+            buckets = LEVEL_BUCKET_LIST.get(level, [6])
+            idx = _tal_seq.get(level, 0)
+            _tal_seq[level] = idx + 1
+            grade = buckets[idx % len(buckets)]
+            opts = it.get("options") or it.get("answer_option_list") or []
+            opts = [clean(o) for o in opts if clean(o)]
+            if not opts and len(clean(it.get("problem", ""))) > 12:
+                head, parsed = parse_options(clean(it.get("problem", "")))
+                if parsed:
+                    opts = parsed
+            ans = it.get("answer_value") or it.get("answer") or ""
+            if not opts:                                   # 无选项 ⇒ 当填空题（答案要短）
+                if len(clean(ans)) > 20:
+                    continue
+            m = make(grade, "数学", clean(it.get("problem", "")), opts if opts else None,
+                     ans, clean(it.get("answer_analysis", "")), diff, "TAL-SCQ5K", module)
+            if m:
+                items.append(m)
+    return items
+
+
+def load_agieval():
+    items = []
+    base = "https://raw.githubusercontent.com/ruixiangcui/AGIEval/main/data/v1_1/"
+    tasks = {
+        "gaokao-physics": "物理", "gaokao-chemistry": "化学", "gaokao-biology": "生物",
+        "gaokao-history": "历史", "gaokao-geography": "地理", "gaokao-mathcloze": "数学",
+        "gaokao-mathqa": "数学", "gaokao-chinese": "语文", "gaokao-english": "英语",
+    }
+    for task, subject in tasks.items():
+        path = os.path.join(TMP, "agieval", task + ".jsonl")
+        try:
+            fetch(base + task + ".jsonl", path)
+        except Exception:
+            continue
+        for line in open(path, encoding="utf-8"):
+            try:
+                it = json.loads(line)
+            except Exception:
+                continue
+            q = clean(it.get("question", ""))
+            if it.get("passage"):
+                q = clean(it["passage"]) + "\n\n" + q
+            opts = [clean(o) for o in (it.get("options") or []) if clean(o)]
+            ans = it.get("answer")
+            if ans is None:
+                lab = it.get("label")
+                ans = chr(ord("A") + int(lab)) if isinstance(lab, int) else lab
+            exp = clean(it.get("analysis", "") or it.get("explanation", ""))
+            m = make(12, subject, q, opts if opts else None, ans, exp, 4, "AGIEval")
+            if m:
+                items.append(m)
     return items
 
 
 def main():
-    drop = collections.Counter()
-    items = load_tal(drop) + load_agi(drop)
+    all_items = []
+    for loader, name in ((load_gaokao_bench, "GAOKAO-Bench"), (load_tal, "TAL-SCQ5K"), (load_agieval, "AGIEval")):
+        got = loader()
+        print("  %-14s %d 条" % (name, len(got)))
+        all_items += got
     # 去重
-    seen, uniq = set(), []
-    for it in items:
-        k = re.sub(r"\s", "", it["q"])[:60]
-        if k not in seen:
-            seen.add(k); uniq.append(it)
-    # 难题占比上限：每年级难度 3 不超过 10%
-    random.seed(20261002)
-    final = []
-    for g in range(1, 9):
-        rows = [x for x in uniq if x["g"] == g]
-        hard = [x for x in rows if x["d"] >= 3]
-        keep_hard = hard[:max(0, len([x for x in rows if x["d"] < 3]) // 9)]
-        drop["hard_cap"] += len(hard) - len(keep_hard)
-        final += [x for x in rows if x["d"] < 3] + keep_hard
+    seen, dedup = set(), []
+    for it in all_items:
+        h = hashlib.sha1((it["q"][:400] + it["a"]).encode("utf-8")).hexdigest()
+        if h in seen:
+            continue
+        seen.add(h)
+        dedup.append(it)
+    # 难度 5 档限流（<=10%）
+    five = [x for x in dedup if x["d"] == 5]
+    limit = int(len(dedup) * 0.10)
+    if len(five) > limit:
+        keep5 = set(id(x) for x in five[:limit])
+        dedup = [x for x in dedup if x["d"] != 5 or id(x) in keep5]
+    dedup.sort(key=lambda x: (x["g"], x["s"], x["q"][:30]))
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    # 直接写未压缩 JSON：aapt 会把 .gz 资源改名（question_bank.json.gz -> question_bank.json），
-    # 曾因此导致运行时按原名打开失败、静默回退到计算题。
-    with open(OUT, "w", encoding="utf-8") as fp:
-        json.dump(final, fp, ensure_ascii=False, separators=(",", ":"))
-    open(LIC, "w", encoding="utf-8").write(
-        "本应用答题题库整理自以下开源数据集（MIT License）：\n"
-        "1. TAL-SCQ5K，好未来（TAL Education），https://github.com/math-eval/TAL-SCQ5K\n"
-        "2. AGIEval（高考部分），Microsoft，https://github.com/ruixiangcui/AGIEval\n"
-        "题目经过年级判定、难度筛选与公式格式转换。\n")
-    names = {1: "小学", 2: "初一", 3: "初二", 4: "初三", 5: "高一", 6: "高二", 7: "高三", 8: "大学"}
-    print("最终题量", len(final), "文件", os.path.getsize(OUT) // 1024, "KB")
-    for g in range(1, 9):
-        rows = [x for x in final if x["g"] == g]
-        print(f"  {names[g]}: {len(rows):4d}  学科{dict(collections.Counter(x['s'] for x in rows))}  "
-              f"难度{dict(sorted(collections.Counter(x['d'] for x in rows).items()))}  "
-              f"多选{sum(1 for x in rows if len(x['a']) > 1)}")
-    print("丢弃原因", dict(drop.most_common()))
+    json.dump(dedup, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    print("  写出 %d 条 → %s（%.2f MB）" % (len(dedup), OUT, os.path.getsize(OUT) / 1048576))
+    g = collections.Counter(x["g"] for x in dedup)
+    print("  年级:", dict(sorted(g.items())))
+    s = collections.Counter(x["s"] for x in dedup)
+    print("  学科:", dict(sorted(s.items(), key=lambda kv: -kv[1])))
+    d = collections.Counter(x["d"] for x in dedup)
+    print("  难度:", dict(sorted(d.items())))
+    print("  来源:", dict(collections.Counter(x["src"] for x in dedup)))
+    print("  主题 Top8:", collections.Counter(x["t"] for x in dedup).most_common(8))
 
 
 if __name__ == "__main__":

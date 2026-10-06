@@ -1,4 +1,29 @@
-本应用答题题库整理自以下开源数据集（MIT License）：
-1. TAL-SCQ5K，好未来（TAL Education），https://github.com/math-eval/TAL-SCQ5K
-2. AGIEval（高考部分），Microsoft，https://github.com/ruixiangcui/AGIEval
-题目经过年级判定、难度筛选与公式格式转换。
+FocusGuard 学段版内置题库 —— 数据来源与许可声明
+================================================
+本文件所列数据集均为开源数据，题目经 tools/build_question_bank.py 统一清洗后打包进 APK。
+每题保留 src 字段标注来源；如需核对单题出处，请按该字段回溯原始数据集。
+
+1) TAL-SCQ5K（中文单选 3K + 2K）
+   作者：TAL Education Group（Math-eval 项目）
+   地址：https://github.com/math-eval/TAL-SCQ5K
+   许可：MIT
+   用途：小学数学（奥数）与初中数学题，含解题分析 answer_analysis 与难度 difficulty。
+   学段判定：按知识点路由首段（拓展思维=小学 / 课内体系=初中 / 竞赛=高中）。
+
+2) GAOKAO-Bench 与 GAOKAO-Bench-Updates（2010–2024 高考客观题）
+   作者：OpenLMLab（复旦大学）
+   地址：https://github.com/OpenLMLab/GAOKAO-Bench
+         https://github.com/OpenLMLab/GAOKAO-Bench-Updates
+   许可：Apache-2.0
+   用途：高中各科高考真题（语文 / 英语 / 数学 / 物理 / 化学 / 生物 / 政治 / 历史 / 地理），含解析 analysis。
+
+筛选规则（见 tools/build_question_bank.py 顶部注释）：
+   - 必须带详细解析（>=20 字）；必须有可作答形式（2~5 个选项，或答案 <= 20 字的填空题）
+   - 排除依赖图片的题目（App 不渲染图片）、排除题干超长的综合大题、按题干哈希去重
+   - 难度档 d：3=单元测中难 / 4=期末·高考 / 5=压轴；只收 d>=3，且 d==5 占比 <= 10%
+   - 年级桶：按数据集自带的学段/年级信号判定（小学 4~6、初中 7~9、高中 10~12），不做无依据猜测
+
+未收录（本机访问不到，或缺少解析）：
+   - C-Eval（CC BY-NC-SA 4.0）、CMMLU（无解析字段）、M3Exam（无许可证且加密）、
+     CMATH（仅小数 dev 且无解析）、MathBench（数据在 release/HF 未取到）
+   以上数据集若后续可取，可按同一脚本扩展（脚本已支持 C-Eval/CMMLU 之外的通用结构）。
