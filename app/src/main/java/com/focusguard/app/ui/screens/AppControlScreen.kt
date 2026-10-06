@@ -256,6 +256,7 @@ fun AppControlScreen() {
                             val catStore = AppCategoryStore.shared(context)
                             val ruleStore = UsageRuleStore.shared(context)
                             val blockStore = AppBlockStore(context)
+                            var anyHardBlock = false
                             targets.forEach { pkg ->
                                 if (clear) {
                                     blockStore.clear(pkg)
@@ -267,8 +268,16 @@ fun AppControlScreen() {
                                 if (category != null) catStore.setUserOverride(pkg, category)
                                 if (trigger != null || hard != null) {
                                     val cur = ruleStore.getRule(pkg)
-                                    val t = trigger ?: cur?.triggerMinutes
-                                    val h = hard ?: cur?.hardBlockMinutes
+                                    var t = trigger ?: cur?.triggerMinutes
+                                    var h = hard ?: cur?.hardBlockMinutes
+                                    // AppUsageRule 要求 hard >= trigger：
+                                    // 只填了允许时长而旧的硬封锁更小 ⇒ 抬到相等；
+                                    // 只填了硬封锁而旧的允许时长更大 ⇒ 把允许时长压到相等。
+                                    if (t != null && h != null) {
+                                        if (h < t) h = t
+                                        if (t > h) t = h
+                                    }
+                                    if (h != null) anyHardBlock = true
                                     if (t != null || h != null) {
                                         runCatching { ruleStore.setRule(AppUsageRule(pkg, t, h)) }
                                     }
@@ -277,6 +286,12 @@ fun AppControlScreen() {
                                 ruleStore.resetToday(pkg)
                             }
                             if (clear) com.focusguard.app.enforce.AppBlockOverlay.hide()
+                            // 设了硬封锁就必须让守护跑起来，否则"超时后仍可使用"（单应用弹窗里也是这么做的）
+                            if (anyHardBlock) {
+                                com.focusguard.app.service.LockGuardService.start(context)
+                                com.focusguard.app.service.GuardWatchdogWorker.schedule(context)
+                            }
+                            com.focusguard.app.enforce.AppBlockActivity.let { }
                             AppInventory.invalidate()
                             batchMsg = if (clear) "已清除 ${targets.size} 个应用的管控规则"
                             else "已更新 ${targets.size} 个应用的设置"

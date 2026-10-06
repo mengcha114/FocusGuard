@@ -203,6 +203,8 @@ fun GradeSettingCard() {
             onDone = {
                 grade = store.grade
                 stream = store.stream
+                term = store.term
+                termRevision++
                 show = false
             },
             onDismiss = { show = false }
