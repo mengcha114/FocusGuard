@@ -158,13 +158,15 @@ def latex_to_text(s):
     t = re.sub(r"\^\s*\{([^{}]*)\}", sup, t)
     t = re.sub(r"_\s*\{([^{}]*)\}", sub, t)
     t = re.sub(r"\^\s*([0-9])", lambda m: _script(m.group(1), SUP) or m.group(0), t)
-    for k, v in LATEX_SYMBOLS.items():
-        t = t.replace(k, v)
+    # 长键优先：否则 \le 会先吃掉 \left 的前缀（生成 "≤ft"）、\cdot 吃掉 \cdots（"·s"）
+    for k in sorted(LATEX_SYMBOLS, key=len, reverse=True):
+        t = t.replace(k, LATEX_SYMBOLS[k])
     t = re.sub(r"\\[a-zA-Z]+", "", t)                   # 其余未知命令直接去掉
     t = t.replace("$$", "").replace("$", "")
     t = t.replace("\\", " ").replace("\n\n\n", "\n\n")
     t = t.replace("{", "").replace("}", "")              # 残留花括号一律去掉
     t = re.sub(r"[ \t]{2,}", " ", t)
+    t = re.sub(r"^[（(]?[★☆]+[)）]?\s*", "", t)          # 去掉题首的 (★★) 难度标记
     return t.strip()
 
 
@@ -182,6 +184,12 @@ def option_text(o):
     if isinstance(o, (list, tuple)) and o:
         return option_text(o[-1])
     return str(o)
+CJK_PAT = re.compile(r"[\u4e00-\u9fff]")
+
+
+def cjk_count(s):
+    return len(CJK_PAT.findall(str(s or "")))
+
 
 def clean(text):
     if not text:
@@ -321,8 +329,14 @@ def load_tal():
             if not opts:                                   # 无选项 ⇒ 当填空题（答案要短）
                 if len(clean(ans)) > 20:
                     continue
-            m = make(grade, "数学", clean(it.get("problem", "")), opts if opts else None,
-                     ans, clean(it.get("answer_analysis", "")), diff, "TAL-SCQ5K", module)
+            problem = clean(it.get("problem", ""))
+            analysis = clean(it.get("answer_analysis", ""))
+            # TAL 数据集里混有 Math League / WMO 等纯英文原题（中文用户答不了），
+            # 题干与解析都几乎没有中文的一律丢弃
+            if cjk_count(problem) < 10:
+                continue
+            m = make(grade, "数学", problem, opts if opts else None,
+                     ans, analysis, diff, "TAL-SCQ5K", module)
             if m:
                 items.append(m)
     return items

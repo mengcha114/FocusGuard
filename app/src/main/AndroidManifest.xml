@@ -82,11 +82,14 @@
                 android:resource="@xml/file_paths" />
         </provider>
         
-        <!-- 是否从最近任务里隐藏由设置项「隐藏最近任务」控制（默认隐藏：
-             防止被顺手划掉=杀进程导致守护中断），这里不再写死 -->
+        <!-- 始终不进最近任务：运行时的 finishAndRemoveTask() 在"用户按最近任务键"这条
+             路径上不可靠（按 Home 能隐藏、进最近任务仍看得到卡片，实测），所以这里写死。
+             设置页的「隐藏最近任务」开关已改为仅作说明（不再生效）。
+             应用图标仍可正常启动。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:theme="@style/Theme.FocusGuard">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
