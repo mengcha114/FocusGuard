@@ -304,9 +304,10 @@ fun SettingsScreen(
             var shotDetection by remember { mutableStateOf(settings.screenshotDetection) }
             com.focusguard.app.ui.components.SwitchRow(
                 title = "截屏识别",
-                hint = "打开时用无障碍能力截图识别画面（不会出现「正在共享屏幕」，也不影响通知栏内容）；" +
-                    "关掉后完全不截屏，只按应用名和屏幕文字判断 —— " +
-                    "如果开守护后发现通知栏看不到微信内容，把这项关掉即可恢复",
+                hint = "打开（默认）：优先用无障碍能力截图（Android 11+ 且无障碍已连，不弹共享屏幕、不影响通知栏内容）；" +
+                    "做不到时（低版本或无障碍没开）自动改用录屏。\n" +
+                    "关掉：完全不截屏，只按应用名和屏幕文字判断 —— " +
+                    "如果开守护后发现通知栏看不到微信内容，把这项关掉即可恢复（代价：纯画面内容识别不到）",
                 checked = shotDetection,
                 enabled = true
             ) { value ->

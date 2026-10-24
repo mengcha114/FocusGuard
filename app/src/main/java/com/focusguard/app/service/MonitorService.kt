@@ -417,7 +417,8 @@ class MonitorService : Service() {
         // 低版本只能用 MediaProjection，否则会「一轮都抓不到画面」（实测 B 站被跳过）。
         val a11yReady = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             com.focusguard.app.access.GuardAccessibilityService.instance != null
-        val wantProjection = data != null && (!a11yReady || !settings.screenshotDetection)
+        // 语义：开关关 ⇒ 完全不截屏（纯文字）；开关开 ⇒ 无障碍截图优先，做不到（低版本/无障碍没开）再回落录屏
+        val wantProjection = data != null && settings.screenshotDetection && !a11yReady
 
         // 复用旧会话前先回收，避免同时存在两个 MediaProjection（Android 14 每次授权都是新会话）
         if (mediaProjection != null) {

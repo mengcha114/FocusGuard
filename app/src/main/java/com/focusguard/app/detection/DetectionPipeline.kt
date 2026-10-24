@@ -309,8 +309,10 @@ class DetectionPipeline(
         val capture: com.focusguard.app.capture.CaptureResult? =
             if (projection != null) {
                 screenCapturer.capture(projection)
-            } else {
+            } else if (settings.screenshotDetection) {
                 com.focusguard.app.capture.AccessibilityCapturer.capture()
+            } else {
+                null
             }
         if (capture == null) {
             return DetectionOutcome(
