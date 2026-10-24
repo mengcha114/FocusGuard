@@ -31,7 +31,8 @@ object UpdateChecker {
 
     // ── Gitee 镜像（国内可达；正式版通道的首选）──
     private const val GITEE_REPO = "https://gitee.com/autumiao/FocusGuard"
-    private const val GITEE_API_LATEST = "https://gitee.com/api/v5/repos/autumiao/FocusGuard/releases/latest"
+    /** 版本清单（raw 文件：公开、免 token；Gitee 的 API 不带 token 会 404）。 */
+    private const val GITEE_MANIFEST = "https://gitee.com/autumiao/FocusGuard/raw/master/update.json"
     private const val GITEE_DL = "$GITEE_REPO/releases/download"
     private const val API_BETA = "https://api.github.com/repos/mengcha114/FocusGuard/releases/tags/ci-latest"
 
@@ -92,27 +93,20 @@ object UpdateChecker {
      * 取 tag / 说明 / 本 flavor 的 asset 下载地址；Gitee 上没有的附件仍按固定命名拼。
      */
     private fun probeGitee(): Probe {
-        val json = httpGet(GITEE_API_LATEST) ?: return Probe(false, null)
+        val json = httpGet(GITEE_MANIFEST) ?: return Probe(false, null)
         val obj = runCatching { JSONObject(json) }.getOrNull() ?: return Probe(false, null)
-        val tag = obj.optString("tag_name").trim().ifBlank { return Probe(false, null) }
-        val notes = obj.optString("body").trim().take(1200)
-        val page = obj.optString("html_url").ifBlank { "$GITEE_REPO/releases/tag/$tag" }
-        // 优先用接口给出的附件直链（Gitee 的附件 URL 带 tag 路径）
-        val wanted = assetName()
-        val direct = runCatching {
-            val arr = obj.optJSONArray("assets") ?: return@runCatching null
-            (0 until arr.length())
-                .map { arr.optJSONObject(it) }
-                .firstOrNull { it?.optString("name") == wanted }
-                ?.optString("browser_download_url")
-                ?.takeIf { it.isNotBlank() }
+        val tag = obj.optString("tag").trim().ifBlank { return Probe(false, null) }
+        val notes = obj.optString("notes").trim().take(1200)
+        val key = if (BuildConfig.CHALLENGE_MODE == "edu") "edu" else "general"
+        val url = runCatching {
+            obj.optJSONObject("assets")?.optString(key)?.takeIf { it.isNotBlank() }
         }.getOrNull()
         if (compareVersions(currentVersion(), tag) >= 0) return Probe(true, null)
         return Probe(true, UpdateInfo(
             tag = tag,
             notes = notes,
-            downloadUrl = direct ?: "$GITEE_DL/$tag/$wanted",
-            pageUrl = page
+            downloadUrl = url ?: "$GITEE_DL/$tag/${assetName()}",
+            pageUrl = "$GITEE_REPO/releases/tag/$tag"
         ))
     }
 

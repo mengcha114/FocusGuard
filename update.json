@@ -1,0 +1,8 @@
+{
+  "tag": "v3.11.47",
+  "notes": "新增了定时锁机：按周定时，到点自动锁机（锁机模式页第三个模式）\n新增了锁机页的定时锁机入口：点开即可查看 / 新增计划\n新增了 AI 聊天控制定时锁机（例如「21 点锁我 2 小时」）\n优化了定时锁机界面：日期与时长预设、下次触发预览、小屏可滚动\n优化了设置项按权限显示：未授权时只出现可用的普通设置\n修复了定时计划改小（更短 / 更弱 / 更少天数）未验证，现在关闭、删除、改小都要答题\n修复了答题学段、答题进度、语音助手拦截、点击下载闪退、录屏只能选单个应用\n优化了题库：只保留课内科目，替换掉纯概念题\n优化了检测更新：优先使用 Gitee 镜像（国内更快，GitHub 自动兜底）",
+  "assets": {
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.47/app-edu-debug.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.47/app-general-debug.apk"
+  }
+}
