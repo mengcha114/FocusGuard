@@ -54,6 +54,8 @@ fun ScheduledLockCard() {
     var adding by remember { mutableStateOf(false) }
     var pendingLoosen by remember { mutableStateOf<(() -> Unit)?>(null) }
     var hint by remember { mutableStateOf<String?>(null) }
+    // 锁机期间不允许改动计划（只能看）：新增/编辑/关闭/删除全部禁用
+    val locked = remember { LockState(context).isLocked }
 
     fun persist(list: List<ScheduledLockRule>) {
         rules = list
@@ -123,7 +125,9 @@ fun ScheduledLockCard() {
                         )
                     }
                     Row {
-                        TextButton(onClick = { editing = rule }) { Text("编辑", fontSize = 12.sp) }
+                        TextButton(onClick = { editing = rule }, enabled = !locked) {
+                            Text("编辑", fontSize = 12.sp)
+                        }
                         TextButton(onClick = { loosen { persist(rules.filterNot { it.id == rule.id }) } }) {
                             Text("删除", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                         }
@@ -137,9 +141,10 @@ fun ScheduledLockCard() {
         }
         Button(
             onClick = { adding = true },
+            enabled = !locked,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp)
-        ) { Text("新增定时锁机", fontSize = 14.sp) }
+        ) { Text(if (locked) "锁机期间不能修改计划" else "新增定时锁机", fontSize = 14.sp) }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
         Text(
