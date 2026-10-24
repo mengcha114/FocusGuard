@@ -86,7 +86,16 @@ class LockGuardService : Service() {
                     app.startService(intent)
                 }
             } catch (e: Exception) {
+                // Android 12+ 从后台启动前台服务会被限制
+                // （ForegroundServiceStartNotAllowedException）。未授予「悬浮窗」权限时
+                // 这条几乎必现——静默失败会让用户以为守护还开着（最危险的状态）。
                 Log.w(TAG, "启动锁机守护失败：${e.message}")
+                AlertNotifier.alert(
+                    app,
+                    "守护未能自动启动",
+                    "系统限制了后台启动（常见于未授予「悬浮窗」权限时）。点开应用即可恢复守护。",
+                    id = 1011
+                )
             }
             // 自愈闹钟：进程被杀后由系统闹钟在 5 秒内拉活守护并恢复锁机
             // （华为/荣耀 ROM 的 START_STICKY 重启延迟 5-10 秒——破解窗口）。

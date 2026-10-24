@@ -69,6 +69,21 @@ object PermissionChecker {
         }
     }
 
+    /**
+     * Android 12+ 的「闹钟和提醒」（精确闹钟）权限。
+     *
+     * 低版本恒为 true（那时没有这个权限）。Android 14 起新装默认**关闭**：
+     * 不给也能跑，但守护被杀后那套「2 秒/30 秒自愈闹钟」会退化成非精确
+     * （Doze 下最长 ~15 分钟），而且**非精确闹钟不享受后台启动前台服务的豁免**。
+     */
+    fun canScheduleExactAlarms(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        return runCatching {
+            (context.getSystemService(Context.ALARM_SERVICE) as? android.app.AlarmManager)
+                ?.canScheduleExactAlarms() ?: false
+        }.getOrDefault(false)
+    }
+
     fun isBatteryOptimizationIgnored(context: Context): Boolean {
         val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
         return pm.isIgnoringBatteryOptimizations(context.packageName)

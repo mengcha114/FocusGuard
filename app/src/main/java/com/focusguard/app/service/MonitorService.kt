@@ -322,9 +322,7 @@ class MonitorService : Service() {
                     // 直接 stopSelf 会让系统在 5 秒后按
                     // ForegroundServiceDidNotStartInTime 杀掉整个进程
                     // ——表现就是「没有任何崩溃日志的闪退」。
-                    runCatching {
-                        startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null))
-                    }
+                    startForegroundSafely(withProjection = false)
                     stopSelf()
                 }
             }
@@ -408,15 +406,25 @@ class MonitorService : Service() {
         }
     }
 
-    private fun startForegroundSafely(withProjection: Boolean) {
+    /**
+     * 前台化。**前台服务类型必须如实申报**。
+     *
+     * 2 参 `startForeground()` 在 Android 14 上等价于「按清单声明的**全部**类型申报」
+     * ——清单里是 `mediaProjection|dataSync`，而调用点此时可能**还没有投影授权**，
+     * 这个不成立的类型声明会被系统拒绝（`SecurityException`），被 runCatching 吞掉后
+     * 表现为「前台化静默失败、守护起不来」。所以 API 29+ 一律显式传类型：
+     * 没有投影就只报 `dataSync`。
+     */
+    private fun startForegroundSafely(withProjection: Boolean): Boolean {
         val ok = runCatching {
-            if (withProjection && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    FocusGuardApp.NOTIFICATION_ID,
-                    buildNotification(null),
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val type = if (withProjection) {
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or
                         android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                )
+                } else {
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                }
+                startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null), type)
             } else {
                 startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null))
             }
@@ -426,12 +434,10 @@ class MonitorService : Service() {
             Log.w(TAG, "前台化失败（类型校验或权限不足），停止服务避免 5 秒后被杀进程")
             runCatching { stopSelf() }
         }
+        return ok
     }
 
     private fun startMonitoring(resultCode: Int, data: Intent?) {
-        // 先按 dataSync 前台化（此时还没有投影，不能声明 mediaProjection 类型）
-        startForegroundSafely(withProjection = false)
-
         // 截屏来源优先级：无障碍截图 ＞ 投影。
         // 常驻投影会让系统/部分 ROM 把通知正文隐藏（用户实测），所以只要无障碍可用就不用投影。
         // 无障碍截图是 Android 11（API 30）才有的能力；
@@ -441,6 +447,12 @@ class MonitorService : Service() {
         // 语义（用户定义）：开关开 ⇒ 无障碍截图；开关关 ⇒ 共享屏幕（录屏）。
         // 低版本(<11)/无障碍没开时无障碍截图不存在，只能回落到录屏，否则一轮都抓不到画面。
         val wantProjection = data != null && (!settings.screenshotDetection || !a11yReady)
+
+        // 前台化必须排在 getMediaProjection **之前**，而且类型要如实：
+        // ① Android 10+ 规定「已有一个 mediaProjection 类型的前台服务」才允许取投影；
+        // ② Android 14 又不允许在没有投影授权时申报 mediaProjection 类型。
+        // 两个约束同时满足的唯一顺序 = 有授权数据就先按 mediaProjection|dataSync 前台化，再取投影。
+        if (!startForegroundSafely(withProjection = wantProjection)) return
 
         // 复用旧会话前先回收，避免同时存在两个 MediaProjection（Android 14 每次授权都是新会话）
         if (mediaProjection != null) {
@@ -462,8 +474,6 @@ class MonitorService : Service() {
         }
 
         if (projection != null) {
-            // 建投影前先把前台服务升级为 mediaProjection 类型（Android 14 要求）
-            startForegroundSafely(withProjection = true)
             // Android 14 起必须在 createVirtualDisplay 之前注册回调
             projection.registerCallback(projectionCallback, null)
         } else {

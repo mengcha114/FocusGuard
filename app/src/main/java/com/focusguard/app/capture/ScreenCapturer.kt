@@ -133,18 +133,34 @@ class ScreenCapturer(context: Context) : Closeable {
     private fun ensureDisplay(projection: MediaProjection) {
         if (imageReader != null && virtualDisplay != null) return
 
+        // 上一轮失败可能留下「reader 有、display 没有」的半成品：先清掉，
+        // 否则每轮都会再建一个 ImageReader（泄漏），而 Android 14 起
+        // 一个 MediaProjection 只能成功 createVirtualDisplay 一次。
+        runCatching { imageReader?.close() }
+        imageReader = null
+
         val reader = ImageReader.newInstance(
             targetWidth, targetHeight, PixelFormat.RGBA_8888, 2
         )
         imageReader = reader
-        virtualDisplay = projection.createVirtualDisplay(
-            "FocusGuardCapture",
-            targetWidth, targetHeight, screenDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            reader.surface,
-            null,
-            handler
-        )
+        val display = runCatching {
+            projection.createVirtualDisplay(
+                "FocusGuardCapture",
+                targetWidth, targetHeight, screenDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                reader.surface,
+                null,
+                handler
+            )
+        }.onFailure { Log.e(TAG, "创建虚拟显示失败", it) }.getOrNull()
+
+        if (display == null) {
+            // 建不出来就把 reader 也收掉，别把半成品留在字段里
+            runCatching { reader.close() }
+            imageReader = null
+            return
+        }
+        virtualDisplay = display
         Log.d(TAG, "VirtualDisplay 就绪 ${targetWidth}x$targetHeight")
     }
 

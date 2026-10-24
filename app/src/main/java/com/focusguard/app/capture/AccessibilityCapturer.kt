@@ -69,7 +69,25 @@ object AccessibilityCapturer {
         }
     }
 
-    private suspend fun shot(): Bitmap? = withContext(Dispatchers.Main) {
+    /** Android 14 起截屏有 ~333ms 频率限制，被限流时返回这个错误码（不是"不支持"）。 */
+    private const val ERROR_INTERVAL_TIME_SHORT = 3
+    private const val THROTTLE_RETRY_DELAY_MS = 400L
+
+    /** 最近一次失败的错误码，供 [shot] 判断是否只是被限流。 */
+    @Volatile
+    private var lastErrorCode = 0
+
+    private suspend fun shot(): Bitmap? {
+        val first = shotOnce()
+        if (first != null) return first
+        // 被限流就等过窗口再试一次：否则这一轮直接变成「屏幕内容不可用」，
+        // 用户看到的是"检测漏了一次"，而不是"这次调用太密"。
+        if (lastErrorCode != ERROR_INTERVAL_TIME_SHORT) return null
+        kotlinx.coroutines.delay(THROTTLE_RETRY_DELAY_MS)
+        return shotOnce()
+    }
+
+    private suspend fun shotOnce(): Bitmap? = withContext(Dispatchers.Main) {
         val service = GuardAccessibilityService.instance ?: return@withContext null
         suspendCancellableCoroutine { cont ->
             val resumed = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -77,8 +95,14 @@ object AccessibilityCapturer {
                 if (resumed.compareAndSet(false, true) && cont.isActive) cont.resume(bmp)
             }
             try {
-                service.captureScreenshot { bmp ->
-                    if (bmp == null) noteFailure(service) else resetFailure()
+                service.captureScreenshot { bmp, errorCode ->
+                    lastErrorCode = if (bmp == null) errorCode else 0
+                    if (bmp == null) {
+                        // 限流属于正常节流，不计入「连续失败 3 次 ⇒ 提示改用共享屏幕」
+                        if (errorCode != ERROR_INTERVAL_TIME_SHORT) noteFailure(service)
+                    } else {
+                        resetFailure()
+                    }
                     finish(bmp)
                 }
             } catch (t: Throwable) {

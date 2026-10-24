@@ -54,7 +54,8 @@ fun PermissionSetupScreen(
     }
 
     val permissions = remember(refreshKey) {
-        listOf(
+        // listOfNotNull：精确闹钟只有 Android 12+ 才有，低版本不显示（不做假开关）
+        listOfNotNull(
             PermissionItem(
                 key = "usage_stats",
                 title = "应用使用情况（必需）",
@@ -133,7 +134,19 @@ fun PermissionSetupScreen(
                 // 授权后回到本页立即显示为已授权
                 isGranted = com.focusguard.app.enhance.DhizukuEnhancer.autoCheck(context),
                 isRequired = false
-            )
+            ),
+            // ── Android 12+：守护被杀后靠它秒级拉回（14+ 新装默认关闭） ──
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                PermissionItem(
+                    key = "exact_alarm",
+                    title = "闹钟和提醒（Android 12+）",
+                    description = "守护被系统杀掉后靠它秒级拉回、待办到期也能准时提醒。" +
+                        "Android 14 起这项默认关闭：不开也能用，但被杀后恢复会慢很多",
+                    icon = Icons.Default.Schedule,
+                    isGranted = PermissionChecker.canScheduleExactAlarms(context),
+                    isRequired = false
+                )
+            } else null
         )
     }
 

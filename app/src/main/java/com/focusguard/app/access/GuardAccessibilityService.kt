@@ -147,13 +147,22 @@ class GuardAccessibilityService : AccessibilityService() {
     private var lastBlockerAt = 0L
 
     /**
+     * 截屏失败码。常量值取自 [AccessibilityService]：
+     * 1 = 无无障碍访问、2 = 显示器无效、3 = 调用过于频繁（Android 14 起有 ~333ms 限流）、
+     * 4 = 内部错误、5 = 安全窗口（FLAG_SECURE）。这里用字面量是为了避开
+     * 「API 34 才有的常量在低版本类里找不到」的坑。
+     */
+    private val ERROR_NO_ACCESSIBILITY_ACCESS = 1
+    private val ERROR_INTERNAL = 4
+
+    /**
      * 用无障碍能力截一张图（API 30+）：**不建立 MediaProjection 会话**，
      * 所以不会出现「正在共享屏幕」提示，也不会让系统把通知正文隐藏。
      * 失败（无权限 / 被系统限流 / 低版本）一律回调 null，调用方自行回退。
      */
-    fun captureScreenshot(onDone: (android.graphics.Bitmap?) -> Unit) {
+    fun captureScreenshot(onDone: (android.graphics.Bitmap?, Int) -> Unit) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            onDone(null); return
+            onDone(null, ERROR_NO_ACCESSIBILITY_ACCESS); return
         }
         try {
             takeScreenshot(
@@ -171,18 +180,18 @@ class GuardAccessibilityService : AccessibilityService() {
                         } finally {
                             runCatching { result.hardwareBuffer.close() }
                         }
-                        onDone(copied)
+                        onDone(copied, 0)
                     }
 
                     override fun onFailure(errorCode: Int) {
                         Log.w("GuardA11y", "无障碍截图失败：$errorCode")
-                        onDone(null)
+                        onDone(null, errorCode)
                     }
                 }
             )
         } catch (t: Throwable) {
             Log.w("GuardA11y", "无障碍截图异常：${t.message}")
-            onDone(null)
+            onDone(null, ERROR_INTERNAL)
         }
     }
 

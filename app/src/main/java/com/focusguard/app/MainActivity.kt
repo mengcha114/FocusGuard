@@ -841,6 +841,18 @@ class MainActivity : ComponentActivity() {
                 }
                 settingsPageLauncher.launch(intent)
             }
+            "exact_alarm" -> {
+                // Android 12+ 才存在这个设置页；14+ 新装默认关闭，必须让用户能一键打开
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    runCatching {
+                        settingsPageLauncher.launch(
+                            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                        )
+                    }
+                }
+            }
             "shizuku" -> {
                 val enhancer = com.focusguard.app.enhance.ShizukuEnhancer
                 if (!enhancer.isAvailable()) {
