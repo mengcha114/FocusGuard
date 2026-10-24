@@ -361,6 +361,11 @@ fun AiChatScreen() {
                                         com.focusguard.app.enforce.AppLockToolExecutor
                                             .toolInstruction()
                                     )
+                                    // 定时锁机工具（只允许新增计划，删除/关闭必须用户自己在设置页答题）
+                                    append(
+                                        com.focusguard.app.enforce.ScheduledLockToolExecutor
+                                            .toolInstruction()
+                                    )
                                     // 当前状态：锁机 / 冻结 / 锁住 / 上限，便于回答「我现在被锁了什么」
                                     append(
                                         com.focusguard.app.enforce.AppLockToolExecutor
@@ -510,6 +515,18 @@ fun AiChatScreen() {
                                             }
                                         }
                                     }
+                                    // 定时锁机：只在用户确实提过这类要求时才执行（防模型自作主张）；
+                                    // 且**只新增**——取消/关闭必须用户在设置里答题操作。
+                                    if (actionAsked) {
+                                        com.focusguard.app.enforce.ScheduledLockToolExecutor
+                                            .parse(reply).forEach { req ->
+                                                runCatching {
+                                                    freezeNotes += com.focusguard.app.enforce
+                                                        .ScheduledLockToolExecutor
+                                                        .schedule(context, req)
+                                                }
+                                            }
+                                    }
                                 ToolOutcome(freezeNotes, unfreezeTargets, unlockTargets, limitTargets)
                                 }
                                 val freezeNotes = tools.notes
@@ -530,6 +547,10 @@ fun AiChatScreen() {
                                     }
                                     .let {
                                         com.focusguard.app.enforce.AppLockToolExecutor
+                                            .stripMarkers(it)
+                                    }
+                                    .let {
+                                        com.focusguard.app.enforce.ScheduledLockToolExecutor
                                             .stripMarkers(it)
                                     }
                                     .replace(Regex("""__LOCK__:\d+"""), "")
