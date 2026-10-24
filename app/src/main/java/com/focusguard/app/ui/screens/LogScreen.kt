@@ -153,14 +153,20 @@ fun LogScreen() {
                         }
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = diagText,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
-                        lineHeight = 15.sp,
-                        modifier = Modifier.verticalScroll(rememberScrollState())
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = diagText,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
+                            lineHeight = 15.sp
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -206,7 +212,7 @@ fun LogScreen() {
                             )
                         }
                         IconButton(
-                            onClick = { copyToClipboard(context, crashLog) },
+                            onClick = { copyToClipboard(context, crashLog.take(50_000)) },
                             modifier = Modifier.size(28.dp)
                         ) {
                             Icon(
@@ -233,7 +239,7 @@ fun LogScreen() {
                         Column {
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                text = crashLog,
+                                text = crashLog.take(20_000),
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),

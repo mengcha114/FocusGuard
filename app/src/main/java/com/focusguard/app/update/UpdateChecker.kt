@@ -58,6 +58,9 @@ object UpdateChecker {
     fun assetName(): String =
         if (BuildConfig.CHALLENGE_MODE == "edu") "app-edu-debug.apk" else "app-general-debug.apk"
 
+    /** 响应体上限：GitHub/Gitee 的发行页 + JSON 都远小于这个数，超过只取前 2MB 防 OOM。 */
+    private const val MAX_BODY_CHARS = 2 * 1024 * 1024
+
     private fun httpGet(url: String): String? = runCatching {
         val req = Request.Builder()
             .url(url)
@@ -66,7 +69,21 @@ object UpdateChecker {
             .header("Cache-Control", "no-cache")
             .build()
         client.newCall(req).execute().use { r ->
-            if (r.isSuccessful) r.body?.string() else null
+            if (!r.isSuccessful) null else r.body?.let { body ->
+                // 手动限量读取：InputStream.readNBytes 是 API 33+ 才有，低版本会 NoSuchMethodError
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(64 * 1024)
+                var total = 0
+                body.byteStream().use { input ->
+                    while (total < MAX_BODY_CHARS) {
+                        val read = input.read(buf, 0, minOf(buf.size, MAX_BODY_CHARS - total))
+                        if (read <= 0) break
+                        out.write(buf, 0, read)
+                        total += read
+                    }
+                }
+                String(out.toByteArray(), Charsets.UTF_8)
+            }
         }
     }.getOrNull()
 
@@ -137,7 +154,10 @@ object UpdateChecker {
 
     /** 测试版：固定 tag `ci-latest` 的发布页（预发布不进 atom 源）。 */
     private fun probeBeta(installedAt: Long): Probe {
-        val page = httpGet(CI_PAGE) ?: return Probe(true, null)      // 404 ⇒ 还没有测试版
+        val rawPage = httpGet(CI_PAGE) ?: return Probe(true, null)
+        // 只在 markdown-body 之后 200KB 里分析，避免整页正则回溯（大页面会卡死/闪退）
+        val bodyAt = rawPage.indexOf("markdown-body")
+        val page = if (bodyAt >= 0) rawPage.substring(bodyAt, minOf(rawPage.length, bodyAt + 200_000)) else rawPage
         val notes = plain(
             Regex("markdown-body[^>]*>(.*?)</div>", RegexOption.DOT_MATCHES_ALL)
                 .find(page)?.groupValues?.get(1)
