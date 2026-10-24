@@ -292,6 +292,15 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(8.dp))
             // 截屏识别：默认用无障碍截图（不建常驻录屏会话）
+            // 切换「截屏识别」后自动重启守护；关掉时需要重新拿共享屏幕授权
+            val projLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+            ) { result ->
+                val data = result.data
+                if (result.resultCode == android.app.Activity.RESULT_OK && data != null) {
+                    com.focusguard.app.service.MonitorService.startService(context, result.resultCode, data)
+                }
+            }
             var shotDetection by remember { mutableStateOf(settings.screenshotDetection) }
             com.focusguard.app.ui.components.SwitchRow(
                 title = "截屏识别",
@@ -303,9 +312,36 @@ fun SettingsScreen(
             ) { value ->
                 shotDetection = value
                 settings.screenshotDetection = value
-                android.widget.Toast.makeText(
-                    context, "已保存，重新「开始守护」后生效", android.widget.Toast.LENGTH_SHORT
-                ).show()
+                // 自动重启守护，不用用户手动再点一次
+                val wasRunning = com.focusguard.app.service.MonitorService.isRunning
+                if (!wasRunning) {
+                    android.widget.Toast.makeText(
+                        context, "已保存；下次「开始守护」生效", android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    android.widget.Toast.makeText(
+                        context, "已保存，正在自动重启守护…", android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (wasRunning) {
+                        com.focusguard.app.service.MonitorService.stop(context)
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            if (value && com.focusguard.app.access.GuardAccessibilityService.instance != null) {
+                                // 开着截屏识别 + 无障碍可用 ⇒ 不需要共享屏幕
+                                com.focusguard.app.service.MonitorService.startWithoutProjection(context)
+                            } else {
+                                // 关掉截屏识别 ⇒ 走共享屏幕，并自动代点系统授权框
+                                runCatching { com.focusguard.app.enforce.ProjectionConsent.arm() }
+                                runCatching {
+                                    projLauncher.launch(
+                                        com.focusguard.app.service.MonitorService.projectionIntent(context)
+                                    )
+                                }
+                            }
+                        }, 800)
+                    }
+                }, 300)
             }
         }
 

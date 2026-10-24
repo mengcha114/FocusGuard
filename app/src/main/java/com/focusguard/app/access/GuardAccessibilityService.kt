@@ -359,6 +359,10 @@ class GuardAccessibilityService : AccessibilityService() {
         // 普通的顶回仍由下面的既有逻辑负责。
         runCatching {
             val above = rootInActiveWindow?.packageName?.toString().orEmpty()
+            // 应用切前台 ⇒ 通知监控服务「过 5.5 秒检测一次」（等用户真正打开内容）
+            if (above.isNotBlank()) {
+                com.focusguard.app.service.MonitorService.notifyForeground(this, above)
+            }
             if (above.isNotBlank() && above != packageName) {
                 com.focusguard.app.enforce.LockTopGuard.onForeignAboveLock(this, above)
             }

@@ -51,6 +51,9 @@ class MonitorService : Service() {
         private const val TAG = "MonitorService"
         private const val ACTION_START = "com.focusguard.app.START"
         private const val ACTION_STOP = "com.focusguard.app.STOP"
+        private const val ACTION_FOREGROUND = "com.focusguard.app.FOREGROUND"
+        /** 前台切换后等这么久再检测：用户刚切过去可能还没打开内容，立刻检测会误判成中性。 */
+        private const val FOREGROUND_QUICK_DELAY_MS = 5_500L
         private const val ACTION_TEST = "com.focusguard.app.TEST"
         private const val ACTION_RESURRECT = "com.focusguard.app.RESURRECT"
 
@@ -118,6 +121,43 @@ class MonitorService : Service() {
                         append("\n（${smartReason}）")
                     }
                 }
+            }
+        }
+
+        /** 停止守护（界面切换设置后自动重启时用）。 */
+        fun stop(context: Context) {
+            runCatching {
+                context.startService(
+                    Intent(context, MonitorService::class.java).apply { action = ACTION_STOP }
+                )
+            }
+        }
+
+        /** 取共享屏幕授权 Intent（Android 14 起要显式指定整屏，否则只能选单个应用）。 */
+        fun projectionIntent(context: Context): Intent {
+            val mgr = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE)
+                as android.media.projection.MediaProjectionManager
+            return if (Build.VERSION.SDK_INT >= 34) {
+                runCatching {
+                    mgr.createScreenCaptureIntent(
+                        android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
+                    )
+                }.getOrElse { mgr.createScreenCaptureIntent() }
+            } else {
+                mgr.createScreenCaptureIntent()
+            }
+        }
+
+        /** 无障碍侧发现应用切到前台时调用：延迟一会儿触发一次检测。 */
+        fun notifyForeground(context: Context, pkg: String) {
+            if (!isRunning || pkg.isBlank()) return
+            runCatching {
+                context.startService(
+                    Intent(context, MonitorService::class.java).apply {
+                        action = ACTION_FOREGROUND
+                        putExtra("pkg", pkg)
+                    }
+                )
             }
         }
 
@@ -190,6 +230,9 @@ class MonitorService : Service() {
     private var lastDetectionWasError = false
 
     private var screenCapturer: ScreenCapturer? = null
+    /** 最近一次已触发检测的前台包名 + 待执行的前台检测任务。 */
+    @Volatile private var lastForegroundPkg = ""
+    private var pendingForegroundJob: kotlinx.coroutines.Job? = null
     private var mediaProjection: MediaProjection? = null
     private var pipeline: DetectionPipeline? = null
     /** 是否处于「使用时长触发」的加密检测模式。 */
@@ -263,6 +306,7 @@ class MonitorService : Service() {
                     stopSelf()
                 }
             }
+            ACTION_FOREGROUND -> scheduleForegroundCheck(intent.getStringExtra("pkg").orEmpty())
             ACTION_STOP -> stopMonitoring()
             ACTION_TEST -> serviceScope.launch { performDetection(isManualTest = true) }
             // 自愈：检测循环意外停止但投影仍有效 → 重启循环
@@ -325,6 +369,23 @@ class MonitorService : Service() {
      * 前台化。API 34 起系统会按 serviceType 校验：
      * 用 mediaProjection 类型却没有投影授权会抛异常 ⇒ 分开传类型。
      */
+    /**
+     * 前台切换触发的一次性检测：延迟 [FOREGROUND_QUICK_DELAY_MS]，
+     * 只为**新**前台应用触发（同一应用连续回调只算一次），避免频繁烧 token。
+     */
+    private fun scheduleForegroundCheck(pkg: String) {
+        if (pkg.isBlank() || pkg == lastForegroundPkg) return
+        lastForegroundPkg = pkg
+        pendingForegroundJob?.cancel()
+        pendingForegroundJob = serviceScope.launch {
+            delay(FOREGROUND_QUICK_DELAY_MS)
+            if (pipeline != null) {
+                runCatching { performDetection(isManualTest = false) }
+                    .onFailure { Log.w(TAG, "前台触发检测失败：${it.message}") }
+            }
+        }
+    }
+
     private fun startForegroundSafely(withProjection: Boolean) {
         val ok = runCatching {
             if (withProjection && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
