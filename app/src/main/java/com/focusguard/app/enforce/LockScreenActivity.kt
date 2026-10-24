@@ -1204,6 +1204,7 @@ private fun LockScreenContent(
                             accent = accent,
                             palette = palette
                         )
+                        NextScheduledLockLine(palette)
 
                         if (isPomodoro) {
                             Spacer(Modifier.height(12.dp))
@@ -1390,6 +1391,7 @@ private fun LockScreenContent(
                         accent = accent,
                         palette = palette
                     )
+                    NextScheduledLockLine(palette)
 
                     if (isPomodoro) {
                         Spacer(Modifier.height(14.dp))
@@ -1567,6 +1569,31 @@ private fun StatusPill(
  * 中心叠加时间数字。这是整个锁机页的视觉焦点。
  */
 @Composable
+/**
+ * 锁机页上的「下次自动锁机：今天 21:30」一行。
+ *
+ * 计划本身只能在设置页改（锁机期间连改都不允许），这里只读展示，
+ * 让用户随时知道下一次自动锁机是什么时候。
+ */
+@androidx.compose.runtime.Composable
+private fun NextScheduledLockLine(palette: com.focusguard.app.ui.theme.FocusColors.Palette) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val nowMs = System.currentTimeMillis()
+    val next = com.focusguard.app.data.Settings(ctx)
+        .scheduledLocks.filter { it.enabled }
+        .mapNotNull { rule ->
+            com.focusguard.app.data.ScheduledLock.nextTriggerInMs(nowMs, rule)?.let { d -> d to rule }
+        }
+        .minByOrNull { it.first }?.second ?: return
+    androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(8.dp))
+    androidx.compose.material3.Text(
+        text = "下次自动锁机：" + com.focusguard.app.data.ScheduledLock
+            .nextTriggerText(nowMs, next),
+        fontSize = 11.sp,
+        color = palette.haze
+    )
+}
+
 private fun CountdownRing(
     progress: Float,
     seconds: Int,
