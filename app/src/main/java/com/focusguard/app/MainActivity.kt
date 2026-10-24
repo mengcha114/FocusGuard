@@ -1064,6 +1064,7 @@ class MainActivity : ComponentActivity() {
         // 无障碍可用且开着截屏识别 ⇒ 用无障碍截图，不必弹「共享屏幕」
         // （常驻录屏会让系统/部分 ROM 隐藏通知正文，用户实测过）
         if (appSettings.screenshotDetection &&
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
             com.focusguard.app.access.GuardAccessibilityService.instance != null
         ) {
             com.focusguard.app.service.MonitorService.startWithoutProjection(this)

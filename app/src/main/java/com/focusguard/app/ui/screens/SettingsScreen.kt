@@ -327,7 +327,9 @@ fun SettingsScreen(
                     if (wasRunning) {
                         com.focusguard.app.service.MonitorService.stop(context)
                         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            if (value && com.focusguard.app.access.GuardAccessibilityService.instance != null) {
+                            if (value && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+                                com.focusguard.app.access.GuardAccessibilityService.instance != null
+                            ) {
                                 // 开着截屏识别 + 无障碍可用 ⇒ 不需要共享屏幕
                                 com.focusguard.app.service.MonitorService.startWithoutProjection(context)
                             } else {

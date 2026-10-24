@@ -290,7 +290,8 @@ class MonitorService : Service() {
                 if (data != null) {
                     startMonitoring(resultCode, data)
                 } else if (!settings.screenshotDetection ||
-                    com.focusguard.app.access.GuardAccessibilityService.instance != null
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                        com.focusguard.app.access.GuardAccessibilityService.instance != null)
                 ) {
                     // 不用录屏也能干活（无障碍截图 / 纯文字）⇒ 直接开跑
                     startMonitoring(resultCode, null)
@@ -412,7 +413,10 @@ class MonitorService : Service() {
 
         // 截屏来源优先级：无障碍截图 ＞ 投影。
         // 常驻投影会让系统/部分 ROM 把通知正文隐藏（用户实测），所以只要无障碍可用就不用投影。
-        val a11yReady = com.focusguard.app.access.GuardAccessibilityService.instance != null
+        // 无障碍截图是 Android 11（API 30）才有的能力；
+        // 低版本只能用 MediaProjection，否则会「一轮都抓不到画面」（实测 B 站被跳过）。
+        val a11yReady = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            com.focusguard.app.access.GuardAccessibilityService.instance != null
         val wantProjection = data != null && (!a11yReady || !settings.screenshotDetection)
 
         // 复用旧会话前先回收，避免同时存在两个 MediaProjection（Android 14 每次授权都是新会话）
