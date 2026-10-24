@@ -1615,7 +1615,7 @@ private fun NextScheduledLockLine(palette: com.focusguard.app.ui.theme.FocusColo
                 androidx.compose.foundation.layout.Column(
                     modifier = androidx.compose.ui.Modifier
                         .heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.6f).dp)
-                        .androidx.compose.foundation.verticalScroll(androidx.compose.foundation.rememberScrollState())
+                        .verticalScroll(androidx.compose.foundation.rememberScrollState())
                 ) {
                     com.focusguard.app.ui.components.ScheduledLockSection(
                         locked = com.focusguard.app.data.LockState(ctx).isLocked

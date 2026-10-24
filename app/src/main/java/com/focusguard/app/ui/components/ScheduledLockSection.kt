@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -91,7 +92,7 @@ fun ScheduledLockSection(locked: Boolean) {
             } else {
                 "还没有计划。比如：每天 21:30 锁 1 小时，到点自动锁机、答题可提前解锁"
             },
-            icon = Icons.Default.Alarm
+            icon = Icons.Default.Schedule
         )
 
         // ── 计划列表 ──
