@@ -290,6 +290,23 @@ fun SettingsScreen(
                 label = { Text("连续违规触发次数") },
                 modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
             )
+            Spacer(Modifier.height(8.dp))
+            // 截屏识别：默认用无障碍截图（不建常驻录屏会话）
+            var shotDetection by remember { mutableStateOf(settings.screenshotDetection) }
+            com.focusguard.app.ui.components.SwitchRow(
+                title = "截屏识别",
+                hint = "打开时用无障碍能力截图识别画面（不会出现「正在共享屏幕」，也不影响通知栏内容）；" +
+                    "关掉后完全不截屏，只按应用名和屏幕文字判断 —— " +
+                    "如果开守护后发现通知栏看不到微信内容，把这项关掉即可恢复",
+                checked = shotDetection,
+                enabled = true
+            ) { value ->
+                shotDetection = value
+                settings.screenshotDetection = value
+                android.widget.Toast.makeText(
+                    context, "已保存，重新「开始守护」后生效", android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
         }
 
         // ── Token 节约系统 ────────────────────────────────────────

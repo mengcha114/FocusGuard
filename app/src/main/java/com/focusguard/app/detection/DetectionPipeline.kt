@@ -303,18 +303,21 @@ class DetectionPipeline(
             )
         }
 
-        // 以下步骤需要画面，先确认前置条件
-        if (projection == null) {
+        // 以下步骤需要画面。
+        // 有投影就用投影；没有投影（现在默认走无障碍截图，避免常驻录屏让
+        // 系统把通知正文隐藏）就先试无障碍截图，都拿不到才跳过本轮。
+        val capture: com.focusguard.app.capture.CaptureResult? =
+            if (projection != null) {
+                screenCapturer.capture(projection)
+            } else {
+                com.focusguard.app.capture.AccessibilityCapturer.capture()
+            }
+        if (capture == null) {
             return DetectionOutcome(
-                "NEUTRAL", 0f, "屏幕录制不可用，跳过本轮",
+                "NEUTRAL", 0f, "屏幕内容不可用，跳过本轮",
                 DetectionSource.ERROR, pkg, label
             )
         }
-
-        val capture = screenCapturer.capture(projection)
-            ?: return DetectionOutcome(
-                "NEUTRAL", 0f, "截屏失败", DetectionSource.ERROR, pkg, label
-            )
 
         try {
             val hash = ImageHasher.dHash(capture.bitmap)

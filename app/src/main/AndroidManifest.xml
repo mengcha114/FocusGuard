@@ -150,7 +150,7 @@
         <service
             android:name=".service.MonitorService"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection"
+            android:foregroundServiceType="mediaProjection|dataSync"
             android:stopWithTask="false" />
 
         <!-- 锁机守护前台服务（不依赖无障碍，使用情况权限即可工作） -->

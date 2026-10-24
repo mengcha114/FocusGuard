@@ -1061,6 +1061,14 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "请先在设置中填写 API 密钥并保存", Toast.LENGTH_LONG).show()
             return
         }
+        // 无障碍可用且开着截屏识别 ⇒ 用无障碍截图，不必弹「共享屏幕」
+        // （常驻录屏会让系统/部分 ROM 隐藏通知正文，用户实测过）
+        if (appSettings.screenshotDetection &&
+            com.focusguard.app.access.GuardAccessibilityService.instance != null
+        ) {
+            com.focusguard.app.service.MonitorService.startWithoutProjection(this)
+            return
+        }
         // MediaProjection 授权每次启动都要重新申请，系统不允许复用
         launchingSystemUi = true
         // 由无障碍替用户点掉系统授权弹窗（可在设置里关；仅在刚拉起后 60 秒内有效）

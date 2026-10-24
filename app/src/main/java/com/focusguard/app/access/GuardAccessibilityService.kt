@@ -3,6 +3,7 @@ package com.focusguard.app.access
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
+import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
@@ -144,6 +145,46 @@ class GuardAccessibilityService : AccessibilityService() {
     private var gestureBlocker: android.view.View? = null
     private var gestureBlockerTeardown: java.lang.Runnable? = null
     private var lastBlockerAt = 0L
+
+    /**
+     * 用无障碍能力截一张图（API 30+）：**不建立 MediaProjection 会话**，
+     * 所以不会出现「正在共享屏幕」提示，也不会让系统把通知正文隐藏。
+     * 失败（无权限 / 被系统限流 / 低版本）一律回调 null，调用方自行回退。
+     */
+    fun captureScreenshot(onDone: (android.graphics.Bitmap?) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            onDone(null); return
+        }
+        try {
+            takeScreenshot(
+                android.view.Display.DEFAULT_DISPLAY,
+                mainExecutor,
+                object : TakeScreenshotCallback {
+                    override fun onSuccess(result: ScreenshotResult) {
+                        var copied: android.graphics.Bitmap? = null
+                        try {
+                            copied = android.graphics.Bitmap.wrapHardwareBuffer(
+                                result.hardwareBuffer, result.colorSpace
+                            )?.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                        } catch (t: Throwable) {
+                            copied = null
+                        } finally {
+                            runCatching { result.hardwareBuffer.close() }
+                        }
+                        onDone(copied)
+                    }
+
+                    override fun onFailure(errorCode: Int) {
+                        Log.w("GuardA11y", "无障碍截图失败：$errorCode")
+                        onDone(null)
+                    }
+                }
+            )
+        } catch (t: Throwable) {
+            Log.w("GuardA11y", "无障碍截图异常：${t.message}")
+            onDone(null)
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()

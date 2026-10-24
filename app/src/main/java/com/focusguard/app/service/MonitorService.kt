@@ -121,6 +121,16 @@ class MonitorService : Service() {
             }
         }
 
+        /** 不申请录屏也能启动（走无障碍截图 / 纯文字判断）。 */
+        fun startWithoutProjection(context: Context) {
+            val intent = Intent(context, MonitorService::class.java).apply { action = ACTION_START }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
         fun startService(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, MonitorService::class.java).apply {
                 action = ACTION_START
@@ -236,6 +246,11 @@ class MonitorService : Service() {
                 val data = intent.getParcelableExtra<Intent>("data")
                 if (data != null) {
                     startMonitoring(resultCode, data)
+                } else if (!settings.screenshotDetection ||
+                    com.focusguard.app.access.GuardAccessibilityService.instance != null
+                ) {
+                    // 不用录屏也能干活（无障碍截图 / 纯文字）⇒ 直接开跑
+                    startMonitoring(resultCode, null)
                 } else {
                     Log.e(TAG, "缺少 MediaProjection 授权数据，无法启动")
                     // 先成为前台服务再停：本服务是用 startForegroundService 拉起的，
@@ -267,7 +282,7 @@ class MonitorService : Service() {
             // 不会被这次重建绕过。发通知提醒用户一键恢复。
             null -> {
                 Log.w(TAG, "服务被系统重建（无授权数据），保持运行但等待重新授权")
-                startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null))
+                startForegroundSafely(withProjection = false)
                 notifyNeedReauth()
             }
         }
@@ -306,24 +321,66 @@ class MonitorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun startMonitoring(resultCode: Int, data: Intent) {
-        startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null))
+    /**
+     * 前台化。API 34 起系统会按 serviceType 校验：
+     * 用 mediaProjection 类型却没有投影授权会抛异常 ⇒ 分开传类型。
+     */
+    private fun startForegroundSafely(withProjection: Boolean) {
+        val ok = runCatching {
+            if (withProjection && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    FocusGuardApp.NOTIFICATION_ID,
+                    buildNotification(null),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null))
+            }
+            true
+        }.getOrDefault(false)
+        if (!ok) {
+            Log.w(TAG, "前台化失败（类型校验或权限不足），停止服务避免 5 秒后被杀进程")
+            runCatching { stopSelf() }
+        }
+    }
 
-        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        val projection = try {
-            manager.getMediaProjection(resultCode, data)
-        } catch (e: Exception) {
-            Log.e(TAG, "获取 MediaProjection 失败", e)
-            null
+    private fun startMonitoring(resultCode: Int, data: Intent?) {
+        // 先按 dataSync 前台化（此时还没有投影，不能声明 mediaProjection 类型）
+        startForegroundSafely(withProjection = false)
+
+        // 截屏来源优先级：无障碍截图 ＞ 投影。
+        // 常驻投影会让系统/部分 ROM 把通知正文隐藏（用户实测），所以只要无障碍可用就不用投影。
+        val a11yReady = com.focusguard.app.access.GuardAccessibilityService.instance != null
+        val wantProjection = data != null && (!a11yReady || !settings.screenshotDetection)
+
+        // 复用旧会话前先回收，避免同时存在两个 MediaProjection（Android 14 每次授权都是新会话）
+        if (mediaProjection != null) {
+            runCatching { mediaProjection?.unregisterCallback(projectionCallback) }
+            runCatching { mediaProjection?.stop() }
+            mediaProjection = null
         }
 
-        if (projection == null) {
+        val projection = if (!wantProjection) null else runCatching {
+            val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            manager.getMediaProjection(resultCode, data!!)
+        }.onFailure { Log.e(TAG, "获取 MediaProjection 失败", it) }.getOrNull()
+
+        if (wantProjection && projection == null) {
+            // 需要投影却拿不到：保持前台服务等用户重新授权，不要静默停掉
+            notifyNeedReauth()
             stopSelf()
             return
         }
 
-        // Android 14 起必须在 createVirtualDisplay 之前注册回调
-        projection.registerCallback(projectionCallback, null)
+        if (projection != null) {
+            // 建投影前先把前台服务升级为 mediaProjection 类型（Android 14 要求）
+            startForegroundSafely(withProjection = true)
+            // Android 14 起必须在 createVirtualDisplay 之前注册回调
+            projection.registerCallback(projectionCallback, null)
+        } else {
+            Log.d(TAG, "本轮不建立录屏会话（无障碍截图=${a11yReady}，截屏识别=${settings.screenshotDetection}）")
+        }
 
         val capturer = ScreenCapturer(this)
         mediaProjection = projection
@@ -1109,6 +1166,10 @@ class MonitorService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // 服务被系统直接销毁时也要释放投影，否则录屏会话残留到进程结束
+        runCatching { mediaProjection?.unregisterCallback(projectionCallback) }
+        runCatching { mediaProjection?.stop() }
+        mediaProjection = null
         serviceScope.cancel()
         settings.serviceRunning = false
         isRunning = false

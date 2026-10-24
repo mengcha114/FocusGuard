@@ -567,6 +567,18 @@ gacha
         get() = prefs.getBoolean(KEY_SCREEN_CAPTURE_GRANTED, false)
         set(value) = prefs.edit().putBoolean(KEY_SCREEN_CAPTURE_GRANTED, value).apply()
     
+    /**
+     * 截屏识别（默认开）。
+     *
+     * 开着时优先用**无障碍截图**识别画面（不建立常驻录屏会话）；
+     * 关掉后完全不截屏，只按「应用名 + 无障碍读到的文字」判断 ——
+     * 某些机型在截屏/录屏时会把通知正文替换成「内容已隐藏」，
+     * 把这项关掉通知内容就会恢复正常（代价：纯图片内容识别不到）。
+     */
+    var screenshotDetection: Boolean
+        get() = prefs.getBoolean("screenshot_detection", true)
+        set(value) = prefs.edit().putBoolean("screenshot_detection", value).apply()
+
     var overlayGranted: Boolean
         get() = prefs.getBoolean(KEY_OVERLAY_GRANTED, false)
         set(value) = prefs.edit().putBoolean(KEY_OVERLAY_GRANTED, value).apply()

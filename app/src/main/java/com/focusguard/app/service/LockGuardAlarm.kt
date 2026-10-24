@@ -45,6 +45,15 @@ object LockGuardAlarm {
         val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         val pi = pendingIntent(context)
         val triggerAt = android.os.SystemClock.elapsedRealtime() + intervalMs
+        // Android 12+ 精确闹钟需要 SCHEDULE_EXACT_ALARM 授权（14+ 新装默认拒绝）⇒
+        // 没权限时直接走 setAndAllowWhileIdle，别等 setExact 抛异常再降级
+        val canExact = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S ||
+            runCatching { am.canScheduleExactAlarms() }.getOrDefault(false)
+        if (!canExact) {
+            runCatching { am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi) }
+                .onFailure { Log.w(TAG, "注册非精确闹钟失败：${it.message}") }
+            return
+        }
         try {
             am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
         } catch (e: Exception) {
