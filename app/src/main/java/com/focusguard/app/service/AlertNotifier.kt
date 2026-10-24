@@ -30,6 +30,17 @@ object AlertNotifier {
     private const val TAG = "AlertNotifier"
 
     /**
+     * 通知是否真的能显示。
+     *
+     * API 33+ 未授权 `POST_NOTIFICATIONS`、或用户手动关掉本应用通知时，
+     * `nm.notify()` **静默丢弃**（不抛异常）——于是"提醒已发出"的日志很好看，
+     * 用户却什么都没看到。所有"提醒必达"的地方都必须先问这一句。
+     */
+    private fun notificationsEnabled(context: Context): Boolean = runCatching {
+        context.getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() ?: false
+    }.getOrDefault(true)
+
+    /**
      * 弹出娱乐提醒横幅。
      *
      * @param title 标题，如"⚠️ 检测到娱乐行为"
@@ -62,6 +73,13 @@ object AlertNotifier {
 
         // ── 兜底：同时发一条高优先级通知（横幅） ──────────
         try {
+            // 通知发不出去时不要假装发过：记录状态，首页会显示「通知权限已关闭」。
+            if (!notificationsEnabled(context)) {
+                Log.w(TAG, "通知权限未开启：横幅不会出现（已先尝试全屏提醒）")
+                MonitorService.notificationsBlocked = true
+                return
+            }
+            MonitorService.notificationsBlocked = false
             val pendingIntent = PendingIntent.getActivity(
                 context,
                 7,
@@ -135,6 +153,12 @@ object AlertNotifier {
     /** 通用横幅提醒（守护中断、权限丢失等）。 */
     fun alert(context: Context, title: String, message: String, id: Int = 1006) {
         try {
+            // 通知被关闭时 notify() 静默丢弃：至少留下一行日志，别让"已提醒"是假的
+            if (!notificationsEnabled(context)) {
+                Log.w(TAG, "通知权限未开启，「$title」没能显示：$message")
+                MonitorService.notificationsBlocked = true
+                return
+            }
             val pendingIntent = PendingIntent.getActivity(
                 context,
                 id,

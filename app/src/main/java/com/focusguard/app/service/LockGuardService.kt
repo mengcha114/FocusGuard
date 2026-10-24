@@ -186,6 +186,9 @@ class LockGuardService : Service() {
     /** 是否被用户主动停止（主动停止时 onDestroy 不自重启）。 */
     private var stoppedByUser = false
 
+    /** 使用情况权限失权告警是否已发过（恢复后复位，避免每 30 秒刷一条通知）。 */
+    private var usageStatsWarned = false
+
     override fun onCreate() {
         super.onCreate()
         lockState = LockState(this)
@@ -486,10 +489,52 @@ class LockGuardService : Service() {
         }
     }
 
+    /**
+     * 复查「使用情况访问」权限。
+     *
+     * 失权后 `UsageStatsManager.queryEvents` **返回空表而不抛异常**，守护会
+     * 「正常跑、什么都没做」——这是本应用最危险的静默失败，必须显式告警：
+     * 检测日志 + 通知 + 首页 [MonitorService.healthText] 三处都写。
+     */
+    private fun checkUsageStatsAlive() {
+        val granted = com.focusguard.app.util.PermissionChecker.isUsageStatsGranted(this)
+        MonitorService.usageStatsLost = !granted
+        if (granted) {
+            usageStatsWarned = false
+            return
+        }
+        Log.w(TAG, "「使用情况访问」权限已失效：前台判定退化（无障碍可用时仍能兜住）")
+        if (usageStatsWarned) return
+        usageStatsWarned = true
+        runCatching {
+            com.focusguard.app.data.LogStore(this).addLog(
+                com.focusguard.app.data.DetectionLog(
+                    classification = "NEUTRAL",
+                    confidence = 0f,
+                    reason = "「使用情况访问」权限已关闭：锁机置顶与应用封锁的判断会失效，请到设置里重新授权",
+                    action = "NONE",
+                    source = "ERROR",
+                    appLabel = "权限"
+                )
+            )
+        }
+        AlertNotifier.alert(
+            this,
+            "防线已降级",
+            "「使用情况访问」权限被关闭，锁机与应用封锁可能失效。点开应用重新授权。",
+            id = 1010
+        )
+    }
+
     /** 单次守护巡检。 */
     private fun guardTick() {
         val now = System.currentTimeMillis()
         val foreground = ForegroundAppDetector.current(this)
+
+        // ── 使用情况访问权限被撤：queryEvents 会**返回空表而不抛异常** ──
+        // ⇒ 前台判定静默失效（锁机置顶 / 应用封锁都不再触发），用户以为还在守。
+        // 每 30 秒复查一次（300ms × 100），失权时明确告警。
+        if (tickCount % 100 == 0) checkUsageStatsAlive()
 
         // ── 定时锁机：规则命中就上锁（已锁机时 startLock 只会延长/加码，不会被短锁覆盖）──
         runCatching { checkScheduledLocks() }

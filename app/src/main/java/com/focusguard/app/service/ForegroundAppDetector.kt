@@ -22,6 +22,14 @@ object ForegroundAppDetector {
     /** 事件回溯窗口。太小会漏事件，太大浪费 CPU。 */
     private const val LOOKBACK_MS = 10_000L
 
+    /**
+     * 长回溯窗口：前台应用**长时间不变**时（一直看同一个视频/游戏），
+     * 短窗口里一个事件都没有，而缓存 30 秒就过期 —— 旧实现于是恒返回 null，
+     * 表现为「检测不动」：隐私门判成"无法识别前台应用"直接跳过本轮，
+     * [isForeground] 复核也永远为假，封锁页于是不弹。
+     */
+    private const val LONG_LOOKBACK_MS = 10 * 60_000L
+
     /** 缓存有效期：超过后不再复用（此前 cachedAt 只写不读，前台判断可能永远停在旧应用）。 */
     private const val CACHE_TTL_MS = 30_000L
 
@@ -43,34 +51,80 @@ object ForegroundAppDetector {
 
         val now = System.currentTimeMillis()
         return try {
-            val events = usm.queryEvents(now - LOOKBACK_MS, now)
-            var latestPackage: String? = null
-            var latestTime = 0L
-            val event = UsageEvents.Event()
+            // ① 短窗口：正常切换应用时，最近 10 秒内就有新事件
+            // ② 长窗口：前台应用长时间没变（10 秒内没有任何事件）时往前找 10 分钟，
+            //    否则缓存过期后这里恒为 null（"识别不动"的根因之一）
+            val pkg = latestResumed(usm, now - LOOKBACK_MS, now)
+                ?: latestResumed(usm, now - LONG_LOOKBACK_MS, now)
 
-            while (events.hasNextEvent()) {
-                events.getNextEvent(event)
-                // ACTIVITY_RESUMED（API 29+）等价于旧的 MOVE_TO_FOREGROUND
-                val isResume = event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
-                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
-                if (isResume && event.timeStamp >= latestTime) {
-                    latestTime = event.timeStamp
-                    latestPackage = event.packageName
-                }
-            }
-
-            if (latestPackage != null) {
-                cachedPackage = latestPackage
+            if (pkg != null) {
+                cachedPackage = pkg
                 cachedAt = now
-                latestPackage
+                pkg
             } else {
-                // 窗口内无切换事件说明前台没变，复用缓存（但要检查是否已过期）
+                // 两个窗口都没有可用事件：复用缓存（但要检查是否已过期）
                 freshCached()
             }
         } catch (e: Exception) {
             Log.w(TAG, "查询前台应用失败：${e.message}")
             freshCached()
         }
+    }
+
+    /**
+     * 最近 10 分钟内回到前台、且之后没再离开过的应用（长窗口版）。
+     *
+     * 供 [com.focusguard.app.detection.AppClassifier.classifyForegroundApp] 使用：
+     * 那条路原来读 `queryUsageStats(INTERVAL_DAILY, now-15s, now)` —— 区间参数不生效，
+     * 拿到的是**整天**的聚合桶，"当前前台"根本无从谈起。
+     */
+    fun recentPackage(context: Context): String? {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            ?: return null
+        val now = System.currentTimeMillis()
+        return try {
+            latestResumed(usm, now - LONG_LOOKBACK_MS, now)
+        } catch (e: Exception) {
+            Log.w(TAG, "查询最近前台应用失败：${e.message}")
+            null
+        }
+    }
+
+    /**
+     * [from, to] 区间内最后一个"回到前台且之后没有离开"的包名，取不到返回 null。
+     *
+     * 只看 RESUMED 会误判已经退出的应用：用户回到桌面后，最后一个 RESUMED
+     * 仍是刚打开的应用（不少桌面/ROM 不发桌面 RESUMED），所以还要看它之后
+     * 有没有 PAUSED / STOPPED —— 有就说明它已不在前台。
+     */
+    private fun latestResumed(usm: UsageStatsManager, from: Long, to: Long): String? {
+        val events = usm.queryEvents(from, to) ?: return null
+        val event = UsageEvents.Event()
+        var latestPackage: String? = null
+        var latestTime = 0L
+        // 包名 → 最近一次离开前台（PAUSED / STOPPED / BACKGROUND）的时间
+        val leftAt = HashMap<String, Long>()
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val pkg = event.packageName ?: continue
+            // ACTIVITY_RESUMED（API 29+）等价于旧的 MOVE_TO_FOREGROUND
+            val isResume = event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            val isLeave = event.eventType == UsageEvents.Event.ACTIVITY_PAUSED ||
+                event.eventType == UsageEvents.Event.ACTIVITY_STOPPED ||
+                event.eventType == UsageEvents.Event.MOVE_TO_BACKGROUND
+            when {
+                isResume && event.timeStamp >= latestTime -> {
+                    latestTime = event.timeStamp
+                    latestPackage = pkg
+                }
+                isLeave -> leftAt[pkg] = maxOf(leftAt[pkg] ?: 0L, event.timeStamp)
+            }
+        }
+
+        val found = latestPackage ?: return null
+        return if ((leftAt[found] ?: 0L) > latestTime) null else found
     }
 
     private fun freshCached(): String? {

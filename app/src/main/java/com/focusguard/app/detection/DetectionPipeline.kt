@@ -94,11 +94,17 @@ class DetectionPipeline(
     private val cacheOn: Boolean get() = settings.decisionCacheEnabled
 
     suspend fun detect(projection: MediaProjection?): DetectionOutcome {
+        val startedAt = System.currentTimeMillis()
         // 前台识别统一走 ForegroundAppDetector（ACTIVITY_RESUMED 事件流，秒级），
         // 不再优先用聚合 UsageStats —— 后者在部分 ROM 上有分钟级延迟，
         // 会让「刚切过去的应用」这一轮仍被判成上一个应用。
         val realtimePkg = com.focusguard.app.service.ForegroundAppDetector.current(context).orEmpty()
-        val fallbackInfo = AppClassifier.classifyForegroundApp(context, categoryStore)
+        // 兜底来源只在实时事件流拿不到时才查：这一句原来是**每轮都查**，
+        // 而它是一次 UsageStatsManager 查询 + 一次包管理器读取，
+        // 属于"识别慢"里白白花掉的一段（而且旧语义还是错的，见 classifyForegroundApp）。
+        val fallbackInfo = if (realtimePkg.isBlank()) {
+            AppClassifier.classifyForegroundApp(context, categoryStore)
+        } else null
         val usagePkg = realtimePkg.ifBlank { fallbackInfo?.packageName.orEmpty() }
         // 第二来源：无障碍报告的活动窗口。前两个来源都拿不到（刚切换应用、
         // 权限被撤、数据过期）时用它补齐，仍取不到就由 L0 直接跳过本轮。
@@ -306,6 +312,7 @@ class DetectionPipeline(
         // 以下步骤需要画面。
         // 有投影就用投影；没有投影（现在默认走无障碍截图，避免常驻录屏让
         // 系统把通知正文隐藏）就先试无障碍截图，都拿不到才跳过本轮。
+        val captureStartedAt = System.currentTimeMillis()
         val capture: com.focusguard.app.capture.CaptureResult? =
             if (projection != null) {
                 screenCapturer.capture(projection)
@@ -314,9 +321,10 @@ class DetectionPipeline(
             } else {
                 null
             }
+        val captureMs = System.currentTimeMillis() - captureStartedAt
         if (capture == null) {
             return DetectionOutcome(
-                "NEUTRAL", 0f, "屏幕内容不可用，跳过本轮",
+                "NEUTRAL", 0f, "屏幕内容不可用，跳过本轮（取图耗时 ${captureMs}ms）",
                 DetectionSource.ERROR, pkg, label
             )
         }
@@ -400,6 +408,7 @@ class DetectionPipeline(
                 }
             }
 
+            val aiStartedAt = System.currentTimeMillis()
             val aiResult = aiClient.analyzeScreen(
                 imageBytes = capture.jpegBytes,
                 baseUrl = settings.apiBaseUrl,
@@ -411,6 +420,7 @@ class DetectionPipeline(
                 // 告诉模型本次会真正执行什么，避免选了「仅锁该软件」却写成「锁机」
                 enforcementHint = settings.enforcementHint()
             )
+            val aiMs = System.currentTimeMillis() - aiStartedAt
             tokenBudget.recordCall()
 
             com.focusguard.app.privacy.PrivacyStats.recordUpload(context)
@@ -460,10 +470,20 @@ class DetectionPipeline(
             AppClassifier.learnFromAiResult(pkg, aiResult.classification, aiResult.confidence, categoryStore)
             remember(hash, pkg, aiResult.classification, aiResult.confidence, reason)
 
-            Log.d(TAG, "AI 判定 ${aiResult.classification} ${aiResult.confidence}，今日已用 ${tokenBudget.callsToday} 次")
+            val totalMs = System.currentTimeMillis() - startedAt
+            Log.d(
+                TAG,
+                "AI 判定 ${aiResult.classification} ${aiResult.confidence}，" +
+                    "耗时 ${totalMs}ms（取图 ${captureMs}ms / AI ${aiMs}ms），" +
+                    "今日已用 ${tokenBudget.callsToday} 次"
+            )
+            // 用户反复反馈「识别太慢」：把耗时直接写进检测日志，手机上一眼能看出
+            // 慢在哪一段（取图慢 = 机型/无障碍限流；AI 慢 = 网络或模型）。
+            val costText = "〔耗时 ${String.format(java.util.Locale.US, "%.1f", totalMs / 1000.0)} 秒" +
+                "：取图 ${captureMs}ms · AI ${aiMs}ms〕"
 
             return DetectionOutcome(
-                aiResult.classification, aiResult.confidence, reason,
+                aiResult.classification, aiResult.confidence, "$reason$costText",
                 DetectionSource.AI_VISION, pkg, label
             )
         } finally {

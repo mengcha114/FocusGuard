@@ -159,6 +159,10 @@ class BootReceiver : BroadcastReceiver() {
                     }.getOrDefault(false)
                     if (launched) {
                         Log.d(TAG, "已拉起主界面自动恢复守护")
+                        // 「没抛异常」不等于「界面真的起来了」：后台 startActivity 被
+                        // 系统（BAL 限制）或自启动管理拦下时**不抛异常、什么都不发生**，
+                        // 于是重启后守护静默停摆、用户以为已经恢复。1.5 秒后校验一次。
+                        verifyLaunchedLater(app, goAsync())
                     } else {
                         Log.w(TAG, "自动拉起主界面失败（系统限制），退回通知提醒")
                     }
@@ -168,6 +172,46 @@ class BootReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             Log.w(TAG, "启动广播处理失败：${e.message}")
         }
+    }
+
+    /**
+     * 校验开机自动恢复是否真的生效。
+     *
+     * 后台 `startActivity` 在被拦下时不会抛异常，所以只能用"结果"验证：
+     * 1.5 秒后本进程仍不在前台 ⇒ 拉起确实被拦，退回「点这里一键恢复」通知。
+     * 用 `goAsync()` 保住广播生命周期，避免 onReceive 返回后进程被回收导致校验不执行。
+     */
+    private fun verifyLaunchedLater(
+        context: Context,
+        pending: BroadcastReceiver.PendingResult
+    ) {
+        Thread {
+            try {
+                Thread.sleep(1_500L)
+                if (isAppForeground(context)) {
+                    com.focusguard.app.util.StartupTrace.mark(context, "boot.autoResumeVerified")
+                } else {
+                    Log.w(TAG, "1.5 秒后应用仍不在前台：开机自动恢复被系统拦截，发恢复通知")
+                    notifyReopen(context)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "开机恢复校验失败：${e.message}")
+            } finally {
+                runCatching { pending.finish() }
+            }
+        }.start()
+    }
+
+    /** 本进程是否在前台（查自己进程的 importance，任何版本都允许，不需要额外权限）。 */
+    private fun isAppForeground(context: Context): Boolean = try {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+        am?.runningAppProcesses
+            ?.firstOrNull { it.pid == android.os.Process.myPid() }
+            ?.let {
+                it.importance <= android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+            } ?: false
+    } catch (e: Exception) {
+        false
     }
 
     /**

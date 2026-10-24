@@ -1,6 +1,5 @@
 package com.focusguard.app.detection
 
-import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
@@ -126,23 +125,15 @@ object AppClassifier {
      * @param store 可选的持久化分类存储，传入时启用用户覆盖和自动学习
      */
     fun classifyForegroundApp(context: Context, store: AppCategoryStore? = null): AppInfo? {
-        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+        // 旧写法 queryUsageStats(INTERVAL_DAILY, now-15s, now) 的区间参数不生效：
+        // 它返回的是**整天**的聚合桶，再用 maxByOrNull{lastTimeUsed} 当"当前前台"，
+        // 早已退出的应用仍可能排在最前 ⇒ 误判（宽限期复检、时长计时、隐私候选全受影响）。
+        // 改成事件流：最近 10 分钟内最后一个"回到前台且没再离开"的应用。
+        val pkg = com.focusguard.app.service.ForegroundAppDetector.recentPackage(context)
             ?: return null
-
-        val now = System.currentTimeMillis()
-        val stats = usm.queryUsageStats(
-            UsageStatsManager.INTERVAL_DAILY,
-            now - 15_000, now
-        )
-
-        if (stats.isNullOrEmpty()) return null
-
         // UsageStats 可能包含当前进程自身，排除掉
-        val foreground = stats
-            .filter { it.packageName != context.packageName }
-            .maxByOrNull { it.lastTimeUsed } ?: return null
-
-        return classifyPackage(context, foreground.packageName, store)
+        if (pkg == context.packageName) return null
+        return classifyPackage(context, pkg, store)
     }
 
     /**

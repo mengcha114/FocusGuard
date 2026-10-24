@@ -102,6 +102,20 @@ class MonitorService : Service() {
         @Volatile
         var smartReason: String = ""
 
+        /**
+         * 「使用情况访问」权限已被撤。
+         *
+         * 失权后 `queryEvents` **返回空表而不抛异常** ⇒ 前台判定静默失效，
+         * 锁机置顶与应用封锁都不再触发，而界面仍显示"守护中"。
+         * 由 `LockGuardService` 每 30 秒复查后写入，首页 [healthText] 显示。
+         */
+        @Volatile
+        var usageStatsLost: Boolean = false
+
+        /** 通知权限被关闭（提醒横幅发不出去）。由 [AlertNotifier] 发送时写入。 */
+        @Volatile
+        var notificationsBlocked: Boolean = false
+
         /** 诊断文本：给用户看的守护健康状态。 */
         fun healthText(): String {
             if (!isRunning) return "守护未运行"
@@ -114,6 +128,13 @@ class MonitorService : Service() {
                 append(" · AI 检测：")
                 append(if (detectAgo < 0) "尚未执行" else "${detectAgo}s 前")
                 if (!isLoopAlive()) append(" ⚠️ 循环已停止")
+                // 权限降级：这两条都是「看起来在守、实际守不住」的静默失败，必须显式告诉用户
+                if (usageStatsLost) {
+                    append("\n⚠️ 「使用情况访问」权限已关闭：锁机置顶与应用封锁可能失效，请重新授权")
+                }
+                if (notificationsBlocked) {
+                    append("\n⚠️ 通知权限已关闭：娱乐提醒横幅不会出现（全屏提醒仍会弹）")
+                }
                 // 智能调度状态：下次检测倒计时 + 风险分
                 if (smartIntervalSeconds > 0) {
                     append("\n智能调度：下次 ${smartIntervalSeconds}s · 风险 ${smartRiskPercent}%")
