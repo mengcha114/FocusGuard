@@ -28,6 +28,11 @@ object UpdateChecker {
     private const val CI_PAGE = "$REPO/releases/tag/ci-latest"
     private const val DL = "$REPO/releases/download"
     private const val API_LATEST = "https://api.github.com/repos/mengcha114/FocusGuard/releases/latest"
+
+    // ── Gitee 镜像（国内可达；正式版通道的首选）──
+    private const val GITEE_REPO = "https://gitee.com/autumiao/FocusGuard"
+    private const val GITEE_API_LATEST = "https://gitee.com/api/v5/repos/autumiao/FocusGuard/releases/latest"
+    private const val GITEE_DL = "$GITEE_REPO/releases/download"
     private const val API_BETA = "https://api.github.com/repos/mengcha114/FocusGuard/releases/tags/ci-latest"
 
     data class UpdateInfo(
@@ -81,6 +86,35 @@ object UpdateChecker {
 
     private fun niceTime(ms: Long): String =
         SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(java.util.Date(ms))
+
+    /**
+     * 正式版首选通道：Gitee 镜像的 releases API（国内可直连，公开仓库无需 token）。
+     * 取 tag / 说明 / 本 flavor 的 asset 下载地址；Gitee 上没有的附件仍按固定命名拼。
+     */
+    private fun probeGitee(): Probe {
+        val json = httpGet(GITEE_API_LATEST) ?: return Probe(false, null)
+        val obj = runCatching { JSONObject(json) }.getOrNull() ?: return Probe(false, null)
+        val tag = obj.optString("tag_name").trim().ifBlank { return Probe(false, null) }
+        val notes = obj.optString("body").trim().take(1200)
+        val page = obj.optString("html_url").ifBlank { "$GITEE_REPO/releases/tag/$tag" }
+        // 优先用接口给出的附件直链（Gitee 的附件 URL 带 tag 路径）
+        val wanted = assetName()
+        val direct = runCatching {
+            val arr = obj.optJSONArray("assets") ?: return@runCatching null
+            (0 until arr.length())
+                .map { arr.optJSONObject(it) }
+                .firstOrNull { it?.optString("name") == wanted }
+                ?.optString("browser_download_url")
+                ?.takeIf { it.isNotBlank() }
+        }.getOrNull()
+        if (compareVersions(currentVersion(), tag) >= 0) return Probe(true, null)
+        return Probe(true, UpdateInfo(
+            tag = tag,
+            notes = notes,
+            downloadUrl = direct ?: "$GITEE_DL/$tag/$wanted",
+            pageUrl = page
+        ))
+    }
 
     /** 正式版：从 atom 订阅源取最新一条正式 Release。 */
     private fun probeStable(): Probe {
@@ -169,12 +203,17 @@ object UpdateChecker {
      * @param installedAt 本机 APK 安装/更新时间（毫秒），测试版通道用它判断新旧
      */
     fun check(beta: Boolean = false, installedAt: Long = 0L): UpdateInfo? {
+        // 正式版：Gitee 镜像优先（国内可直连）→ GitHub atom → GitHub API
+        if (!beta) {
+            val gitee = runCatching { probeGitee() }.getOrNull()
+            if (gitee != null && gitee.ok) return gitee.info
+        }
         val primary = runCatching { if (beta) probeBeta(installedAt) else probeStable() }.getOrNull()
         if (primary != null && primary.ok) return primary.info
         // 首选通路失败 ⇒ 用 API 兜底；再失败就如实报错（一般是限流 403）
         val fallback = runCatching { probeApi(beta, installedAt) }.getOrNull()
         if (fallback != null && fallback.ok) return fallback.info
-        throw IllegalStateException("查不到更新（可能被 GitHub 限流，请稍后再试）")
+        throw IllegalStateException("查不到更新（网络不通或接口限流，请稍后再试）")
     }
 
     /**
