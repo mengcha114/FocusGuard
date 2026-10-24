@@ -342,15 +342,17 @@ class LockGuardService : Service() {
      * - 已锁机时 `startLock` 只延长/加码 ⇒ 定时锁不会把更长的锁变短。
      */
     private fun checkScheduledLocks() {
-        val settings = Settings(this)
-        val rules = settings.scheduledLocks.filter { it.enabled }
+        // 注意：这里不能用局部变量名 settings —— 会和服务的 settings 属性重名，
+        // 且 Settings 类在本文件没有显式 import，所以统一用全限定名。
+        val schedSettings = com.focusguard.app.data.Settings(this)
+        val rules = schedSettings.scheduledLocks.filter { it.enabled }
         if (rules.isEmpty()) return
         val now = System.currentTimeMillis()
         rules.forEach { rule ->
-            val last = settings.scheduledLastFired(rule.id)
+            val last = schedSettings.scheduledLastFired(rule.id)
             if (now - last < com.focusguard.app.data.ScheduledLock.MIN_GAP_MS) return@forEach
             if (!com.focusguard.app.data.ScheduledLock.isDue(now, rule)) return@forEach
-            settings.markScheduledFired(rule.id, now)
+            schedSettings.markScheduledFired(rule.id, now)
             lockState.startLock(rule.minutes, "SCHEDULE", rule.strength)
             Log.w(TAG, "定时锁机触发：${rule.hour}:${rule.minute} 锁 ${rule.minutes} 分钟")
             runCatching {
