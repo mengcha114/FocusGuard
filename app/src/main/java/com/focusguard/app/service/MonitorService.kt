@@ -289,9 +289,9 @@ class MonitorService : Service() {
                 val data = intent.getParcelableExtra<Intent>("data")
                 if (data != null) {
                     startMonitoring(resultCode, data)
-                } else if (!settings.screenshotDetection ||
-                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                        com.focusguard.app.access.GuardAccessibilityService.instance != null)
+                } else if (settings.screenshotDetection &&
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                    com.focusguard.app.access.GuardAccessibilityService.instance != null
                 ) {
                     // 不用录屏也能干活（无障碍截图 / 纯文字）⇒ 直接开跑
                     startMonitoring(resultCode, null)
@@ -417,8 +417,9 @@ class MonitorService : Service() {
         // 低版本只能用 MediaProjection，否则会「一轮都抓不到画面」（实测 B 站被跳过）。
         val a11yReady = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             com.focusguard.app.access.GuardAccessibilityService.instance != null
-        // 语义：开关关 ⇒ 完全不截屏（纯文字）；开关开 ⇒ 无障碍截图优先，做不到（低版本/无障碍没开）再回落录屏
-        val wantProjection = data != null && settings.screenshotDetection && !a11yReady
+        // 语义（用户定义）：开关开 ⇒ 无障碍截图；开关关 ⇒ 共享屏幕（录屏）。
+        // 低版本(<11)/无障碍没开时无障碍截图不存在，只能回落到录屏，否则一轮都抓不到画面。
+        val wantProjection = data != null && (!settings.screenshotDetection || !a11yReady)
 
         // 复用旧会话前先回收，避免同时存在两个 MediaProjection（Android 14 每次授权都是新会话）
         if (mediaProjection != null) {
