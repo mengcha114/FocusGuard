@@ -97,10 +97,12 @@ class AiClient {
                 if (diagnostics.size >= MAX_DIAGNOSTICS) {
                     diagnostics.removeAt(0)
                 }
+                // 单条截断：请求体里可能带整张图的 base64，原样存下来会几十 MB ⇒ 渲染时闪退
+                val clipped = if (line.length > 600) line.take(600) + "…（已截断 ${line.length - 600} 字）" else line
                 diagnostics.add("[${
                     java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
                         .format(java.util.Date())
-                }] $line")
+                }] $clipped")
             }
         }
 

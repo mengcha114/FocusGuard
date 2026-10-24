@@ -189,6 +189,13 @@ object UpdateChecker {
         val notes = obj.optString("body").trim().take(1200)
         val page = obj.optString("html_url").ifBlank { "$REPO/releases" }
         if (beta) {
+            // 优先按版本号比较：标题形如「CI 测试版 v3.11.50（自动覆盖）」。
+            // 不能用发布时间——CI 覆盖资产时 published_at 不变（用户实测「检测不到」）。
+            val nameVer = Regex("v\\d+(?:\\.\\d+)+").find(obj.optString("name"))?.value
+            if (nameVer != null) {
+                if (compareVersions(currentVersion(), nameVer) >= 0) return Probe(true, null)
+                return Probe(true, UpdateInfo("$nameVer 测试版", notes, "$DL/ci-latest/${assetName()}", page))
+            }
             val published = parseTime(obj.optString("published_at"))
             if (published <= installedAt) return Probe(true, null)
             return Probe(true, UpdateInfo("测试版（" + niceTime(published) + "）", notes, "$DL/ci-latest/${assetName()}", page))

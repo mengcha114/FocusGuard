@@ -103,6 +103,13 @@ fun LogScreen() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // 诊断文本只算一次并限长：内容过大（带图片 base64）会让渲染直接崩
+        val diagText = remember(showDiagnostics) {
+            runCatching { com.focusguard.app.ai.AiClient.exportDiagnostics() }
+                .getOrElse { "诊断信息读取失败：${it.message}" }
+                .take(8000)
+        }
+
         // ── AI 调用诊断（原始请求/响应，排查问题用） ──
         AnimatedVisibility(
             visible = showDiagnostics,
@@ -132,7 +139,7 @@ fun LogScreen() {
                             onClick = {
                                 copyToClipboard(
                                     context,
-                                    com.focusguard.app.ai.AiClient.exportDiagnostics()
+                                    diagText
                                 )
                             },
                             modifier = Modifier.size(28.dp)
@@ -147,7 +154,7 @@ fun LogScreen() {
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = com.focusguard.app.ai.AiClient.exportDiagnostics(),
+                        text = diagText,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
