@@ -265,6 +265,21 @@ gacha
         get() = prefs.getInt(KEY_CONSECUTIVE_VIOLATIONS, 2)
         set(value) = prefs.edit().putInt(KEY_CONSECUTIVE_VIOLATIONS, value).apply()
     
+    // ── 定时锁机 ──────────────────────────────────────
+    /** 定时锁机规则（JSON 数组字符串；解析失败按空处理）。 */
+    var scheduledLocks: List<ScheduledLockRule>
+        get() = ScheduledLockRule.listFromJson(prefs.getString("scheduled_locks", "[]"))
+        set(value) = prefs.edit()
+            .putString("scheduled_locks", ScheduledLockRule.listToJson(value)).apply()
+
+    /** 某条规则上次触发的时间（毫秒）。用于防重复上锁（300ms 巡检不会连点）。 */
+    fun scheduledLastFired(ruleId: String): Long =
+        prefs.getLong("sched_fired_$ruleId", 0L)
+
+    fun markScheduledFired(ruleId: String, wallMs: Long) {
+        prefs.edit().putLong("sched_fired_$ruleId", wallMs).apply()
+    }
+
     var whitelist: String
         get() = prefs.getString(KEY_WHITELIST, "") ?: ""
         set(value) = prefs.edit().putString(KEY_WHITELIST, value).apply()

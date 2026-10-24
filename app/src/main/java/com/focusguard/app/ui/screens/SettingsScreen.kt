@@ -478,6 +478,15 @@ fun SettingsScreen(
             SettingsSection(title = "答题年级", icon = Icons.Default.School) {
                 com.focusguard.app.ui.components.GradeSettingCard()
             }
+
+            SettingsSection(
+                title = "定时锁机",
+                icon = Icons.Default.Schedule,
+                defaultExpanded = false,
+                summary = "按周定时自动锁机"
+            ) {
+                com.focusguard.app.ui.components.ScheduledLockCard()
+            }
         }
 
         SettingsSection(

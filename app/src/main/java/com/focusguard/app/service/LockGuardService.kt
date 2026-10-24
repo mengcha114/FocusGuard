@@ -333,6 +333,36 @@ class LockGuardService : Service() {
         }
     }
 
+    /**
+     * 定时锁机检查（每 300ms 巡检里调用，靠 [Settings.scheduledLastFired] 防重复）。
+     *
+     * 防漏洞要点：
+     * - 触发窗口只有 2 分钟 ⇒ 服务被杀/休眠几小时后恢复不会补一堆锁；
+     * - 上次触发 < 30 分钟直接跳过 ⇒ 轮询不会重复上锁、时钟回拨也不会连环锁；
+     * - 已锁机时 `startLock` 只延长/加码 ⇒ 定时锁不会把更长的锁变短。
+     */
+    private fun checkScheduledLocks() {
+        val settings = Settings(this)
+        val rules = settings.scheduledLocks.filter { it.enabled }
+        if (rules.isEmpty()) return
+        val now = System.currentTimeMillis()
+        rules.forEach { rule ->
+            val last = settings.scheduledLastFired(rule.id)
+            if (now - last < com.focusguard.app.data.ScheduledLock.MIN_GAP_MS) return@forEach
+            if (!com.focusguard.app.data.ScheduledLock.isDue(now, rule)) return@forEach
+            settings.markScheduledFired(rule.id, now)
+            lockState.startLock(rule.minutes, "SCHEDULE", rule.strength)
+            Log.w(TAG, "定时锁机触发：${rule.hour}:${rule.minute} 锁 ${rule.minutes} 分钟")
+            runCatching {
+                com.focusguard.app.service.AlertNotifier.alert(
+                    this, "定时锁机开始",
+                    "已按计划锁机 ${rule.minutes} 分钟（答题可提前解锁）", id = 1013
+                )
+            }
+            com.focusguard.app.enforce.LockScreenActivity.reassert(this)
+        }
+    }
+
     /** 时间篡改警告：通知用户倒计时不受改时间影响，并已追加惩罚时长。 */
     private fun notifyTimeTamper(tamperMs: Long) {        try {
             val notification = android.app.Notification.Builder(
@@ -458,6 +488,9 @@ class LockGuardService : Service() {
     private fun guardTick() {
         val now = System.currentTimeMillis()
         val foreground = ForegroundAppDetector.current(this)
+
+        // ── 定时锁机：规则命中就上锁（已锁机时 startLock 只会延长/加码，不会被短锁覆盖）──
+        runCatching { checkScheduledLocks() }
 
         // 状态栏物理拦截条双保险：无障碍存活时随锁机状态挂载/移除
         // （事件驱动之外，锁机到期/解除也能及时摘掉拦截条）
