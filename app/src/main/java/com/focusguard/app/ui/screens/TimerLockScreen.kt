@@ -42,7 +42,8 @@ import kotlinx.coroutines.delay
  */
 enum class LockMode(val label: String, val description: String) {
     PLAIN("持续锁机", "整段时间持续锁定"),
-    POMODORO("番茄钟", "专注锁定 · 休息放开")
+    POMODORO("番茄钟", "专注锁定 · 休息放开"),
+    SCHEDULED("定时锁机", "按周定时自动锁机")
 }
 
 /** 番茄钟预设：专注 / 休息（分钟）。 */
@@ -166,7 +167,10 @@ fun TimerLockScreen(onBack: () -> Unit) {
                 label = "modeContent"
             ) { mode ->
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (mode == LockMode.PLAIN) {
+                    if (mode == LockMode.SCHEDULED) {
+                        // 定时锁机：直接复用设置页同一套计划界面（形态与番茄/持续一致）
+                        com.focusguard.app.ui.components.ScheduledLockSection(locked = lockActive)
+                    } else if (mode == LockMode.PLAIN) {
                         Text("时长", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         FxOptionRow(
                             options = listOf(15, 30, 45, 60),
@@ -325,17 +329,19 @@ fun TimerLockScreen(onBack: () -> Unit) {
             }
         }
 
-        FxPrimaryButton(
-            text = when {
-                lockActive -> "锁机进行中"
-                !accessibilityOn -> "请先开启无障碍服务"
-                selectedMode == LockMode.PLAIN -> "开始锁机 · ${formatDuration(totalMinutes * 60)}"
-                else -> "开始番茄钟 · $pomodoroRounds 轮"
-            },
-            icon = Icons.Default.Lock,
-            enabled = ready,
-            onClick = { showConfirm = true }
-        )
+        if (selectedMode != LockMode.SCHEDULED) {
+            FxPrimaryButton(
+                text = when {
+                    lockActive -> "锁机进行中"
+                    !accessibilityOn -> "请先开启无障碍服务"
+                    selectedMode == LockMode.PLAIN -> "开始锁机 · ${formatDuration(totalMinutes * 60)}"
+                    else -> "开始番茄钟 · $pomodoroRounds 轮"
+                },
+                icon = Icons.Default.Lock,
+                enabled = ready,
+                onClick = { showConfirm = true }
+            )
+        }
 
         Spacer(Modifier.height(12.dp))
     }
