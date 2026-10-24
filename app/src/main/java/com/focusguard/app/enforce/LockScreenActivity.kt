@@ -1568,13 +1568,13 @@ private fun StatusPill(
  * 用 Canvas 画双层圆弧（底轨 + 进度弧），进度弧带渐变扫描色，
  * 中心叠加时间数字。这是整个锁机页的视觉焦点。
  */
-@Composable
 /**
  * 锁机页上的「下次自动锁机：今天 21:30」一行。
  *
  * 计划本身只能在设置页改（锁机期间连改都不允许），这里只读展示，
  * 让用户随时知道下一次自动锁机是什么时候。
  */
+@Composable
 private fun NextScheduledLockLine(palette: com.focusguard.app.ui.theme.FocusColors.Palette) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val nowMs = System.currentTimeMillis()

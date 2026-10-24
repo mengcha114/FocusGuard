@@ -290,33 +290,38 @@ private fun ScheduledLockEditDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("1. 多久一次", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("每天", "工作日", "周末", "自定义").forEach { preset ->
-                        FilterChip(
-                            selected = dayPreset == preset,
-                            onClick = {
-                                dayPreset = preset
-                                days = when (preset) {
-                                    "每天" -> setOf(1, 2, 3, 4, 5, 6, 7)
-                                    "工作日" -> setOf(1, 2, 3, 4, 5)
-                                    "周末" -> setOf(6, 7)
-                                    else -> days
-                                }
-                                error = null
-                            },
-                            label = { Text(preset, fontSize = 12.sp) }
-                        )
+                listOf("每天", "工作日", "周末", "自定义").chunked(2).forEach { row -> 
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { preset ->
+                            FilterChip(
+                                selected = dayPreset == preset,
+                                onClick = {
+                                    dayPreset = preset
+                                    days = when (preset) {
+                                        "每天" -> setOf(1, 2, 3, 4, 5, 6, 7)
+                                        "工作日" -> setOf(1, 2, 3, 4, 5)
+                                        "周末" -> setOf(6, 7)
+                                        else -> days
+                                    }
+                                    error = null
+                                },
+                                label = { Text(preset, fontSize = 12.sp) }
+                            )
+                        }
                     }
                 }
                 if (dayPreset == "自定义") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        arrayOf("一", "二", "三", "四", "五", "六", "日").forEachIndexed { i, label ->
-                            val d = i + 1
-                            FilterChip(
-                                selected = d in days,
-                                onClick = { days = if (d in days) days - d else days + d },
-                                label = { Text(label, fontSize = 11.sp) }
-                            )
+                    // 7 个按钮必须换行：此前挤一行，"日"被挤出屏幕 ⇒ 周日选不到（用户反馈）
+                    listOf(1 to "一", 2 to "二", 3 to "三", 4 to "四",
+                        5 to "五", 6 to "六", 7 to "日").chunked(4).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            row.forEach { (d, label) ->
+                                FilterChip(
+                                    selected = d in days,
+                                    onClick = { days = if (d in days) days - d else days + d },
+                                    label = { Text("周$label", fontSize = 11.sp) }
+                                )
+                            }
                         }
                     }
                 }
@@ -343,14 +348,16 @@ private fun ScheduledLockEditDialog(
                 }
 
                 Text("3. 锁多久", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(30 to "30 分", 60 to "1 小时", 90 to "1.5 小时",
-                        120 to "2 小时", 180 to "3 小时").forEach { (m, label) ->
-                        FilterChip(
-                            selected = minutes == m,
-                            onClick = { minutes = m; error = null },
-                            label = { Text(label, fontSize = 12.sp) }
-                        )
+                listOf(30 to "30 分", 60 to "1 小时", 90 to "1.5 小时",
+                    120 to "2 小时", 180 to "3 小时", 240 to "4 小时").chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { (m, label) ->
+                            FilterChip(
+                                selected = minutes == m,
+                                onClick = { minutes = m; error = null },
+                                label = { Text(label, fontSize = 12.sp) }
+                            )
+                        }
                     }
                 }
 
@@ -360,7 +367,7 @@ private fun ScheduledLockEditDialog(
                         FilterChip(
                             selected = strength == s,
                             onClick = { strength = s },
-                            label = { Text("$s", fontSize = 12.sp) }
+                            label = { Text("强度 $s", fontSize = 12.sp) }
                         )
                     }
                 }
