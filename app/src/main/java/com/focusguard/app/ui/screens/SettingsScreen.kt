@@ -308,13 +308,16 @@ fun SettingsScreen(
                     ).show()
                 }
             }
-            var shotDetection by remember { mutableStateOf(settings.screenshotDetection) }
+            val a11yShotSupported = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
+            var shotDetection by remember {
+                mutableStateOf(settings.screenshotDetection && a11yShotSupported)
+            }
             com.focusguard.app.ui.components.SwitchRow(
                 title = "截屏识别",
                 hint = "打开（默认）：用无障碍能力截图识别画面 —— 不弹「共享屏幕」、也不会让系统隐藏通知栏内容（需 Android 11+ 且无障碍已授权，做不到时自动改用共享屏幕）。\n" +
                     "关掉：改用共享屏幕（录屏）识别 —— 兼容所有版本、识别更稳，但每次开始守护要授权共享屏幕，部分机型还会因此隐藏通知栏内容",
                 checked = shotDetection,
-                enabled = true
+                enabled = a11yShotSupported
             ) { value ->
                 shotDetection = value
                 settings.screenshotDetection = value

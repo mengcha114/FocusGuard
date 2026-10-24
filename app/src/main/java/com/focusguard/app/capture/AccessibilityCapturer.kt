@@ -43,13 +43,47 @@ object AccessibilityCapturer {
         }
     }
 
+    private val failureCount = java.util.concurrent.atomic.AtomicInteger(0)
+    @Volatile private var warned = false
+
+    private fun resetFailure() {
+        failureCount.set(0)
+    }
+
+    /** 有的机型/ROM 不支持无障碍截图：连续失败就提示用户改用共享屏幕，而不是静默抓不到画面。 */
+    private fun noteFailure(context: android.content.Context) {
+        if (failureCount.incrementAndGet() < 3 || warned) return
+        warned = true
+        runCatching {
+            com.focusguard.app.data.LogStore(context).addLog(
+                com.focusguard.app.data.DetectionLog(
+                    timestamp = System.currentTimeMillis(),
+                    classification = "NEUTRAL",
+                    confidence = 0f,
+                    reason = "无障碍截图连续失败（该机型可能不支持）：请在设置里关闭「截屏识别」改用共享屏幕",
+                    action = "NONE",
+                    source = "ERROR",
+                    appLabel = "无障碍截图"
+                )
+            )
+        }
+    }
+
     private suspend fun shot(): Bitmap? = withContext(Dispatchers.Main) {
         val service = GuardAccessibilityService.instance ?: return@withContext null
         suspendCancellableCoroutine { cont ->
+            val resumed = java.util.concurrent.atomic.AtomicBoolean(false)
+            fun finish(bmp: Bitmap?) {
+                if (resumed.compareAndSet(false, true) && cont.isActive) cont.resume(bmp)
+            }
             try {
-                service.captureScreenshot { bmp -> if (cont.isActive) cont.resume(bmp) }
+                service.captureScreenshot { bmp ->
+                    if (bmp == null) noteFailure(service) else resetFailure()
+                    finish(bmp)
+                }
             } catch (t: Throwable) {
-                if (cont.isActive) cont.resume(null)
+                noteFailure(service)
+                finish(null)
             }
         }
     }
