@@ -568,15 +568,21 @@ gacha
         set(value) = prefs.edit().putBoolean(KEY_SCREEN_CAPTURE_GRANTED, value).apply()
     
     /**
-     * 截屏识别（默认开）。
+     * 截屏识别——**两值语义（用户定义）**：
+     * - 打开：用**无障碍截图**识别画面（Android 11+ 且无障碍已授权才行；
+     *   不弹「共享屏幕」，也不会让系统隐藏通知栏内容）；
+     * - 关闭：用**共享屏幕（录屏）**识别画面（兼容所有版本、更稳，
+     *   但每次开始守护要授权，部分机型会因此隐藏通知栏内容）。
      *
-     * 开着时优先用**无障碍截图**识别画面（不建立常驻录屏会话）；
-     * 关掉后完全不截屏，只按「应用名 + 无障碍读到的文字」判断 ——
-     * 某些机型在截屏/录屏时会把通知正文替换成「内容已隐藏」，
-     * 把这项关掉通知内容就会恢复正常（代价：纯图片内容识别不到）。
+     * 默认值按系统版本：高版本默认开、低版本默认关（低版本没有无障碍截图能力）。
      */
     var screenshotDetection: Boolean
-        get() = prefs.getBoolean("screenshot_detection", true)
+        // 默认值按版本：无障碍截图只有 Android 11+ 才有，
+        // 低版本默认关（=用共享屏幕），高版本默认开（=用无障碍截图）
+        get() = prefs.getBoolean(
+            "screenshot_detection",
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
+        )
         set(value) = prefs.edit().putBoolean("screenshot_detection", value).apply()
 
     var overlayGranted: Boolean

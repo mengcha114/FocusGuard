@@ -299,6 +299,13 @@ fun SettingsScreen(
                 val data = result.data
                 if (result.resultCode == android.app.Activity.RESULT_OK && data != null) {
                     com.focusguard.app.service.MonitorService.startService(context, result.resultCode, data)
+                } else {
+                    // 取消授权 ⇒ 共享屏幕模式下无法截屏，必须明确告知，别让用户以为守护在跑
+                    android.widget.Toast.makeText(
+                        context,
+                        "没拿到共享屏幕授权，守护没有启动；可再次切换开关重试，或打开「截屏识别」用无障碍截图",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
                 }
             }
             var shotDetection by remember { mutableStateOf(settings.screenshotDetection) }
