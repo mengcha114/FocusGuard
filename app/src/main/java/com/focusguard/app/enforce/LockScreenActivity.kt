@@ -1584,16 +1584,51 @@ private fun NextScheduledLockLine(palette: com.focusguard.app.ui.theme.FocusColo
             com.focusguard.app.data.ScheduledLock.nextTriggerInMs(nowMs, rule)?.let { d -> d to rule }
         }
         .minByOrNull { it.first }?.second
+    var showPanel by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
     androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(8.dp))
-    androidx.compose.material3.Text(
-        text = if (next != null) {
-            "定时锁机：" + com.focusguard.app.data.ScheduledLock.nextTriggerText(nowMs, next)
-        } else {
-            "定时锁机：未设置（设置 → 执法与锁机 → 定时锁机）"
-        },
-        fontSize = 11.sp,
-        color = palette.haze
-    )
+    // 可点入口：点开就是"设置/锁机模式页"里同一份计划界面（配置仍在那边，锁机期只读）
+    androidx.compose.foundation.layout.Row(
+        modifier = androidx.compose.ui.Modifier
+            .fillMaxWidth()
+            .clickable { showPanel = true }
+            .padding(8.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    ) {
+        androidx.compose.material3.Text(
+            text = if (next != null) {
+                "定时锁机：" + com.focusguard.app.data.ScheduledLock.nextTriggerText(nowMs, next)
+            } else {
+                "定时锁机：未设置，点这里添加"
+            },
+            fontSize = 11.sp,
+            color = palette.haze,
+            modifier = androidx.compose.ui.Modifier.weight(1f)
+        )
+        androidx.compose.material3.Text("›", fontSize = 14.sp, color = palette.haze)
+    }
+    if (showPanel) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showPanel = false },
+            title = { androidx.compose.material3.Text("定时锁机") },
+            text = {
+                androidx.compose.foundation.layout.Column(
+                    modifier = androidx.compose.ui.Modifier
+                        .heightIn(max = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.6f).dp)
+                        .androidx.compose.foundation.verticalScroll(androidx.compose.foundation.rememberScrollState())
+                ) {
+                    com.focusguard.app.ui.components.ScheduledLockSection(
+                        locked = com.focusguard.app.data.LockState(ctx).isLocked
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showPanel = false }) {
+                    androidx.compose.material3.Text("关闭")
+                }
+            }
+        )
+    }
 }
 
 @Composable
