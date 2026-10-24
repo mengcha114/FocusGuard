@@ -438,6 +438,7 @@ fun ShizukuStatusCard() {
         if (!adminActive) {
             OutlinedButton(onClick = {
                 runCatching {
+                    com.focusguard.app.util.LeaveGuard.markLeaving()
                     context.startActivity(
                         com.focusguard.app.enhance.AdminEnhancer
                             .activationIntent(context)

@@ -849,7 +849,15 @@ fun SettingsScreen(
                         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     runCatching {
-                        context.startActivity(android.content.Intent.createChooser(shareIntent, "导出诊断日志"))
+                        val ok = com.focusguard.app.util.LeaveGuard.open(
+                            context,
+                            android.content.Intent.createChooser(shareIntent, "导出诊断日志")
+                        )
+                        if (!ok) {
+                            android.widget.Toast.makeText(
+                                context, "没有可分享的应用", android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
                         exportMsg = "已生成诊断日志，请选择分享方式"
                     }.onFailure {
                         exportMsg = "导出失败：${it.message}"
@@ -965,13 +973,24 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
                 Button(
                     onClick = {
-                        runCatching {
-                            context.startActivity(
-                                android.content.Intent(
-                                    android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse(url)
-                                )
+                        val ok = com.focusguard.app.util.LeaveGuard.open(
+                            context,
+                            android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(url)
                             )
+                        )
+                        if (!ok) {
+                            runCatching {
+                                val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                                cm?.setPrimaryClip(
+                                    android.content.ClipData.newPlainText("更新链接", url)
+                                )
+                            }
+                            android.widget.Toast.makeText(
+                                context, "打不开浏览器，下载链接已复制到剪贴板",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),

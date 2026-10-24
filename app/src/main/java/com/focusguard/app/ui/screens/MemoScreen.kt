@@ -203,6 +203,7 @@ fun MemoScreen(onBack: () -> Unit) {
                     },
                     onOpenExactAlarmSetting = {
                         runCatching {
+                            com.focusguard.app.util.LeaveGuard.markLeaving()
                             context.startActivity(
                                 Intent(
                                     Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
@@ -254,6 +255,7 @@ fun MemoScreen(onBack: () -> Unit) {
             onDismiss = { showStyle = false },
             onOpenExactAlarmSetting = {
                 runCatching {
+                    com.focusguard.app.util.LeaveGuard.markLeaving()
                     context.startActivity(
                         Intent(
                             Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,

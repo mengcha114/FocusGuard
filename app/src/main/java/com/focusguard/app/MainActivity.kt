@@ -417,6 +417,7 @@ class MainActivity : ComponentActivity() {
                             // 否则浏览器一起来 onUserLeaveHint 就会 finishAndRemoveTask()，
                             // 用户看到的就是「点下载就闪退」（实测反馈）
                             launchingSystemUi = true
+                            com.focusguard.app.util.LeaveGuard.markLeaving()
                             val opened = runCatching {
                                 this@MainActivity.startActivity(
                                     android.content.Intent(
@@ -1137,7 +1138,10 @@ class MainActivity : ComponentActivity() {
         //    不是用户意图；② 系统授权框正盖在顶上。
         // 不再延后、也不再因为"前台取不到"而跳过：onUserLeaveHint 本身已经证明
         // 用户离开了（先把锁机页/封锁页这类不能误关的场景交给上面的闸门）。
-        if (!appSettings.hideFromRecents || launchingSystemUi || isFinishing) return
+        // ③ 全局标记：跳浏览器/分享/导出日志/系统设置等"我们自己要离开"的场景一律不隐藏
+        if (!appSettings.hideFromRecents || launchingSystemUi || isFinishing ||
+            com.focusguard.app.util.LeaveGuard.isExpected()
+        ) return
         val fg = runCatching {
             com.focusguard.app.service.ForegroundAppDetector.current(this)
         }.getOrNull()

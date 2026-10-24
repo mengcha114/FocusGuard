@@ -68,6 +68,7 @@ object DhizukuUpgrade {
         val intent = context.packageManager.getLaunchIntentForPackage("com.rosan.dhizuku")
             ?: return@runCatching false
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        com.focusguard.app.util.LeaveGuard.markLeaving()
         context.startActivity(intent)
         markPending()
         lastProbeAt = 0L
