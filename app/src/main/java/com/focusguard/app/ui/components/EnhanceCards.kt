@@ -272,7 +272,11 @@ fun LockHardeningCard() {
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
         )
-        LockPolicies.Hardening.entries.filter { it.defaultOn }.forEach { item ->
+        // 只列出"当前权限下能真正生效"的项：未授权 Dhizuku/Shizuku/设备管理员时，
+        // 高级加固一律不显示（用户要求：没授权只显示一般设置），授权后自动出现
+        fun hardeningUsable(i: LockPolicies.Hardening) = dzReady || (i.adminCapable && adminActive)
+        val hiddenHardening = LockPolicies.Hardening.entries.count { !hardeningUsable(it) }
+        LockPolicies.Hardening.entries.filter { it.defaultOn && hardeningUsable(it) }.forEach { item ->
             var on by remember(item.key) {
                 mutableStateOf(LockPolicies.isHardeningEnabled(context, item))
             }
@@ -299,7 +303,7 @@ fun LockHardeningCard() {
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
         )
-        LockPolicies.Hardening.entries.filterNot { it.defaultOn }.forEach { item ->
+        LockPolicies.Hardening.entries.filterNot { it.defaultOn }.filter { hardeningUsable(it) }.forEach { item ->
             var on by remember(item.key) {
                 mutableStateOf(LockPolicies.isHardeningEnabled(context, item))
             }
@@ -320,6 +324,15 @@ fun LockHardeningCard() {
                 // 打开（收紧）直接生效；关闭（放宽）需要答题
                 if (!guardedSecurityOff(on, value, apply)) apply()
             }
+        }
+
+        if (hiddenHardening > 0) {
+            Text(
+                "另有 $hiddenHardening 项高级加固需要 Dhizuku 授权或开启系统设备管理员，授权后会自动出现在这里",
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+            )
         }
 
         // 关闭防破解/硬化开关：先答题（与设置页"放宽限制"同一套 AttemptGuard 规则）
