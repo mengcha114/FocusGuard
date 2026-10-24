@@ -413,13 +413,31 @@ class MainActivity : ComponentActivity() {
                         TextButton(onClick = {
                             appSettings.updatePromptedTag = info.tag
                             pendingUpdate = null
-                            runCatching {
+                            // 关键：跳浏览器也算"我们自己拉起系统界面"，必须置这个标志，
+                            // 否则浏览器一起来 onUserLeaveHint 就会 finishAndRemoveTask()，
+                            // 用户看到的就是「点下载就闪退」（实测反馈）
+                            launchingSystemUi = true
+                            val opened = runCatching {
                                 this@MainActivity.startActivity(
                                     android.content.Intent(
                                         android.content.Intent.ACTION_VIEW,
                                         android.net.Uri.parse(info.downloadUrl)
-                                    )
+                                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                                 )
+                            }.isSuccess
+                            if (!opened) {
+                                launchingSystemUi = false
+                                runCatching {
+                                    val cm = getSystemService(android.content.ClipboardManager::class.java)
+                                    cm?.setPrimaryClip(
+                                        android.content.ClipData.newPlainText("更新链接", info.downloadUrl)
+                                    )
+                                    android.widget.Toast.makeText(
+                                        this@MainActivity,
+                                        "打不开浏览器，下载链接已复制到剪贴板",
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             }
                         }) { Text("去下载") }
                     },
@@ -793,7 +811,7 @@ class MainActivity : ComponentActivity() {
                 }
                 com.focusguard.app.util.StartupTrace.mark(this, "main.reauthLaunch")
                 runCatching {
-                    screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+                    screenCaptureLauncher.launch(screenCaptureIntent())
                 }
             }
             "overlay" -> {
@@ -1018,6 +1036,26 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
+    /**
+     * 屏幕录制授权 Intent。
+     *
+     * Android 14（API 34）起系统授权框会让人选「单个应用 / 整个屏幕」——选了单个应用，
+     * MediaProjection 就只截那一个应用，检测等于失效（用户反馈"只能选择一个应用"）。
+     * 这里强制用「整个屏幕」的配置，恢复旧行为。
+     */
+    private fun screenCaptureIntent(): Intent {
+        val mgr = mediaProjectionManager
+        return if (Build.VERSION.SDK_INT >= 34) {
+            runCatching {
+                mgr.createScreenCaptureIntent(
+                    android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
+                )
+            }.getOrElse { mgr.createScreenCaptureIntent() }
+        } else {
+            mgr.createScreenCaptureIntent()
+        }
+    }
+
     private fun startGuard() {
         if (appSettings.apiKey.isBlank()) {
             Toast.makeText(this, "请先在设置中填写 API 密钥并保存", Toast.LENGTH_LONG).show()
@@ -1031,7 +1069,7 @@ class MainActivity : ComponentActivity() {
         }
         com.focusguard.app.util.StartupTrace.mark(this, "main.reauthLaunch")
         runCatching {
-            screenCaptureLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+            screenCaptureLauncher.launch(screenCaptureIntent())
         }
     }
 
