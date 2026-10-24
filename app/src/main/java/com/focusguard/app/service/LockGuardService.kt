@@ -490,15 +490,21 @@ class LockGuardService : Service() {
     }
 
     /**
-     * 复查「使用情况访问」权限。
+     * 复查两项「静默失效」的权限。
      *
-     * 失权后 `UsageStatsManager.queryEvents` **返回空表而不抛异常**，守护会
-     * 「正常跑、什么都没做」——这是本应用最危险的静默失败，必须显式告警：
-     * 检测日志 + 通知 + 首页 [MonitorService.healthText] 三处都写。
+     * ① 使用情况访问：失权后 `UsageStatsManager.queryEvents` **返回空表而不抛异常**，
+     *    守护会「正常跑、什么都没做」——本应用最危险的失败方式，检测日志 + 通知 +
+     *    首页 [MonitorService.healthText] 三处都写。
+     * ② 通知：API 33+ 未授权时 `notify()` 静默丢弃，提醒彻底消失。这里每 30 秒同步
+     *    一次状态（用户可能在系统设置里改回来），首页提示才不会一直挂着。
      */
-    private fun checkUsageStatsAlive() {
+    private fun recheckPermissions() {
         val granted = com.focusguard.app.util.PermissionChecker.isUsageStatsGranted(this)
         MonitorService.usageStatsLost = !granted
+        MonitorService.notificationsBlocked = !runCatching {
+            getSystemService(android.app.NotificationManager::class.java)
+                ?.areNotificationsEnabled() ?: true
+        }.getOrDefault(true)
         if (granted) {
             usageStatsWarned = false
             return
@@ -531,10 +537,11 @@ class LockGuardService : Service() {
         val now = System.currentTimeMillis()
         val foreground = ForegroundAppDetector.current(this)
 
-        // ── 使用情况访问权限被撤：queryEvents 会**返回空表而不抛异常** ──
-        // ⇒ 前台判定静默失效（锁机置顶 / 应用封锁都不再触发），用户以为还在守。
-        // 每 30 秒复查一次（300ms × 100），失权时明确告警。
-        if (tickCount % 100 == 0) checkUsageStatsAlive()
+        // ── 权限静默失效：使用情况访问被撤 ⇒ queryEvents **返回空表而不抛异常**，
+        //    前台判定失效（锁机置顶 / 应用封锁都不再触发）；通知权限被关 ⇒
+        //    notify() 静默丢弃。两者都是「看起来在守、实际守不住」。
+        //    每 30 秒复查一次（300ms × 100），失权时明确告警，恢复后提示自动消失。
+        if (tickCount % 100 == 0) recheckPermissions()
 
         // ── 定时锁机：规则命中就上锁（已锁机时 startLock 只会延长/加码，不会被短锁覆盖）──
         runCatching { checkScheduledLocks() }
