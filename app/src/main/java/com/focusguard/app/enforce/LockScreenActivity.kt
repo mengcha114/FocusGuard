@@ -1575,7 +1575,6 @@ private fun StatusPill(
  * 计划本身只能在设置页改（锁机期间连改都不允许），这里只读展示，
  * 让用户随时知道下一次自动锁机是什么时候。
  */
-@androidx.compose.runtime.Composable
 private fun NextScheduledLockLine(palette: com.focusguard.app.ui.theme.FocusColors.Palette) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val nowMs = System.currentTimeMillis()
@@ -1594,6 +1593,7 @@ private fun NextScheduledLockLine(palette: com.focusguard.app.ui.theme.FocusColo
     )
 }
 
+@Composable
 private fun CountdownRing(
     progress: Float,
     seconds: Int,

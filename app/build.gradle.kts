@@ -11,8 +11,8 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 142
-        versionName = "3.11.41"
+        versionCode = 143
+        versionName = "3.11.42"
     }
 
     // 固定签名：CI 从 GitHub Secrets 恢复同一 PKCS12，密钥不进入公开仓库；
