@@ -1583,11 +1583,14 @@ private fun NextScheduledLockLine(palette: com.focusguard.app.ui.theme.FocusColo
         .mapNotNull { rule ->
             com.focusguard.app.data.ScheduledLock.nextTriggerInMs(nowMs, rule)?.let { d -> d to rule }
         }
-        .minByOrNull { it.first }?.second ?: return
+        .minByOrNull { it.first }?.second
     androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(8.dp))
     androidx.compose.material3.Text(
-        text = "下次自动锁机：" + com.focusguard.app.data.ScheduledLock
-            .nextTriggerText(nowMs, next),
+        text = if (next != null) {
+            "定时锁机：" + com.focusguard.app.data.ScheduledLock.nextTriggerText(nowMs, next)
+        } else {
+            "定时锁机：未设置（设置 → 执法与锁机 → 定时锁机）"
+        },
         fontSize = 11.sp,
         color = palette.haze
     )
