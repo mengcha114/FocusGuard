@@ -1071,10 +1071,9 @@ class MainActivity : ComponentActivity() {
         }
         // MediaProjection 授权每次启动都要重新申请，系统不允许复用
         launchingSystemUi = true
-        // 由无障碍替用户点掉系统授权弹窗（可在设置里关；仅在刚拉起后 60 秒内有效）
-        if (appSettings.autoGrantProjection) {
-            runCatching { com.focusguard.app.enforce.ProjectionConsent.arm() }
-        }
+        // 关掉「截屏识别」= 走共享屏幕：这里**总是**先武装无障碍代点，
+        // 让系统授权弹窗自动点掉（用户不用手动点「共享屏幕」）
+        runCatching { com.focusguard.app.enforce.ProjectionConsent.arm() }
         com.focusguard.app.util.StartupTrace.mark(this, "main.reauthLaunch")
         runCatching {
             screenCaptureLauncher.launch(screenCaptureIntent())
