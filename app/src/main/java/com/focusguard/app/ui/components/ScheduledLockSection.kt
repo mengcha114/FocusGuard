@@ -70,6 +70,13 @@ fun ScheduledLockSection(locked: Boolean) {
         settings.scheduledLocks = list
     }
 
+    /** 把已有计划改小 = 放宽：锁得更短 / 强度更低 / 天数变少 / 直接关掉，都要答题。 */
+    fun isLoosening(old: com.focusguard.app.data.ScheduledLockRule, new: com.focusguard.app.data.ScheduledLockRule): Boolean =
+        new.minutes < old.minutes ||
+            new.strength < old.strength ||
+            new.days.size < old.days.size ||
+            (old.enabled && !new.enabled)
+
     fun loosen(apply: () -> Unit) {
         if (locked) {
             hint = "锁机期间不能修改定时锁机计划"
@@ -195,21 +202,26 @@ fun ScheduledLockSection(locked: Boolean) {
             locked = locked,
             onDismiss = { adding = false; editing = null },
             onSave = { rule ->
-                val list = if (editing == null) rules + rule
-                else rules.map { if (it.id == rule.id) rule else it }
-                persist(list)
-                adding = false
-                editing = null
+                val previous = editing
+                val apply = {
+                    val list = if (previous == null) rules + rule
+                    else rules.map { if (it.id == rule.id) rule else it }
+                    persist(list)
+                    adding = false
+                    editing = null
+                }
+                // 新增计划 / 改得更大 = 收紧 ⇒ 直接生效；改得更小 = 放宽 ⇒ 先答题
+                if (previous != null && isLoosening(previous, rule)) loosen(apply) else apply()
             }
         )
     }
 
     pendingLoosen?.let { apply ->
         VerifyDialog(
-            title = "关闭定时锁机需要先答题",
-            description = "关闭或删除计划属于放宽限制。本题由应用本地题库按你的年级出题，与 AI 无关；" +
+            title = "放宽定时锁机需要先答题",
+            description = "关闭、删除、或把计划改小（锁得更短/强度更低/天数更少）都属于放宽限制。本题由应用本地题库按你的年级出题，与 AI 无关；" +
                 "答错立即换题，错 2 次要等 5 分钟。",
-            confirmText = "验证并关闭",
+            confirmText = "验证并放宽",
             onPassed = {
                 val action = pendingLoosen
                 pendingLoosen = null
