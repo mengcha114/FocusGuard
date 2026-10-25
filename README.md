@@ -17,8 +17,8 @@ FocusGuard 是一款 Android 自律辅助应用。它会定期看一眼屏幕，
 
 | 安装包 | 答题方式 | 适合谁 |
 | --- | --- | --- |
-| **学段版** `app-edu-debug.apk`（约 21.0 MB） | 内置真实题库，按**年级 + 学科**出题，高中会按**选科**筛选；含选择、多选、填空 | 学生自用：和课本知识挂钩 |
-| **通用版** `app-general-debug.apk`（约 20.6 MB） | 不装题库，出**繁琐的高强度计算题**（纯算术推导，越答越费劲） | 通用场景：不依赖学段 |
+| **学段版** `app-edu-release.apk`（约 21.0 MB） | 内置真实题库，按**年级 + 学科**出题，高中会按**选科**筛选；含选择、多选、填空 | 学生自用：和课本知识挂钩 |
+| **通用版** `app-general-release.apk`（约 20.6 MB） | 不装题库，出**繁琐的高强度计算题**（纯算术推导，越答越费劲） | 通用场景：不依赖学段 |
 
 - 题库来自 TAL-SCQ5K、AGIEval 等开源数据，构建时已把公式转成普通字符，**离线也能出题**
 - 学段版首次打开会强制选择年级（之后只能调高），通用版不需要选年级
@@ -38,7 +38,7 @@ FocusGuard 是一款 Android 自律辅助应用。它会定期看一眼屏幕，
    - 锁机时全屏挡住屏幕，退出不了，只能答题解锁
    - 支持答对一题解锁 / 连续答对多题解锁 / 找朋友帮忙解锁
    - 可以设置中途暂停（也要答题换）、换一题（次数有限）
-   - 条件允许时可以开启更强的 Dhizuku 锁机模式
+   - 条件允许时可启用 Dhizuku 锁机模式（系统 Lock Task，锁机期间禁用 Home/最近任务）
 
 3. **AI 对话助手**
    - 内置聊天面板，可以跟 AI 聊天，让它帮你加待办、提醒你自律，在设置页面还可以自定义聊天角色喵
@@ -56,9 +56,9 @@ FocusGuard 是一款 Android 自律辅助应用。它会定期看一眼屏幕，
 
 ```bash
 # 需要 JDK 17 + Android SDK
-./gradlew assembleDebug
-# 产物：app/build/outputs/apk/edu/debug/app-edu-debug.apk      （学段版）
-#       app/build/outputs/apk/general/debug/app-general-debug.apk（通用版）
+./gradlew assembleRelease
+# 产物：app/build/outputs/apk/edu/release/app-edu-release.apk      （学段版）
+#       app/build/outputs/apk/general/release/app-general-release.apk（通用版）
 ```
 
 CI：GitHub Actions 自动构建，APK 从 Actions 产物或 Releases 页面下载。

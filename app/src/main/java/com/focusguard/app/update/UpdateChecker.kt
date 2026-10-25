@@ -56,7 +56,7 @@ object UpdateChecker {
 
     /** 当前 flavor 对应的安装包名（CI 每次发布都会带上这两个包）。 */
     fun assetName(): String =
-        if (BuildConfig.CHALLENGE_MODE == "edu") "app-edu-debug.apk" else "app-general-debug.apk"
+        if (BuildConfig.CHALLENGE_MODE == "edu") "app-edu-release.apk" else "app-general-release.apk"
 
     /** 响应体上限：GitHub/Gitee 的发行页 + JSON 都远小于这个数，超过只取前 2MB 防 OOM。 */
     private const val MAX_BODY_CHARS = 2 * 1024 * 1024

@@ -51,7 +51,8 @@ object LockPolicies {
     private val ENTERTAINMENT = setOf(
         AppCategory.GAME,
         AppCategory.SHORT_VIDEO,
-        AppCategory.VIDEO
+        AppCategory.VIDEO,
+        AppCategory.SOCIAL
     )
 
     private fun prefs(c: Context) =
@@ -80,8 +81,13 @@ object LockPolicies {
         add(UserManager.DISALLOW_SAFE_BOOT)         // 禁止安全模式（会禁用第三方应用）
         add(UserManager.DISALLOW_ADD_USER)          // 禁止新建用户绕过
         val shizukuOn = ShizukuEnhancer.isAvailable()
-        // 调试开关：Shizuku 依赖 adb，它在跑时不施加（默认开，可在设置里关）
-        if (!shizukuOn && isHardeningEnabled(c, Hardening.NO_DEBUG)) {
+        // 调试开关：Shizuku 依赖 adb，它在跑时不施加（默认开，可在设置里关）。
+        // 跳过必须留痕：防护状态页会据此提示「adb 仍可用」，不能假装已生效。
+        if (shizukuOn) {
+            if (isHardeningEnabled(c, Hardening.NO_DEBUG)) {
+                Log.w(TAG, "Shizuku 运行中，跳过禁调试（否则 Shizuku 会掉线）")
+            }
+        } else if (isHardeningEnabled(c, Hardening.NO_DEBUG)) {
             add(UserManager.DISALLOW_DEBUGGING_FEATURES)
         }
         if (isBlockResetEnabled(c)) add(UserManager.DISALLOW_FACTORY_RESET)
@@ -205,6 +211,38 @@ object LockPolicies {
     fun enabledHardeningCount(c: Context): Int =
         Hardening.entries.count { isHardeningEnabled(c, it) }
 
+    /** 本次锁机的系统限制是否全部施加成功（失败会由巡检重试）。 */
+    fun restrictionsApplied(c: Context): Boolean = prefs(c).getBoolean(KEY_RESTRICTED, false)
+
+    /**
+     * 一键开启推荐防破解组合。
+     *
+     * 只收紧、不放宽：打开冻结/隐藏/检测，以及禁强停/清数据、禁安装、禁卸载、
+     * 禁 USB、禁调试、禁恢复出厂、强制自动时间。没有 Dhizuku/Shizuku 时，这些开关
+     * 会先记下来，等授权后自动生效；界面据实显示缺口，不假装已生效。
+     */
+    fun enableRecommendedDefense(c: Context) {
+        val recommended = setOf(
+            Hardening.CRACK_FREEZE,
+            Hardening.CRACK_HIDE,
+            Hardening.CRACK_DETECT,
+            Hardening.NO_DEBUG,
+            Hardening.NO_USB,
+            Hardening.NO_APPS_CONTROL,
+            Hardening.NO_INSTALL,
+            Hardening.NO_UNINSTALL,
+            Hardening.AUTO_TIME
+        ).map { it.key }
+        val p = prefs(c)
+        val current = p.getStringSet(KEY_HARDENING, null)
+            ?: Hardening.entries.filter { it.defaultOn }.map { it.key }.toSet()
+        p.edit()
+            .putStringSet(KEY_HARDENING, current + recommended)
+            .putBoolean(KEY_FREEZE_ENABLED, true)
+            .putBoolean(KEY_BLOCK_RESET, true)
+            .apply()
+    }
+
     /** 系统自带（含系统更新版）输入法包名，用作输入法白名单。 */
     private fun systemInputMethods(context: Context): List<String> {
         val pm = context.packageManager
@@ -246,6 +284,11 @@ object LockPolicies {
                 (AdminEnhancer.isActive(app) && AdminEnhancer.setKeyguardDisabledFeatures(app, flags))
             if (ok) applied.add(Hardening.KEYGUARD_LOCK.key)
         }
+        // 破解环境检测不需要任何特权：放在 Dhizuku 门槛之前，避免“开关开了但没跑”
+        if (isHardeningEnabled(app, Hardening.CRACK_DETECT)) {
+            // 只留痕：root/Xposed 直接改内存我们挡不住，如实记录，不拒绝解锁
+            CrackGuard.reportIfNeeded(app)
+        }
         // 其余项都需要 Device Owner 权限（Dhizuku）
         if (!dzReady) return applied
 
@@ -285,10 +328,6 @@ object LockPolicies {
         }
         if (isHardeningEnabled(app, Hardening.CRACK_HIDE) && CrackGuard.applyHide(app)) {
             applied.add(Hardening.CRACK_HIDE.key)
-        }
-        if (isHardeningEnabled(app, Hardening.CRACK_DETECT)) {
-            // 只留痕：root/Xposed 直接改内存我们挡不住，如实记录，不拒绝解锁
-            CrackGuard.reportIfNeeded(app)
         }
         return applied
     }

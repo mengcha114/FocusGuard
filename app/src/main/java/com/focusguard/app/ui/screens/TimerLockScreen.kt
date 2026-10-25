@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.LockState
 import com.focusguard.app.enforce.LockScreenActivity
+import com.focusguard.app.enhance.DefenseStatus
+import com.focusguard.app.enhance.DefenseStatusReader
 import com.focusguard.app.ui.components.*
 import com.focusguard.app.util.PermissionChecker
 import kotlinx.coroutines.delay
@@ -49,24 +51,22 @@ enum class LockMode(val label: String, val description: String) {
 /** 番茄钟预设：专注 / 休息（分钟）。 */
 private val pomodoroPresets = listOf(25 to 5, 50 to 10, 90 to 20)
 
-/** 当前设备的防护等级（决定锁机能否被绕过）。 */
-enum class ProtectionLevel(val label: String, val detail: String) {
-    SYSTEM("系统级", "Dhizuku Lock Task：手势、最近任务、强行停止全部失效"),
-    OVERLAY("普通模式", "全屏锁机界面 + 无障碍拦截；国产 ROM 一键清理仍可能终止守护"),
-    BASIC("基础", "缺少悬浮窗权限，锁机页可能被手势切走")
-}
-
-fun protectionLevel(context: android.content.Context): ProtectionLevel = when {
-    com.focusguard.app.enhance.DhizukuEnhancer.shouldPreferActivity(context) -> ProtectionLevel.SYSTEM
-    PermissionChecker.canDrawOverlays(context) -> ProtectionLevel.OVERLAY
-    else -> ProtectionLevel.BASIC
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimerLockScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val lockState = remember { LockState(context) }
+
+    // 从权限页 / 设置页返回时重新读取事实状态（是否已开防破解、是否已授权）
+    var defenseRefresh by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) defenseRefresh++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     var selectedMinutes by remember { mutableIntStateOf(30) }
     var selectedMode by remember { mutableStateOf(LockMode.PLAIN) }
@@ -95,7 +95,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
     // 软件锁机只需无障碍：锁机时拦截所有切换到其他应用的尝试
     val accessibilityOn = PermissionChecker.isAccessibilityEnabled(context)
     val ready = accessibilityOn && !lockActive
-    val protection = remember { protectionLevel(context) }
+    val defense = remember(defenseRefresh) { DefenseStatusReader.evaluate(context) }
 
     val totalMinutes = if (selectedMode == LockMode.PLAIN) selectedMinutes
     else pomodoroRounds * (workMinutes + breakMinutes)
@@ -115,12 +115,18 @@ fun TimerLockScreen(onBack: () -> Unit) {
             Column {
                 Text("强制锁机", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                 Text(
-                    "防护等级 · ${protection.label}",
+                    "锁机方式 · ${defense.lockPath}",
                     fontSize = 12.sp,
-                    color = when (protection) {
-                        ProtectionLevel.SYSTEM -> MaterialTheme.colorScheme.primary
-                        ProtectionLevel.OVERLAY -> MaterialTheme.colorScheme.onSurfaceVariant
-                        ProtectionLevel.BASIC -> MaterialTheme.colorScheme.error
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "防破解 · ${defense.antiCrackLabel}",
+                    fontSize = 12.sp,
+                    color = when {
+                        !defense.antiCrackRequested -> MaterialTheme.colorScheme.error
+                        defense.blockingRequested && !defense.antiCrackEffective ->
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MaterialTheme.colorScheme.primary
                     }
                 )
             }
@@ -142,11 +148,25 @@ fun TimerLockScreen(onBack: () -> Unit) {
                 icon = Icons.Default.Info
             )
         }
-        FxExpand(visible = protection == ProtectionLevel.BASIC && accessibilityOn) {
+        FxExpand(visible = !defense.overlay && accessibilityOn) {
             FxNotice(
-                text = "未授予悬浮窗权限，普通模式无法启用，锁机页可能被手势切走。建议在权限页授予悬浮窗权限，或配置 Dhizuku 获得系统级锁机。",
+                text = "未授予悬浮窗权限，锁机页可能被手势切走。建议在权限页授予悬浮窗权限；授权 Dhizuku 后可用系统锁机页。",
                 tone = MaterialTheme.colorScheme.error,
                 icon = Icons.Default.Warning
+            )
+        }
+        FxExpand(visible = !defense.antiCrackRequested) {
+            FxNotice(
+                text = "防破解未开启：清数据、卸载、自动答题仍可绕过。可在设置 → 锁机加固中一键开启推荐组合。",
+                tone = MaterialTheme.colorScheme.error,
+                icon = Icons.Default.Shield
+            )
+        }
+        FxExpand(visible = defense.blockingRequested && !defense.antiCrackEffective) {
+            FxNotice(
+                text = "防破解已开启，但当前设备无法冻结工具：需要 Shizuku 或 Dhizuku 授权后才会生效。",
+                tone = MaterialTheme.colorScheme.onSurfaceVariant,
+                icon = Icons.Default.Info
             )
         }
 
@@ -352,7 +372,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
             mode = selectedMode,
             strength = unlockStrength,
             pause = if (pauseEnabled && unlockStrength < 4) "$pauseQuota 次 × $pauseMinutes 分钟" else "不允许",
-            protection = protection,
+            defense = defense,
             onDismiss = { showConfirm = false },
             onConfirm = {
                 showConfirm = false
@@ -404,7 +424,7 @@ private fun ConfirmLockDialog(
     mode: LockMode,
     strength: Int,
     pause: String,
-    protection: ProtectionLevel,
+    defense: DefenseStatus,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
@@ -441,8 +461,15 @@ private fun ConfirmLockDialog(
                     }
                 )
                 SummaryRow("暂停", pause)
-                SummaryRow("防护", protection.label)
-                Text(protection.detail, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                SummaryRow("锁机方式", defense.lockPath)
+                SummaryRow("防破解", defense.antiCrackLabel)
+                if (defense.gaps.isNotEmpty()) {
+                    Text(
+                        defense.gaps.take(2).joinToString("；"),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 if (strength == LockState.STRENGTH_LOCKED_FOREVER) {
                     FxNotice(
                         text = "强度 4 开始后无法以任何方式提前结束。",

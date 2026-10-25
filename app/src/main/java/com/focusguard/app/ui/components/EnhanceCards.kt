@@ -1,9 +1,14 @@
 package com.focusguard.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -12,9 +17,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.focusguard.app.enhance.DefenseStatus
+import com.focusguard.app.enhance.DefenseStatusReader
 import com.focusguard.app.enhance.DhizukuEnhancer
 import com.focusguard.app.enhance.LockPolicies
 import com.focusguard.app.enhance.ShizukuEnhancer
+import kotlinx.coroutines.delay
 
 /**
  * 设置页的加固 / 增强 / 关于卡片。
@@ -41,7 +49,10 @@ fun LockHardeningCard() {
     val adminActive = remember(refreshKey) {
         com.focusguard.app.enhance.AdminEnhancer.isActive(context)
     }
-    val canFreeze = dzReady || ShizukuEnhancer.isReady()
+    val shizukuReady = remember(refreshKey) { ShizukuEnhancer.isReady() }
+    val canFreeze = dzReady || shizukuReady
+    val defense = remember(refreshKey) { DefenseStatusReader.evaluate(context) }
+    var showPreset by remember { mutableStateOf(false) }
 
     // 待答题才能执行的"关闭防破解开关"动作（答对才落地，取消则开关状态与磁盘都不变）
     var pendingSecurityOff by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -64,10 +75,12 @@ fun LockHardeningCard() {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        AntiCrackStatusCard(status = defense, onEnable = { showPreset = true })
+
         SwitchRow(
             title = "锁机期间冻结娱乐应用",
             hint = if (canFreeze) {
-                "锁机时冻结游戏与视频类应用（含 AI 判定与你手动标记的），解锁后自动解冻；社交类不冻结"
+                "锁机时冻结游戏、视频与社交类应用（含 AI 判定与你手动标记的），解锁后自动解冻"
             } else {
                 "需要 Dhizuku 或 Shizuku 授权后才能使用"
             },
@@ -273,8 +286,14 @@ fun LockHardeningCard() {
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
         )
         // 只列出"当前权限下能真正生效"的项：未授权 Dhizuku/Shizuku/设备管理员时，
-        // 高级加固一律不显示（用户要求：没授权只显示一般设置），授权后自动出现
-        fun hardeningUsable(i: LockPolicies.Hardening) = dzReady || (i.adminCapable && adminActive)
+        // 高级加固一律不显示（用户要求：没授权只显示一般设置），授权后自动出现。
+        // 冻结可走 Shizuku，隐藏目前只走 Dhizuku；检测不需要特权。
+        fun hardeningUsable(i: LockPolicies.Hardening) = when (i) {
+            LockPolicies.Hardening.CRACK_FREEZE -> canFreeze
+            LockPolicies.Hardening.CRACK_HIDE -> dzReady
+            LockPolicies.Hardening.CRACK_DETECT -> true
+            else -> dzReady || (i.adminCapable && adminActive)
+        }
         val hiddenHardening = LockPolicies.Hardening.entries.count { !hardeningUsable(it) }
         LockPolicies.Hardening.entries.filter { it.defaultOn && hardeningUsable(it) }.forEach { item ->
             var on by remember(item.key) {
@@ -350,7 +369,134 @@ fun LockHardeningCard() {
                 onCancel = { pendingSecurityOff = null }
             )
         }
+
+        if (showPreset) {
+            DefensePresetDialog(
+                onDismiss = { showPreset = false },
+                onApplied = {
+                    showPreset = false
+                    freeze = LockPolicies.isFreezeEnabled(context)
+                    blockReset = LockPolicies.isBlockResetEnabled(context)
+                    refreshKey++
+                }
+            )
+        }
     }
+}
+
+/** 防破解的事实状态卡：只报已开启/未开启与具体缺口，不做「最强」评级。 */
+@Composable
+fun AntiCrackStatusCard(status: DefenseStatus, onEnable: () -> Unit) {
+    val active = status.antiCrackRequested && status.antiCrackEffective
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+        colors = CardDefaults.cardColors(
+            containerColor = if (active) {
+                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "防破解",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                status.antiCrackLabel,
+                fontSize = 13.sp,
+                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "锁机方式：${status.lockPath}",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (status.gaps.isNotEmpty()) {
+                Text(
+                    status.gaps.take(4).joinToString("\n"),
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (status.gaps.size > 4) {
+                    Text(
+                        "另有 ${status.gaps.size - 4} 项缺口，见权限设置",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Button(
+                onClick = onEnable,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(if (status.antiCrackRequested) "重新应用推荐组合" else "一键开启推荐防破解")
+            }
+        }
+    }
+}
+
+/**
+ * 开启推荐防破解组合的确认框。收紧限制不可撤销式误触，沿用项目里的 3 秒确认。
+ */
+@Composable
+fun DefensePresetDialog(onDismiss: () -> Unit, onApplied: () -> Unit) {
+    val context = LocalContext.current
+    var countdown by remember { mutableIntStateOf(3) }
+    LaunchedEffect(Unit) {
+        while (countdown > 0) {
+            delay(1000)
+            countdown--
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Security, null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text("开启防破解") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text("将打开以下推荐项（只收紧，不会放宽任何现有设置）：")
+                Text("· 锁机时冻结/隐藏破解与自动化工具")
+                Text("· 禁止强停/清数据、禁安装、禁卸载、禁 USB、禁调试、禁止恢复出厂、强制自动时间")
+                Text("需要 Shizuku 或 Dhizuku 的项，会在授权后自动生效；没授权的项会在状态卡里显示为缺口，不会假装已生效。")
+                Text("已开启的项可在本页逐项关闭（关闭需要答题）。")
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    LockPolicies.enableRecommendedDefense(context)
+                    android.widget.Toast.makeText(
+                        context, "已保存；需要授权的项会在授权后自动生效", android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    onApplied()
+                },
+                enabled = countdown == 0,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(if (countdown > 0) "确认（$countdown）" else "确认开启")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
 }
 
 @Composable

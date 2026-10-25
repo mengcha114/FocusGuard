@@ -127,7 +127,7 @@ fun PermissionSetupScreen(
             ),
             PermissionItem(
                 key = "dhizuku",
-                title = "Dhizuku 系统级防退出（可选·最强）",
+                title = "Dhizuku 防退出（可选）",
                 description = "授权后锁机进入系统 Lock Task 模式：Home/上滑/最近任务全部被系统禁用，任何手势都无法退出",
                 icon = Icons.Default.Security,
                 // autoCheck：每次刷新时主动连接 Dhizuku 并检查授权状态（不拉起界面），
@@ -149,6 +149,11 @@ fun PermissionSetupScreen(
             } else null
         )
     }
+
+    val defense = remember(refreshKey) {
+        com.focusguard.app.enhance.DefenseStatusReader.evaluate(context)
+    }
+    var showPreset by remember { mutableStateOf(false) }
 
     val required = permissions.filter { it.isRequired }
     val grantedCount = required.count { it.isGranted }
@@ -200,6 +205,11 @@ fun PermissionSetupScreen(
                 PermissionCard(item = perm, onRequest = { onRequestPermission(perm.key) })
             }
 
+            com.focusguard.app.ui.components.AntiCrackStatusCard(
+                status = defense,
+                onEnable = { showPreset = true }
+            )
+
             Spacer(modifier = Modifier.height(8.dp))
 
             Button(
@@ -230,6 +240,16 @@ fun PermissionSetupScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("稍后设置，先进入应用", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f), fontSize = 13.sp)
+            }
+
+            if (showPreset) {
+                com.focusguard.app.ui.components.DefensePresetDialog(
+                    onDismiss = { showPreset = false },
+                    onApplied = {
+                        showPreset = false
+                        refreshKey++
+                    }
+                )
             }
         }
     }

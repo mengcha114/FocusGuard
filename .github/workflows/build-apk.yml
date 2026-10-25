@@ -72,16 +72,18 @@ jobs:
           path: app/build/reports/tests/
           retention-days: 7
 
-      - name: 构建 Debug APK
-        run: ./gradlew assembleDebug --no-daemon
+      # 发布与测试通道都用 release 变体：
+      # debug 包 debuggable=true、未压缩混淆，不能作为对外分发的安装包。
+      - name: 构建 Release APK
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: 上传 APK 产物（学段版 / 通用版）
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apks
+          name: app-release-apks
           path: |
-            app/build/outputs/apk/edu/debug/*.apk
-            app/build/outputs/apk/general/debug/*.apk
+            app/build/outputs/apk/edu/release/*.apk
+            app/build/outputs/apk/general/release/*.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -91,8 +93,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            app/build/outputs/apk/edu/debug/*.apk
-            app/build/outputs/apk/general/debug/*.apk
+            app/build/outputs/apk/edu/release/*.apk
+            app/build/outputs/apk/general/release/*.apk
           name: ${{ github.ref_name }} - 正式版
           # 更新说明手写、说人话（不用提交信息自动生成，太技术化）
           body: |
@@ -113,8 +115,8 @@ jobs:
 
             ────────────────
             【两个版本的区别】功能完全一样，只有答题内容不同：
-            · 学段版 app-edu-debug.apk：内置题库，按年级+学科出题（高中按选科筛选），含选择/多选/填空 —— 学生自用；
-            · 通用版 app-general-debug.apk：不含题库，出繁复的高强度计算题 —— 通用场景。
+            · 学段版 app-edu-release.apk：内置题库，按年级+学科出题（高中按选科筛选），含选择/多选/填空 —— 学生自用；
+            · 通用版 app-general-release.apk：不含题库，出繁复的高强度计算题 —— 通用场景。
             包名不同（com.focusguard.app / com.focusguard.app.general），两个可以同时安装；同一签名可覆盖安装升级。
           draft: false
           prerelease: false
@@ -140,8 +142,8 @@ jobs:
           # 只按时间比较会永远显示"已是最新"）
           name: CI 测试版 v${{ steps.ver.outputs.version }}（自动覆盖）
           files: |
-            app/build/outputs/apk/edu/debug/*.apk
-            app/build/outputs/apk/general/debug/*.apk
+            app/build/outputs/apk/edu/release/*.apk
+            app/build/outputs/apk/general/release/*.apk
           body: |
             CI 测试版 v${{ steps.ver.outputs.version }}（每次构建自动覆盖，不稳定，仅供尝鲜/内测）。
             稳定版请看正式 Release（标题里带「正式版」的那些）。
