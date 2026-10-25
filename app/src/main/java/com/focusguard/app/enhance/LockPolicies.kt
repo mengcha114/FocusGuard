@@ -398,22 +398,26 @@ object LockPolicies {
         if (!DhizukuEnhancer.ensureReady(app)) return
         val adb = p.getBoolean(KEY_ADB_ORIGINAL, true)
         val wifi = p.getBoolean(KEY_ADB_WIFI_ORIGINAL, true)
-        val a = DhizukuEnhancer.setGlobalSetting(
+        DhizukuEnhancer.setGlobalSetting(
             app, android.provider.Settings.Global.ADB_ENABLED, if (adb) "1" else "0"
         )
-        val w = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             DhizukuEnhancer.setGlobalSetting(
                 app, GLOBAL_ADB_WIFI_ENABLED, if (wifi) "1" else "0"
             )
-        } else {
-            true  // Android 11 以下没有无线调试开关，无需恢复
         }
-        if (a && w) {
+        // 以读回值为准：限制还没撤完时写 1 会被系统挡回，这时保留记录下次再试
+        val restored = globalFlag(app, android.provider.Settings.Global.ADB_ENABLED, !adb) == adb &&
+            (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R ||
+                globalFlag(app, GLOBAL_ADB_WIFI_ENABLED, !wifi) == wifi)
+        if (restored) {
             p.edit()
                 .remove(KEY_SHELL_LOCK_APPLIED)
                 .remove(KEY_ADB_ORIGINAL)
                 .remove(KEY_ADB_WIFI_ORIGINAL)
                 .apply()
+        } else {
+            Log.w(TAG, "adb/无线调试开关尚未恢复（adb=$adb wifi=$wifi），下次再试")
         }
     }
 
@@ -536,20 +540,20 @@ object LockPolicies {
                 p.edit().putBoolean(KEY_DAEMONS_KILLED, true).apply()
             }
             // 关 adb：游龙自带 libadb 配对（不需要 Shizuku 也能拿 shell），这是它的入口
-            val adbOff = DhizukuEnhancer.setGlobalSetting(app, Settings.Global.ADB_ENABLED, "0")
-            val wifiOff =
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    DhizukuEnhancer.setGlobalSetting(
-                        app, GLOBAL_ADB_WIFI_ENABLED, "0"
-                    )
-                } else {
-                    true  // Android 11 以下没有无线调试开关
-                }
+            DhizukuEnhancer.setGlobalSetting(app, Settings.Global.ADB_ENABLED, "0")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                DhizukuEnhancer.setGlobalSetting(app, GLOBAL_ADB_WIFI_ENABLED, "0")
+            }
             val shizuku = installedPackages(app, listOf(SHIZUKU_PKG))
             // 没装 Shizuku = 本来就没有这条路
             val shizukuOff = shizuku.isEmpty() ||
                 DhizukuEnhancer.setPackagesSuspended(app, shizuku, true) ||
                 stillSuspended(app, shizuku.toSet())
+            // 以系统里的实际值为准，不看 API 返回值：有的 ROM 拒绝写 ADB_ENABLED，
+            // 但 DISALLOW_DEBUGGING_FEATURES 已经让 adb 掉了；也有反过来「返回成功却没写进去」的。
+            val adbOff = !globalFlag(app, Settings.Global.ADB_ENABLED, true)
+            val wifiOff = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R ||
+                !globalFlag(app, GLOBAL_ADB_WIFI_ENABLED, true)
             // 三样都断了才算生效：adb 没关掉却记成「已切断」，状态页会骗人
             if (adbOff && wifiOff && shizukuOff) {
                 applied.add(Hardening.SHIZUKU_LOCK.key)
