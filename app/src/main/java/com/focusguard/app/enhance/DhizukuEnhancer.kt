@@ -250,6 +250,12 @@ object DhizukuEnhancer {
      */
     fun autoCheck(context: Context): Boolean {
         if (isReady()) return true
+        // 主线程只触发后台预热：Dhizuku.init / 授权查询都是 Binder 调用，卡住会直接 ANR。
+        // 界面下一次重组时读到的就是后台刷新后的结果。
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            warmUpAsync(context)
+            return false
+        }
         if (!connect(context)) return false
         return try {
             if (Dhizuku.isPermissionGranted()) {

@@ -378,17 +378,31 @@ object LockPolicies {
      */
     private fun killCrackDaemons(app: Context): Boolean {
         if (!ShizukuEnhancer.isReady()) return false
+        val tools = CrackGuard.matched(app)
+        // 同时收回它们的 shell 通道授权：Shizuku 服务进程即使还活着，没有 API_V23
+        // 权限也执行不了命令；Dhizuku 授权同理。LA 工具箱实测就是靠 Shizuku 执行
+        // `pm disable-user` / `pm revoke` 来掐守护的。
+        val revoke = tools.joinToString("") { pkg ->
+            "pm revoke --user 0 $pkg moe.shizuku.manager.permission.API_V23 2>/dev/null; " +
+                "pm revoke --user 0 $pkg com.rosan.dhizuku.permission.API 2>/dev/null; "
+        }
+        // 按「实际跑着的进程」清：包名 / 自带守护 / LA 工具箱的 LaAntiFreeze 脚本
+        val kills = tools.joinToString("") { pkg ->
+            "pkill -f ${pkg.replace(".", "[.]")}; "
+        }
         // 用 runForOutput 等它真正跑完：紧接着就要关 adb，异步发起可能被一起掐断
         val out = ShizukuEnhancer.runForOutput(
             "sh", "-c",
             "pkill -f stellar[_]daemon; pkill -f stellar[_]server; " +
                 "pkill -f roro[.]stellar; pkill -f com[.]youlong[.]hd; " +
-                "sleep 0.3; ps -A 2>/dev/null | grep -E 'stellar[_](daemon|server)|roro[.]stellar'",
-            timeoutMs = 3_000L
+                "pkill -f LaAnti[F]reeze; " + kills + revoke +
+                "sleep 0.3; ps -A 2>/dev/null | grep -E " +
+                "'stellar[_](daemon|server)|roro[.]stellar|LaAnti[F]reeze'",
+            timeoutMs = 3_500L
         )
         // 输出为空 = 进程表里已经找不到这些守护进程
         val cleared = out != null && out.isBlank()
-        Log.d(TAG, "清理破解工具 shell 守护：${if (cleared) "已清理" else "仍有残留/无法执行"}")
+        Log.d(TAG, "清理破解工具 shell 守护：${if (cleared) "已清理" else "仍有残留/无法执行"}（${tools.size} 个工具）")
         return cleared
     }
 

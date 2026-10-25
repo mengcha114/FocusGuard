@@ -3,7 +3,10 @@ package com.focusguard.app.enhance
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
+import java.util.concurrent.atomic.AtomicBoolean
 import rikka.shizuku.Shizuku
 
 /**
@@ -26,18 +29,78 @@ object ShizukuEnhancer {
     private const val TAG = "ShizukuEnhancer"
     private const val DHIZUKU_PKG = "com.rosan.dhizuku"
 
-    /** Shizuku 服务是否在线。 */
-    fun isAvailable(): Boolean = try {
-        Shizuku.pingBinder()
-    } catch (e: Throwable) {
-        false
+    /** 探测结果缓存时长：Shizuku 卡死时 pingBinder 是阻塞 Binder 调用，绝不能在主线程做。 */
+    private const val CACHE_MS = 2_000L
+
+    @Volatile private var availableCache = false
+    @Volatile private var availableAt = 0L
+    @Volatile private var grantedCache = false
+    @Volatile private var grantedAt = 0L
+
+    /** 异步刷新去重，避免主线程每帧都开线程。 */
+    private val refreshing = AtomicBoolean(false)
+
+    private fun onMainThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
+
+    @Synchronized
+    private fun refreshNow() {
+        val a = try {
+            Shizuku.pingBinder()
+        } catch (_: Throwable) {
+            false
+        }
+        availableCache = a
+        availableAt = SystemClock.elapsedRealtime()
+        grantedCache = if (a) {
+            try {
+                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+            } catch (_: Throwable) {
+                false
+            }
+        } else {
+            false
+        }
+        grantedAt = availableAt
     }
 
-    /** 本应用是否已被 Shizuku 授权。 */
-    fun isPermissionGranted(): Boolean = try {
-        Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-    } catch (e: Throwable) {
-        false
+    private fun refreshAsync() {
+        if (!refreshing.compareAndSet(false, true)) return
+        Thread {
+            try {
+                refreshNow()
+            } finally {
+                refreshing.set(false)
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /**
+     * Shizuku 服务是否在线。
+     *
+     * 主线程调用只返回缓存并安排后台刷新：Shizuku 进程被挂起/卡住时 `pingBinder()`
+     * 会阻塞在 Binder 上（实测能把主线程卡 6 秒直接 ANR），状态页每帧调用尤其危险。
+     */
+    fun isAvailable(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (now - availableAt < CACHE_MS) return availableCache
+        if (onMainThread()) {
+            refreshAsync()
+            return availableCache
+        }
+        refreshNow()
+        return availableCache
+    }
+
+    /** 本应用是否已被 Shizuku 授权（同样走缓存，主线程不阻塞）。 */
+    fun isPermissionGranted(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (now - grantedAt < CACHE_MS) return grantedCache
+        if (onMainThread()) {
+            refreshAsync()
+            return grantedCache
+        }
+        refreshNow()
+        return grantedCache
     }
 
     /** Shizuku 可用且已授权。 */

@@ -49,7 +49,10 @@ object CrackGuard {
         // Shizuku 兼容层 + libadb 无线调试配对，不装 Shizuku 也能自己拿 shell
         "com.youlong.hd", "com.youlong.tool", "com.youlong.tools", "com.yltool",
         // 同类「免 Shizuku 拿 shell」的实现（Stellar / 自带 adb 配对）
-        "stellar"
+        "stellar",
+        // 实测样本：Sd tool（com.secureguard.toolbox）与 LA 工具箱（com.latools.app），
+        // 都带守护服务/无障碍/开机自启，可用 Shizuku 或 Dhizuku 停别人的应用
+        "secureguard", "com.secureguard.toolbox", "latools", "com.latools.app"
     )
 
     /** 应用名特征（中文工具基本靠这个命中）。 */
@@ -72,7 +75,9 @@ object CrackGuard {
         "todesk", "rustdesk", "网易uu远程", "uu远程",
         // 特权 / 改机 / 冻结
         "kernelsu", "apatch", "太极", "应用变量", "冰箱pro", "hibernator", "servicely",
-        "greenify", "superfreezz", "nap time", "naptime"
+        "greenify", "superfreezz", "nap time", "naptime",
+        // 实测样本的应用名（改包名后仍能命中）
+        "sd tool", "sd工具", "sd 工具", "la 工具箱", "la工具箱", "la-tools", "la tools"
     )
 
     private fun prefs(c: Context): SharedPreferences =
@@ -116,12 +121,14 @@ object CrackGuard {
         if (sys) return false
         val label = runCatching { pm.getApplicationLabel(info).toString() }.getOrDefault("")
         if (exempted(app, pkg, label)) return false
-        // 申请了 Shizuku 接口 = 有能力拿到 shell 的工具。游龙这类工具的包名、应用名
-        // 都可以随手改，但这条权限声明改不掉；命中即按破解工具处置（白名单可豁免）。
+        // 申请了 Shizuku/Dhizuku 接口 = 有能力拿到 shell 或设备所有者权限的工具。
+        // 这类工具的包名、应用名都可以随手改，但这条权限声明改不掉；命中即处置。
         val requestsShell = runCatching {
             pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_PERMISSIONS)
                 ?.requestedPermissions
-        }.getOrNull()?.any { it.contains("shizuku", ignoreCase = true) } == true
+        }.getOrNull()?.any {
+            it.contains("shizuku", ignoreCase = true) || it.contains("dhizuku", ignoreCase = true)
+        } == true
         if (requestsShell) return true
         // 第二类特征：请求 WRITE_SECURE_SETTINGS，同时还要看进程/杀后台。
         // 这是「系统级工具箱」的典型组合（游龙、黑阈、Scene 一类）：

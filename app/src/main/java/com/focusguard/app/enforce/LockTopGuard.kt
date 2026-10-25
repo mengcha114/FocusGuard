@@ -9,6 +9,8 @@ import com.focusguard.app.data.LogStore
 import com.focusguard.app.enhance.DhizukuEnhancer
 import com.focusguard.app.enforce.ForceStopHelper
 import com.focusguard.app.enhance.LockPolicies
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 
 /**
  * 锁机期间的「陌生人守卫」：有别的应用（尤其是语音助手）盖在锁机页上方时，
@@ -43,7 +45,7 @@ object LockTopGuard {
 
     /** 绝不能碰：我们依赖它们，或属于系统底座 / 用户正在用的东西。 */
     private val NEVER = setOf(
-        "com.android.systemui", "com.android.shell",
+        "android", "com.android.systemui", "com.android.shell",
         "moe.shizuku.privileged.api", "com.rosan.dhizuku",
         "com.android.permissioncontroller", "com.google.android.permissioncontroller",
         "com.android.packageinstaller", "com.google.android.packageinstaller",
@@ -64,12 +66,23 @@ object LockTopGuard {
         "com.samsung.android.bixby.agent", "com.samsung.android.bixby.voiceinput"
     )
 
-    @Volatile private var strikes = HashMap<String, Int>()
-    @Volatile private var lastActionAt = HashMap<String, Long>()
-    @Volatile private var frozenByUs = LinkedHashSet<String>()
-    @Volatile private var hiddenByUs = LinkedHashSet<String>()
+    @Volatile private var strikes = ConcurrentHashMap<String, Int>()
+    @Volatile private var lastActionAt = ConcurrentHashMap<String, Long>()
+    private val frozenByUs =
+        java.util.Collections.synchronizedSet(LinkedHashSet<String>())
+    private val hiddenByUs =
+        java.util.Collections.synchronizedSet(LinkedHashSet<String>())
     @Volatile private var failCount = 0
     @Volatile private var failUntil = 0L
+
+    /**
+     * 冻结 / 隐藏 / 代点强行停止全是阻塞 Binder 调用（Dhizuku、Shizuku、AMS）。
+     * 本函数会被无障碍回调在**主线程**调用，直接在回调里做这些事会把主线程卡到 ANR
+     * （实测 6 秒 `Object.wait`）。统一丢到单线程队列里串行执行。
+     */
+    private val actionExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "lock-top-guard").apply { isDaemon = true }
+    }
 
     /** 白名单：这些包即使盖在锁机页上方也**绝不**动手（顶回仍由无障碍负责）。 */
     fun isProtected(context: Context, pkg: String): Boolean {
@@ -105,6 +118,9 @@ object LockTopGuard {
     /**
      * 锁机期间「看到陌生窗口」时调用（无障碍窗口事件 / 守护巡检都会走这里）。
      * 返回 true = 已升级处理（调用方可跳过默认顶回），false = 交回调用方顶回。
+     *
+     * 计数与冷却在本线程完成（纯内存操作）；真正的冻结 / 隐藏 / 代点强行停止
+     * 全部交给 [actionExecutor]，保证主线程不被 Binder 阻塞。
      */
     fun onForeignAboveLock(context: Context, pkg: String): Boolean {
         val app = context.applicationContext
@@ -120,11 +136,18 @@ object LockTopGuard {
         if (frozenByUs.size >= MAX_FREEZE_PER_LOCK) return true
 
         val assistant = pkg in ASSISTANTS
+        actionExecutor.execute { upgrade(app, pkg, assistant) }
+        // 先让调用方立刻把锁机页顶回来，冻结在后台稍后生效
+        return false
+    }
+
+    /** 后台线程：真正执行限制动作。 */
+    private fun upgrade(app: Context, pkg: String, assistant: Boolean) {
         val frozen = runCatching { LockPolicies.suspendBlock(app, pkg) }.getOrDefault(false)
         if (frozen) {
             frozenByUs.add(pkg)
             report(app, pkg, if (assistant) "语音助手已冻结（锁机期间禁止呼出）" else "盖在锁机页上方，已冻结")
-            return true
+            return
         }
         if (assistant &&
             runCatching { DhizukuEnhancer.setApplicationHidden(app, setOf(pkg), true) }
@@ -132,8 +155,9 @@ object LockTopGuard {
         ) {
             hiddenByUs.add(pkg)
             report(app, pkg, "语音助手已隐藏（锁机期间禁止呼出）")
-            return true
+            return
         }
+        val now = System.currentTimeMillis()
         failCount++
         if (failCount >= FAIL_STRIKES) {
             failUntil = now + FAIL_COOLDOWN_MS
@@ -148,18 +172,19 @@ object LockTopGuard {
         } else {
             report(app, pkg, "无法限制（缺少冻结权限），已改为反复顶回锁机页")
         }
-        return true
     }
 
     /** 锁机结束 / 服务销毁：把本机制加的冻结与隐藏全部还原。 */
     fun releaseAll(context: Context) {
         val app = context.applicationContext
-        frozenByUs.forEach { pkg -> runCatching { LockPolicies.releaseBlock(app, pkg) } }
-        hiddenByUs.forEach { pkg ->
+        val frozen = synchronized(frozenByUs) { frozenByUs.toList() }
+        val hidden = synchronized(hiddenByUs) { hiddenByUs.toList() }
+        frozen.forEach { pkg -> runCatching { LockPolicies.releaseBlock(app, pkg) } }
+        hidden.forEach { pkg ->
             runCatching { DhizukuEnhancer.setApplicationHidden(app, setOf(pkg), false) }
         }
-        if (frozenByUs.isNotEmpty() || hiddenByUs.isNotEmpty()) {
-            Log.d(TAG, "已还原 ${frozenByUs.size} 个冻结 / ${hiddenByUs.size} 个隐藏")
+        if (frozen.isNotEmpty() || hidden.isNotEmpty()) {
+            Log.d(TAG, "已还原 ${frozen.size} 个冻结 / ${hidden.size} 个隐藏")
         }
         frozenByUs.clear()
         hiddenByUs.clear()

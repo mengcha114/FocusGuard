@@ -60,6 +60,8 @@ object ForceStopHelper {
         if (pkg.isBlank()) return
         // 冲突防护：绝不停止本应用自己（否则守护/锁机一起没了）
         if (pkg == context.packageName) return
+        // 系统底座与框架包没有可停止的应用信息页，代点只会打开一个无效页面
+        if (pkg == "android" || pkg == "com.android.systemui" || pkg == "com.android.settings") return
         // ① 便宜的一步：后台进程清理（可能无效，但零成本）
         runCatching {
             val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
