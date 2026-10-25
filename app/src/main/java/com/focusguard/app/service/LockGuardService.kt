@@ -198,6 +198,10 @@ class LockGuardService : Service() {
     /** 使用情况权限失权告警是否已发过（恢复后复位，避免每 30 秒刷一条通知）。 */
     private var usageStatsWarned = false
 
+    /** 破解工具即时处置：上次判定的前台组合与时刻（避免每 300ms 都做包名查询）。 */
+    private var lastCrackKey: String = ""
+    private var lastCrackCheckAt = 0L
+
     override fun onCreate() {
         super.onCreate()
         lockState = LockState(this)
@@ -250,6 +254,16 @@ class LockGuardService : Service() {
         stoppedByUser = false
         startForegroundSafely()
         startGuardLoop()
+
+        // 系统重建（START_STICKY，intent=null）不会走 start()，闹钟与看门狗可能在
+        // 「强行停止 / 清数据」时被系统一并清空——不补注册就只剩服务这一条命，
+        // 再被冻结一次就彻底回不来。锁机期间每次服务启动都补齐。
+        if (lockState.isLocked) {
+            runCatching {
+                LockGuardAlarm.schedule(applicationContext, LockGuardAlarm.RECOVERY_INTERVAL_MS)
+            }
+            GuardWatchdogWorker.schedule(applicationContext)
+        }
 
         // START_STICKY：被杀后系统会重建，守护自动恢复
         return START_STICKY
@@ -585,8 +599,11 @@ class LockGuardService : Service() {
             }
         }
         // ── 锁机中（非暂停）：Shizuku 写回无障碍与自动时间（低频，约每 10 秒） ──
+        // 开了「锁机期间挂起 Shizuku」时不能用它：Shizuku 已按防线挂起，这里再调用
+        // 既是无效操作，也会把「主动挂起」误判成「掉线」。
         if (lockState.isLocked && lockState.shouldBlockNow && tickCount % 33 == 0 &&
-            com.focusguard.app.enhance.ShizukuEnhancer.isReady()
+            com.focusguard.app.enhance.ShizukuEnhancer.isReady() &&
+            !com.focusguard.app.enhance.LockPolicies.isShizukuSuspendedByUs(this)
         ) {
             val app = applicationContext
             Thread {
@@ -684,6 +701,35 @@ class LockGuardService : Service() {
                 registerMediaButtonBlocker()
             } else {
                 unregisterMediaButtonBlocker()
+            }
+        }
+
+        // ── 防破解即时处置：破解工具一露头就冻结 ─────────────
+        // 只靠锁机开始时扫一遍会漏：工具可能是锁机中途才被打开的（游龙第一次打开
+        // 就能直接破锁）。这里每拍看前台/焦点窗口，命中特征就立刻挂起它的进程，
+        // 不等陌生人守卫的 2 次 strikes，也不等下一轮加固。
+        if (blockingNow) {
+            val suspects = listOfNotNull(
+                foreground,
+                com.focusguard.app.enforce.LockTopGuard.focusedWindowPackage()
+            ).filter { it.isNotBlank() && it != packageName }.distinct()
+            val key = suspects.joinToString("|")
+            // 前台组合变了或已过 2 秒才做一次包名特征匹配（包名查询不适合每 300ms 跑）
+            if (key != lastCrackKey || now - lastCrackCheckAt > 2_000L) {
+                lastCrackKey = key
+                lastCrackCheckAt = now
+                val crack = suspects.firstOrNull {
+                    com.focusguard.app.enhance.CrackGuard.isCrackPackage(this, it)
+                }
+                if (crack != null) {
+                    val app = applicationContext
+                    // 冻结要走 Dhizuku/Shizuku 的 Binder，不能在巡检协程里阻塞
+                    Thread {
+                        runCatching {
+                            com.focusguard.app.enhance.LockPolicies.freezeCrackNow(app, crack)
+                        }
+                    }.start()
+                }
             }
         }
 

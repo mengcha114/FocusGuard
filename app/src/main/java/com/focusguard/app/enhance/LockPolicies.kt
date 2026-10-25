@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.UserManager
+import android.provider.Settings
 import android.util.Log
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.accessibility.AccessibilityManager
@@ -52,8 +53,20 @@ object LockPolicies {
     private const val KEY_SHIZUKU_WAS_READY = "shizuku_was_ready"
     private const val KEY_SHIZUKU_LOST_LOGGED = "shizuku_lost_logged"
 
+    /** v3.11.64 一次性迁移标记（已把「挂起 Shizuku」补进老用户的加固集合）。 */
+    private const val KEY_MIGRATED_SHIZUKU = "migrated_shizuku_lock"
+
+    /** 本次锁机是否已经关过 adb（以及 adb/无线调试的原值，锁机结束恢复）。 */
+    private const val KEY_SHELL_LOCK_APPLIED = "shell_lock_applied"
+    private const val KEY_ADB_ORIGINAL = "shell_lock_adb_original"
+    private const val KEY_ADB_WIFI_ORIGINAL = "shell_lock_wifi_original"
+    private const val KEY_DAEMONS_KILLED = "shell_lock_daemons_killed"
+
     private const val SHIZUKU_PKG = "moe.shizuku.privileged.api"
     private const val DHIZUKU_PKG = "com.rosan.dhizuku"
+
+    /** `Settings.Global.ADB_WIFI_ENABLED` 是 @hide，不能用 SDK 常量，只能写字面量。 */
+    private const val GLOBAL_ADB_WIFI_ENABLED = "adb_wifi_enabled"
 
     /**
      * 「娱乐」类目：游戏、短视频、长视频、社交——即锁机期间应当被冻结的对象。
@@ -74,13 +87,22 @@ object LockPolicies {
     fun isBlockResetEnabled(c: Context) = prefs(c).getBoolean(KEY_BLOCK_RESET, false)
     fun setBlockResetEnabled(c: Context, on: Boolean) = prefs(c).edit().putBoolean(KEY_BLOCK_RESET, on).apply()
 
-    /** 当前锁机已冻结的应用（供设置页展示）。 */
+    /** 当前已冻结的应用（供设置页展示）。 */
     fun suspendedPackages(c: Context): Set<String> = prefs(c).getStringSet(KEY_SUSPENDED, emptySet()).orEmpty()
 
     /**
-     * 本次锁机要施加的用户限制。
-     * 注意：禁用 USB 调试会让依赖 adb 的 Shizuku 立即停止，所以 Shizuku 在运行时不加这一项。
+     * 本次锁机是否**主动**切断了 Shizuku。
+     *
+     * 用于区分「被破解工具掐掉」和「我们自己按加固项关掉」：后者不能去恢复，
+     * 否则每 20 秒的补设就会把自己的防线拆掉。
+     * 注意这里判断的是「开关是否开启」而不是「实际是否成功」——只要开启了
+     * shell 切断，adb 就会先关，Shizuku 掉线属预期，不该记成被破解。
      */
+    fun isShizukuSuspendedByUs(c: Context): Boolean =
+        isHardeningEnabled(c, Hardening.SHIZUKU_LOCK) ||
+            prefs(c).getStringSet(KEY_HARDENING_APPLIED, emptySet()).orEmpty()
+                .contains(Hardening.SHIZUKU_LOCK.key)
+
     /**
      * 本次锁机要施加的用户限制。
      *
@@ -94,7 +116,9 @@ object LockPolicies {
         val shizukuOn = ShizukuEnhancer.isAvailable()
         // 调试开关：Shizuku 依赖 adb，它在跑时不施加（默认开，可在设置里关）。
         // 跳过必须留痕：防护状态页会据此提示「adb 仍可用」，不能假装已生效。
-        if (shizukuOn) {
+        // 例外：开了「锁机期间挂起 Shizuku」时反正会切断 Shizuku，就不必再跳过，
+        // 否则 adb 一直可用，破解工具接电脑照样能强停我们。
+        if (shizukuOn && !isHardeningEnabled(c, Hardening.SHIZUKU_LOCK)) {
             if (isHardeningEnabled(c, Hardening.NO_DEBUG)) {
                 Log.w(TAG, "Shizuku 运行中，跳过禁调试（否则 Shizuku 会掉线）")
             }
@@ -183,13 +207,17 @@ object LockPolicies {
             "a11y_lock", "无障碍白名单",
             "锁机期间只允许本应用与系统无障碍服务运行，破解工具无法用无障碍自动点按来撤销 Shizuku 授权或关闭守护；需要 Dhizuku，且会暂时停用第三方无障碍服务。默认关", false
         ),
+        SHIZUKU_LOCK(
+            "shizuku_lock", "切断 shell 通道（Shizuku/调试）",
+            "游龙这类工具自带无线调试配对（Stellar），不需要 Shizuku 也能拿到 shell，一条 am force-stop 就能破锁且系统不会自动拉起。锁机开始时关闭 USB/无线调试、清掉它已跑起来的 shell 守护进程并挂起 Shizuku；锁机结束自动恢复开关。需要 Dhizuku，会暂时停用依赖 Shizuku/无线调试的应用。默认开", true
+        ),
         LOCK_NOW(
             "lock_now", "执法瞬间锁屏",
             "AI 执法时先把屏幕灭掉，必须重新解锁设备才看到锁机界面", false, adminCapable = true
         ),
         CRACK_FREEZE(
             "crack_freeze", "冻结破解工具",
-            "锁机期间冻结「冰箱/小黑屋/Island/黑阈/Auto.js/自动点击器/多开分身/虚拟机/远程控制/修改器/游龙工具」等能用来破解或自动答题的工具，并阻止卸载 Shizuku/Dhizuku；锁机结束自动解冻。默认关", false
+            "锁机期间冻结「冰箱/小黑屋/Island/黑阈/Auto.js/自动点击器/多开分身/虚拟机/远程控制/修改器/游龙安全护盾」等能用来破解或自动答题的工具，并阻止卸载 Shizuku/Dhizuku；锁机开始后新出现的工具也会当场冻结，锁机结束自动解冻。默认开（需 Dhizuku 或 Shizuku）", true
         ),
         CRACK_HIDE(
             "crack_hide", "隐藏破解工具",
@@ -211,6 +239,30 @@ object LockPolicies {
         val set = prefs(c).getStringSet(KEY_HARDENING, null)
             ?: return item.defaultOn
         return set.contains(item.key)
+    }
+
+    /**
+     * 一次性迁移（v3.11.64）：已经开过任一项防破解的用户，自动补上「挂起 Shizuku」。
+     *
+     * 老用户的 KEY_HARDENING 是显式集合，新增项的 defaultOn 对他们不生效；
+     * 不迁移的话，「一键开启推荐防破解」的人升级后反而缺了最关键的这一项。
+     */
+    fun migrateShizukuLock(c: Context) {
+        val p = prefs(c)
+        if (p.getBoolean(KEY_MIGRATED_SHIZUKU, false)) return
+        val current = p.getStringSet(KEY_HARDENING, null)
+            ?: Hardening.entries.filter { it.defaultOn }.map { it.key }.toSet()
+        val optedIn = setOf(
+            Hardening.CRACK_FREEZE.key,
+            Hardening.CRACK_HIDE.key,
+            Hardening.CRACK_DETECT.key,
+            Hardening.A11Y_LOCK.key
+        )
+        val next = if (current.any { it in optedIn }) current + Hardening.SHIZUKU_LOCK.key else current
+        p.edit()
+            .putStringSet(KEY_HARDENING, next)
+            .putBoolean(KEY_MIGRATED_SHIZUKU, true)
+            .apply()
     }
 
     fun setHardeningEnabled(c: Context, item: Hardening, on: Boolean) {
@@ -247,7 +299,8 @@ object LockPolicies {
             Hardening.NO_INSTALL,
             Hardening.NO_UNINSTALL,
             Hardening.AUTO_TIME,
-            Hardening.A11Y_LOCK
+            Hardening.A11Y_LOCK,
+            Hardening.SHIZUKU_LOCK
         ).map { it.key }
         val p = prefs(c)
         val current = p.getStringSet(KEY_HARDENING, null)
@@ -285,6 +338,61 @@ object LockPolicies {
         pkgs.filter { pkg ->
             runCatching { context.packageManager.getPackageInfo(pkg, 0) }.isSuccess
         }
+
+    /** 读 Global 开关的当前值（读不到就用 fallback，绝不因此中断加固）。 */
+    private fun globalFlag(context: Context, key: String, fallback: Boolean): Boolean = runCatching {
+        android.provider.Settings.Global.getInt(
+            context.contentResolver, key, if (fallback) 1 else 0
+        ) != 0
+    }.getOrDefault(fallback)
+
+    /**
+     * 清掉破解工具**已经跑起来**的 shell 守护进程。
+     *
+     * 游龙内置 Stellar（Shizuku 兼容层 + libadb 无线配对）：一旦配对过，
+     * 就会留下 `stellar_daemon` / `stellar_server` 这类 shell 身份的常驻进程。
+     * 只挂起它的 App 杀不掉这些进程，它们仍能继续 `am force-stop` 我们。
+     * 这里借我们自己的 Shizuku（同为 shell 身份）先清掉，其余通道随后关闭。
+     *
+     * 模式里的方括号是为了避免 pkill 匹配到执行它的这条 `sh -c` 自身。
+     */
+    private fun killCrackDaemons(app: Context): Boolean {
+        if (!ShizukuEnhancer.isReady()) return false
+        // 用 runForOutput 等它真正跑完：紧接着就要关 adb，异步发起可能被一起掐断
+        val out = ShizukuEnhancer.runForOutput(
+            "sh", "-c",
+            "pkill -f stellar[_]daemon; pkill -f stellar[_]server; " +
+                "pkill -f roro[.]stellar; pkill -f com[.]youlong[.]hd",
+            timeoutMs = 2_500L
+        )
+        Log.d(TAG, "清理破解工具 shell 守护：${out != null}")
+        return out != null
+    }
+
+    /** 恢复锁机期间关掉的 adb / 无线调试开关（幂等；Dhizuku 不在就留到下次重试）。 */
+    private fun restoreShellLock(app: Context, p: android.content.SharedPreferences) {
+        if (!p.getBoolean(KEY_SHELL_LOCK_APPLIED, false)) return
+        if (!DhizukuEnhancer.ensureReady(app)) return
+        val adb = p.getBoolean(KEY_ADB_ORIGINAL, true)
+        val wifi = p.getBoolean(KEY_ADB_WIFI_ORIGINAL, true)
+        val a = DhizukuEnhancer.setGlobalSetting(
+            app, android.provider.Settings.Global.ADB_ENABLED, if (adb) "1" else "0"
+        )
+        val w = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            DhizukuEnhancer.setGlobalSetting(
+                app, GLOBAL_ADB_WIFI_ENABLED, if (wifi) "1" else "0"
+            )
+        } else {
+            true  // Android 11 以下没有无线调试开关，无需恢复
+        }
+        if (a && w) {
+            p.edit()
+                .remove(KEY_SHELL_LOCK_APPLIED)
+                .remove(KEY_ADB_ORIGINAL)
+                .remove(KEY_ADB_WIFI_ORIGINAL)
+                .apply()
+        }
+    }
 
     /**
      * 锁机期间允许运行的无障碍服务：本应用 + 系统无障碍服务。
@@ -392,6 +500,48 @@ object LockPolicies {
                 }
             }
         }
+        // 挂起 Shizuku：这是「游龙第一下就破锁且无法自愈」的唯一入口——
+        // 拿到 shell 后 `am force-stop` / `pm clear` / `pm disable` 都是一条命令的事，
+        // 而强行停止后闹钟、看门狗、START_STICKY 全部失效，系统层面无法自动拉起。
+        // 所以必须在锁机开始时就把 shell 通道关掉，而不是等它动手后再补救。
+        if (isHardeningEnabled(app, Hardening.SHIZUKU_LOCK)) {
+            if (!p.getBoolean(KEY_SHELL_LOCK_APPLIED, false)) {
+                // 记下用户原来的 adb 开关，锁机结束恢复（不擅自永久关掉）
+                p.edit()
+                    .putBoolean(KEY_ADB_ORIGINAL, globalFlag(app, Settings.Global.ADB_ENABLED, true))
+                    .putBoolean(
+                        KEY_ADB_WIFI_ORIGINAL,
+                        globalFlag(app, GLOBAL_ADB_WIFI_ENABLED, true)
+                    )
+                    .putBoolean(KEY_SHELL_LOCK_APPLIED, true)
+                    .apply()
+            }
+            // 每轮锁机只清一次：它可能在上锁前就已完成无线配对并留下 shell 守护进程，
+            // 只挂起它的 App 杀不掉这些进程，它们仍能继续 am force-stop 我们。
+            if (!p.getBoolean(KEY_DAEMONS_KILLED, false) && killCrackDaemons(app)) {
+                p.edit().putBoolean(KEY_DAEMONS_KILLED, true).apply()
+            }
+            // 关 adb：游龙自带 libadb 配对（不需要 Shizuku 也能拿 shell），这是它的入口
+            val adbOff = DhizukuEnhancer.setGlobalSetting(app, Settings.Global.ADB_ENABLED, "0")
+            val wifiOff =
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    DhizukuEnhancer.setGlobalSetting(
+                        app, GLOBAL_ADB_WIFI_ENABLED, "0"
+                    )
+                } else {
+                    true  // Android 11 以下没有无线调试开关
+                }
+            val shizuku = installedPackages(app, listOf(SHIZUKU_PKG))
+            // 没装 Shizuku = 本来就没有这条路
+            val shizukuOff = shizuku.isEmpty() ||
+                DhizukuEnhancer.setPackagesSuspended(app, shizuku, true) ||
+                stillSuspended(app, shizuku.toSet())
+            if (adbOff || wifiOff || shizukuOff) {
+                applied.add(Hardening.SHIZUKU_LOCK.key)
+            } else {
+                Log.w(TAG, "切断 shell 通道失败，下轮重试")
+            }
+        }
         if (isHardeningEnabled(app, Hardening.CRACK_HIDE) && CrackGuard.applyHide(app)) {
             applied.add(Hardening.CRACK_HIDE.key)
         }
@@ -433,6 +583,13 @@ object LockPolicies {
         if (applied.contains(Hardening.A11Y_LOCK.key)) {
             DhizukuEnhancer.setPermittedAccessibilityServices(app, null)
         }
+        // 先恢复 Shizuku 与 adb：锁机结束还挂起/关着，用户其它依赖 Shizuku 的应用会一起失效
+        if (applied.contains(Hardening.SHIZUKU_LOCK.key)) {
+            restoreShellLock(app, p)
+            DhizukuEnhancer.setPackagesSuspended(
+                app, installedPackages(app, listOf(SHIZUKU_PKG)), false
+            )
+        }
         // 授权工具解封不依赖 applied 记录：记录丢失也不能让 Shizuku/Dhizuku 永远卸不掉
         installedPackages(app, listOf(SHIZUKU_PKG, DHIZUKU_PKG)).forEach {
             DhizukuEnhancer.setUninstallBlocked(app, it, false)
@@ -471,6 +628,13 @@ object LockPolicies {
         // 记录锁机开始时的授权工具状态：锁机中掉了才能判断是「被破解工具掐掉」
         editor.putBoolean(KEY_SHIZUKU_WAS_READY, ShizukuEnhancer.isReady())
         editor.putBoolean(KEY_SHIZUKU_LOST_LOGGED, false)
+        // 破解工具的 shell 守护必须赶在「禁调试 / 关 adb」之前清掉：那两步会让
+        // Shizuku 随 adb 一起掉线，之后就再没有 shell 身份去杀这些常驻进程了。
+        if (isHardeningEnabled(app, Hardening.SHIZUKU_LOCK) &&
+            !p.getBoolean(KEY_DAEMONS_KILLED, false) && killCrackDaemons(app)
+        ) {
+            editor.putBoolean(KEY_DAEMONS_KILLED, true)
+        }
         if (!p.getBoolean(KEY_RESTRICTED, false) && DhizukuEnhancer.ensureReady(app)) {
             val allOk = restrictions(app).all { DhizukuEnhancer.setUserRestriction(app, it, true) }
             // 只有全部设置成功才记账：此前无条件置位，一次失败后整轮锁机不再重试
@@ -514,6 +678,8 @@ object LockPolicies {
         val editor = p.edit()
         editor.remove(KEY_SHIZUKU_WAS_READY)
         editor.remove(KEY_SHIZUKU_LOST_LOGGED)
+        // 下一轮锁机要重新清一次守护进程（期间可能又被拉起过）
+        editor.remove(KEY_DAEMONS_KILLED)
         // 无条件撤销**全量**限制：此前以 KEY_RESTRICTED 为条件，而该标志只在当初
         // 「全部设置成功」时才置位 —— 任一项失败就导致已生效的限制（禁改时间/禁安全模式/
         // 禁安装…）永不撤销，用户被永久限制。撤销全量列表是无害且幂等的。
@@ -552,6 +718,36 @@ object LockPolicies {
     }
 
     /**
+     * 锁机进行中**当场**冻结一个破解工具（守护巡检发现它到前台/盖住锁机页时调用）。
+     *
+     * 为什么不能只靠锁机开始时的那一批：破解工具可能是锁机开始后才被打开，
+     * 甚至是被临时装进来的新包名；等锁机结束再「下轮生效」等于放它进来一次。
+     * 挂起会让它的进程立即被杀，它自己的悬浮窗/无障碍界面随之消失。
+     *
+     * @return true = 已冻结（或本来就在冻结列表里）
+     */
+    fun freezeCrackNow(context: Context, pkg: String): Boolean {
+        val app = context.applicationContext
+        if (pkg.isBlank() || pkg == app.packageName) return false
+        val p = prefs(app)
+        if (pkg in suspendedPackages(app)) return true
+        val by = freeze(app, setOf(pkg))
+        if (by == null) {
+            CrackGuard.report(app, pkg, "无法冻结（Dhizuku/Shizuku 均未就绪），只能反复顶回锁机页")
+            return false
+        }
+        // 两条路径混用时记账为空串：解冻时两条都会试一遍
+        val existingBy = p.getString(KEY_SUSPENDED_BY, "").orEmpty()
+        val mergedBy = if (existingBy.isEmpty() || existingBy == by) by else ""
+        p.edit()
+            .putStringSet(KEY_SUSPENDED, suspendedPackages(app) + pkg)
+            .putString(KEY_SUSPENDED_BY, mergedBy)
+            .apply()
+        CrackGuard.report(app, pkg, "打开即冻结（锁机结束自动解冻）")
+        return true
+    }
+
+    /**
      * 解冻并**逐包验证**，全部确认解除才返回 true。
      *
      * 之前是「两条路径都试，任一成功即当作已解冻」：Shizuku 的 `pm unsuspend`
@@ -586,6 +782,8 @@ object LockPolicies {
     fun retryUnfreeze(context: Context) {
         val app = context.applicationContext
         val p = prefs(app)
+        // adb 开关若因 Dhizuku 短暂不可用没恢复，这里补一次（不能一直关着）
+        runCatching { restoreShellLock(app, p) }
         val suspended = p.getStringSet(KEY_SUSPENDED, emptySet()).orEmpty()
         if (suspended.isEmpty()) return
         if (unfreezeAll(app, p, suspended)) {
@@ -801,6 +999,8 @@ object LockPolicies {
     private fun recoverShizukuIfTampered(app: Context) {
         val p = prefs(app)
         if (!p.getBoolean(KEY_SHIZUKU_WAS_READY, false)) return
+        // 我们自己在锁机开始时挂起的：这是防线本身，不能「自愈」掉
+        if (isShizukuSuspendedByUs(app)) return
         if (ShizukuEnhancer.isReady()) return
         // 只有 Dhizuku 还能用时才有资格「改别人」；否则只能记录
         if (DhizukuEnhancer.ensureReady(app)) {

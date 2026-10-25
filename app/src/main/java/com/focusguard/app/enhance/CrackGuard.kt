@@ -45,8 +45,11 @@ object CrackGuard {
         "teamviewer", "anydesk", "airdroid", "sunlogin", "oray.sunlogin", "todesk", "rustdesk",
         "omarea", "ice.box", "freezeyou", "kernelsu", "apatch", "virtualxposed", "vphonegaga",
         "youlong", "yltool",
-        // 游龙工具（「防锁机」工具箱）：明确列出主包名及其变体，不依赖模糊特征
-        "com.youlong.tool", "com.youlong.tools", "com.yltool"
+        // 游龙安全护盾（实测样本 v9.2.9，包名 com.youlong.hd）：内置 Stellar——
+        // Shizuku 兼容层 + libadb 无线调试配对，不装 Shizuku 也能自己拿 shell
+        "com.youlong.hd", "com.youlong.tool", "com.youlong.tools", "com.yltool",
+        // 同类「免 Shizuku 拿 shell」的实现（Stellar / 自带 adb 配对）
+        "stellar"
     )
 
     /** 应用名特征（中文工具基本靠这个命中）。 */
@@ -87,39 +90,94 @@ object CrackGuard {
      */
     fun matched(context: Context): Set<String> {
         val app = context.applicationContext
+        val apps = runCatching { app.packageManager.getInstalledApplications(0) }
+            .getOrDefault(emptyList())
+        return apps.filter { isCrackPackage(app, it.packageName) }
+            .map { it.packageName }
+            .toSet()
+    }
+
+    /**
+     * 单个包是否命中「破解/自动化工具」特征。
+     *
+     * 与 [matched] 同一套特征和豁免规则，供守护巡检在**运行中**判定：
+     * 破解工具如果是锁机开始后才被打开（甚至锁机开始后才装好），
+     * 也能在它露头的第一拍被处置，而不是等锁机结束才「下次生效」。
+     */
+    fun isCrackPackage(context: Context, pkg: String): Boolean {
+        val app = context.applicationContext
+        if (pkg.isBlank() || pkg == app.packageName || pkg in PROTECTED) return false
         val pm = app.packageManager
+        val info = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull() ?: return false
+        val sys = (info.flags and (
+            android.content.pm.ApplicationInfo.FLAG_SYSTEM or
+                android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+            )) != 0
+        if (sys) return false
+        val label = runCatching { pm.getApplicationLabel(info).toString() }.getOrDefault("")
+        if (exempted(app, pkg, label)) return false
+        // 申请了 Shizuku 接口 = 有能力拿到 shell 的工具。游龙这类工具的包名、应用名
+        // 都可以随手改，但这条权限声明改不掉；命中即按破解工具处置（白名单可豁免）。
+        val requestsShell = runCatching {
+            pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_PERMISSIONS)
+                ?.requestedPermissions
+        }.getOrNull()?.any { it.contains("shizuku", ignoreCase = true) } == true
+        if (requestsShell) return true
+        // 第二类特征：请求 WRITE_SECURE_SETTINGS，同时还要看进程/杀后台。
+        // 这是「系统级工具箱」的典型组合（游龙、黑阈、Scene 一类）：
+        // 能改安全设置、能杀别人进程，就能改无障碍开关、强停锁机守护。
+        // 普通应用不会同时申请这两项，白名单仍可豁免。
+        val perms = runCatching {
+            pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_PERMISSIONS)
+                ?.requestedPermissions?.toSet()
+        }.getOrNull().orEmpty()
+        if ("android.permission.WRITE_SECURE_SETTINGS" in perms &&
+            ("android.permission.KILL_BACKGROUND_PROCESSES" in perms ||
+                "android.permission.PACKAGE_USAGE_STATS" in perms)
+        ) return true
+        val haystack = (pkg + " " + label).lowercase()
         val extras = userTokens(app)
             .split(',', '，', ';', '；', '、', '\n')
             .map { it.trim().lowercase() }
             .filter { it.isNotEmpty() }
-        val apps = runCatching { pm.getInstalledApplications(0) }.getOrDefault(emptyList())
-        return apps.filter { info ->
-            val pkg = info.packageName
-            if (pkg == app.packageName || pkg in PROTECTED) return@filter false
-            val sys = (info.flags and (
-                android.content.pm.ApplicationInfo.FLAG_SYSTEM or
-                    android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
-                )) != 0
-            if (sys) return@filter false
-            val label = runCatching { pm.getApplicationLabel(info).toString() }.getOrDefault("")
-            // 用户白名单 / 已被判为学习办公的应用一律豁免：宁可漏冻，也不能误冻正常应用
-            val white = com.focusguard.app.data.Settings(app).whitelist
-                .split(',', '，', ';', '；', '、', '\n')
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-            if (white.any { w -> label.contains(w, true) || pkg.contains(w, true) }) {
-                return@filter false
-            }
-            val categoryStore = com.focusguard.app.detection.AppCategoryStore.shared(app)
-            val study = com.focusguard.app.detection.AppCategory.STUDY
-            if (categoryStore.getUserOverride(pkg) == study || categoryStore.getLearned(pkg) == study) {
-                return@filter false
-            }
-            val haystack = (pkg + " " + label).lowercase()
-            PKG_TOKENS.any { haystack.contains(it) } ||
-                LABEL_TOKENS.any { haystack.contains(it.lowercase()) } ||
-                extras.any { haystack.contains(it) }
-        }.map { it.packageName }.toSet()
+        return PKG_TOKENS.any { haystack.contains(it) } ||
+            LABEL_TOKENS.any { haystack.contains(it.lowercase()) } ||
+            extras.any { haystack.contains(it) }
+    }
+
+    /** 用户白名单 / 已被判为学习办公的应用一律豁免：宁可漏冻，也不能误冻正常应用。 */
+    private fun exempted(context: Context, pkg: String, label: String): Boolean {
+        val white = com.focusguard.app.data.Settings(context).whitelist
+            .split(',', '，', ';', '；', '、', '\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (white.any { w -> label.contains(w, true) || pkg.contains(w, true) }) return true
+        val categoryStore = com.focusguard.app.detection.AppCategoryStore.shared(context)
+        val study = com.focusguard.app.detection.AppCategory.STUDY
+        return categoryStore.getUserOverride(pkg) == study ||
+            categoryStore.getLearned(pkg) == study
+    }
+
+    /** 写一条防破解处置记录（锁机日志里可查，失败也留痕）。 */
+    fun report(context: Context, pkg: String, reason: String) {
+        runCatching {
+            val label = runCatching {
+                context.packageManager
+                    .getApplicationLabel(context.packageManager.getApplicationInfo(pkg, 0))
+                    .toString()
+            }.getOrDefault(pkg)
+            Log.w(TAG, "锁机防护：$label（$pkg）$reason")
+            LogStore(context).addLog(
+                DetectionLog(
+                    classification = "NEUTRAL",
+                    confidence = 1f,
+                    reason = "锁机防护：$label（$pkg）$reason",
+                    action = "NONE",
+                    source = "ERROR",
+                    appLabel = label
+                )
+            )
+        }
     }
 
     /** 锁机期间隐藏命中工具（比冻结更彻底），逐包验证后记录，锁机结束恢复。 */

@@ -482,6 +482,23 @@ object DhizukuEnhancer {
 
     // ── 锁机加固用的额外 Device Owner 能力（全部只在锁机期间施加，结束撤销） ──────
 
+    /**
+     * 修改 Device Owner 允许的 Global 设置（`adb_enabled` / `adb_wifi_enabled` 等）。
+     *
+     * 为什么需要：游龙这类工具自带无线调试配对（libadb + Stellar 服务），
+     * 不需要 Shizuku 也能自己拿到 shell，然后 `am force-stop`/`pm clear` 一条命令破锁。
+     * 锁机期间把 adb 关掉，它就没有可配对的入口。
+     */
+    fun setGlobalSetting(context: Context, key: String, value: String): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.setGlobalSetting(ownerComponent!!, key, value)
+            Log.d(TAG, "setGlobalSetting($key=$value) 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setGlobalSetting($key=$value) 失败：${e.message}"); false
+    }
+
     /** 强制/取消「自动设置时间」：原生能力，不需要 Shizuku。 */
     fun setAutoTimeEnabled(context: Context, enabled: Boolean): Boolean = try {
         if (!ensureReady(context)) false else {
