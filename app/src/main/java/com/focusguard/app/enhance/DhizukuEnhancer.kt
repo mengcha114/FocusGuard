@@ -408,18 +408,25 @@ object DhizukuEnhancer {
      * 锁机期间阻止卸载本应用（防绕过最彻底手段：卸载 = 锁机消失）。
      * 仅锁机中启用，锁机结束解除（用户平时可正常卸载）。
      */
-    fun setUninstallBlocked(context: Context, blocked: Boolean): Boolean {
+    fun setUninstallBlocked(context: Context, blocked: Boolean): Boolean =
+        setUninstallBlocked(context, context.packageName, blocked)
+
+    /**
+     * 阻止卸载指定应用（Device Owner 能力）。
+     *
+     * 锁机期间除了本应用，还要锁住 Shizuku / Dhizuku：破解工具常先卸载或
+     * 替换这两个授权工具，再回头清掉锁机应用。
+     */
+    fun setUninstallBlocked(context: Context, pkg: String, blocked: Boolean): Boolean {
         try {
             if (!ensureReady(context)) return false
             val dpm = wrappedDpm ?: return false
             val comp = ownerComponent ?: return false
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                dpm.setUninstallBlocked(comp, context.packageName, blocked)
-                Log.d(TAG, "设置 setUninstallBlocked($blocked) 成功")
-            }
+            dpm.setUninstallBlocked(comp, pkg, blocked)
+            Log.d(TAG, "设置 setUninstallBlocked($pkg, $blocked) 成功")
             return true
         } catch (e: Throwable) {
-            Log.w(TAG, "setUninstallBlocked 失败：${e.message}")
+            Log.w(TAG, "setUninstallBlocked($pkg, $blocked) 失败：${e.message}")
             return false
         }
     }
@@ -543,6 +550,22 @@ object DhizukuEnhancer {
         }
     } catch (e: Throwable) {
         Log.w(TAG, "setPermissionPolicy 失败：${e.message}"); false
+    }
+
+    /**
+     * 限制可运行的无障碍服务；传 null 表示恢复不限。
+     *
+     * 破解工具常靠自己的无障碍服务自动点按「撤销 Shizuku 授权 / 关闭守护」的界面，
+     * 锁机期间只放行本应用与系统无障碍服务，可直接断掉这条自动化路径。
+     */
+    fun setPermittedAccessibilityServices(context: Context, services: List<String>?): Boolean = try {
+        if (!ensureReady(context)) false else {
+            wrappedDpm?.setPermittedAccessibilityServices(ownerComponent!!, services)
+            Log.d(TAG, "setPermittedAccessibilityServices(${services?.size ?: 0} 个) 成功")
+            true
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "setPermittedAccessibilityServices 失败：${e.message}"); false
     }
 
     /** 限制可用输入法；传 null 表示恢复不限。 */

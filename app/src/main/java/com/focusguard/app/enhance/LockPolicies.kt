@@ -1,8 +1,12 @@
 package com.focusguard.app.enhance
 
 import android.content.Context
+import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.UserManager
 import android.util.Log
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.view.accessibility.AccessibilityManager
 import com.focusguard.app.detection.AppCategory
 import com.focusguard.app.detection.AppCategoryStore
 
@@ -43,6 +47,13 @@ object LockPolicies {
     private const val KEY_FREEZE_ENABLED = "freeze_enabled"
     private const val KEY_AUTO_TIME_ORIGINAL = "auto_time_original"
     private const val KEY_BLOCK_RESET = "block_factory_reset"
+
+    /** 锁机开始时 Shizuku 是否在线；用于锁机中判断「授权工具被破解工具掐掉」。 */
+    private const val KEY_SHIZUKU_WAS_READY = "shizuku_was_ready"
+    private const val KEY_SHIZUKU_LOST_LOGGED = "shizuku_lost_logged"
+
+    private const val SHIZUKU_PKG = "moe.shizuku.privileged.api"
+    private const val DHIZUKU_PKG = "com.rosan.dhizuku"
 
     /**
      * 「娱乐」类目：游戏、短视频、长视频、社交——即锁机期间应当被冻结的对象。
@@ -168,13 +179,17 @@ object LockPolicies {
             "input_lock", "输入法白名单",
             "锁机期间只允许系统输入法，防第三方输入法自带的浏览器/面板绕过；只有小众输入法的机器慎用", false
         ),
+        A11Y_LOCK(
+            "a11y_lock", "无障碍白名单",
+            "锁机期间只允许本应用与系统无障碍服务运行，破解工具无法用无障碍自动点按来撤销 Shizuku 授权或关闭守护；需要 Dhizuku，且会暂时停用第三方无障碍服务。默认关", false
+        ),
         LOCK_NOW(
             "lock_now", "执法瞬间锁屏",
             "AI 执法时先把屏幕灭掉，必须重新解锁设备才看到锁机界面", false, adminCapable = true
         ),
         CRACK_FREEZE(
             "crack_freeze", "冻结破解工具",
-            "锁机期间冻结「冰箱/小黑屋/Island/黑阈/Auto.js/自动点击器/多开分身/虚拟机/远程控制/修改器」等能用来破解或自动答题的工具；锁机结束自动解冻。默认关", false
+            "锁机期间冻结「冰箱/小黑屋/Island/黑阈/Auto.js/自动点击器/多开分身/虚拟机/远程控制/修改器/游龙工具」等能用来破解或自动答题的工具，并阻止卸载 Shizuku/Dhizuku；锁机结束自动解冻。默认关", false
         ),
         CRACK_HIDE(
             "crack_hide", "隐藏破解工具",
@@ -231,7 +246,8 @@ object LockPolicies {
             Hardening.NO_APPS_CONTROL,
             Hardening.NO_INSTALL,
             Hardening.NO_UNINSTALL,
-            Hardening.AUTO_TIME
+            Hardening.AUTO_TIME,
+            Hardening.A11Y_LOCK
         ).map { it.key }
         val p = prefs(c)
         val current = p.getStringSet(KEY_HARDENING, null)
@@ -256,6 +272,38 @@ object LockPolicies {
                         android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
                     )) != 0
             }
+            .distinct()
+    }
+
+    private fun isSystemApp(context: Context, pkg: String): Boolean = runCatching {
+        val ai = context.packageManager.getApplicationInfo(pkg, 0)
+        (ai.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
+    }.getOrDefault(false)
+
+    /** 只返回本机真实安装的包，避免把不存在的包名传给 DPM 导致整批失败。 */
+    private fun installedPackages(context: Context, pkgs: Collection<String>): List<String> =
+        pkgs.filter { pkg ->
+            runCatching { context.packageManager.getPackageInfo(pkg, 0) }.isSuccess
+        }
+
+    /**
+     * 锁机期间允许运行的无障碍服务：本应用 + 系统无障碍服务。
+     *
+     * 刻意不保留第三方无障碍服务：破解工具正是靠它们自动点按设置界面、
+     * 撤销 Shizuku 授权或关掉守护；锁机结束会恢复为「不限」。
+     */
+    private fun allowedAccessibilityPackages(context: Context): List<String> {
+        val pm = context.packageManager
+        val queried = runCatching {
+            pm.queryIntentServices(Intent("android.accessibilityservice.AccessibilityService"), 0)
+        }.getOrDefault(emptyList()).mapNotNull { it.serviceInfo?.packageName }
+        val enabled = runCatching {
+            context.getSystemService(AccessibilityManager::class.java)
+                ?.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                ?.mapNotNull { it.resolveInfo?.serviceInfo?.packageName }
+        }.getOrNull().orEmpty()
+        return (queried + enabled + context.packageName)
+            .filter { it == context.packageName || isSystemApp(context, it) }
             .distinct()
     }
 
@@ -326,6 +374,24 @@ object LockPolicies {
                 applied.add(Hardening.INPUT_LOCK.key)
             }
         }
+        // 无障碍白名单：断掉破解工具「自动点按撤销 Shizuku 授权/关闭守护」的路径
+        if (isHardeningEnabled(app, Hardening.A11Y_LOCK)) {
+            val allowed = allowedAccessibilityPackages(app)
+            if (allowed.isNotEmpty() &&
+                DhizukuEnhancer.setPermittedAccessibilityServices(app, allowed)
+            ) {
+                applied.add(Hardening.A11Y_LOCK.key)
+            }
+        }
+        // 冻结破解工具的同时锁住授权工具：破解工具常先卸载/替换 Shizuku、Dhizuku
+        if (isHardeningEnabled(app, Hardening.CRACK_FREEZE)) {
+            val toolchain = installedPackages(app, listOf(SHIZUKU_PKG, DHIZUKU_PKG))
+            toolchain.forEach {
+                if (!DhizukuEnhancer.setUninstallBlocked(app, it, true)) {
+                    Log.w(TAG, "阻止卸载 $it 失败，下轮重试")
+                }
+            }
+        }
         if (isHardeningEnabled(app, Hardening.CRACK_HIDE) && CrackGuard.applyHide(app)) {
             applied.add(Hardening.CRACK_HIDE.key)
         }
@@ -364,6 +430,13 @@ object LockPolicies {
         if (applied.contains(Hardening.DENY_PERMS.key)) DhizukuEnhancer.setPermissionPolicyAutoDeny(app, false)
         if (applied.contains(Hardening.NO_UPDATE.key)) DhizukuEnhancer.setSystemUpdateBlocked(app, false)
         if (applied.contains(Hardening.INPUT_LOCK.key)) DhizukuEnhancer.setPermittedInputMethods(app, null)
+        if (applied.contains(Hardening.A11Y_LOCK.key)) {
+            DhizukuEnhancer.setPermittedAccessibilityServices(app, null)
+        }
+        // 授权工具解封不依赖 applied 记录：记录丢失也不能让 Shizuku/Dhizuku 永远卸不掉
+        installedPackages(app, listOf(SHIZUKU_PKG, DHIZUKU_PKG)).forEach {
+            DhizukuEnhancer.setUninstallBlocked(app, it, false)
+        }
         if (applied.contains(Hardening.KEYGUARD_LOCK.key)) {
             DhizukuEnhancer.setKeyguardDisabledFeatures(
                 app, android.app.admin.DevicePolicyManager.KEYGUARD_DISABLE_FEATURES_NONE
@@ -395,6 +468,9 @@ object LockPolicies {
         runCatching { com.focusguard.app.enforce.AppBlockOverlay.hide() }
         val p = prefs(app)
         val editor = p.edit()
+        // 记录锁机开始时的授权工具状态：锁机中掉了才能判断是「被破解工具掐掉」
+        editor.putBoolean(KEY_SHIZUKU_WAS_READY, ShizukuEnhancer.isReady())
+        editor.putBoolean(KEY_SHIZUKU_LOST_LOGGED, false)
         if (!p.getBoolean(KEY_RESTRICTED, false) && DhizukuEnhancer.ensureReady(app)) {
             val allOk = restrictions(app).all { DhizukuEnhancer.setUserRestriction(app, it, true) }
             // 只有全部设置成功才记账：此前无条件置位，一次失败后整轮锁机不再重试
@@ -436,6 +512,8 @@ object LockPolicies {
         val p = prefs(app)
         runCatching { revertHardening(app) }.onFailure { Log.w(TAG, "撤销加固失败：${it.message}") }
         val editor = p.edit()
+        editor.remove(KEY_SHIZUKU_WAS_READY)
+        editor.remove(KEY_SHIZUKU_LOST_LOGGED)
         // 无条件撤销**全量**限制：此前以 KEY_RESTRICTED 为条件，而该标志只在当初
         // 「全部设置成功」时才置位 —— 任一项失败就导致已生效的限制（禁改时间/禁安全模式/
         // 禁安装…）永不撤销，用户被永久限制。撤销全量列表是无害且幂等的。
@@ -713,12 +791,56 @@ object LockPolicies {
     }
 
     /**
+     * 锁机中 Shizuku 从「在线」变成「掉线」时，先尝试恢复被破解工具挂起/隐藏的
+     * Shizuku，并留一条检测日志。
+     *
+     * 破解工具（游龙这类「防锁机」工具）拿到 Shizuku 权限后，最直接的做法就是
+     * 把 Shizuku 本体挂起/隐藏，让锁机应用失去冻结能力；能自动恢复的部分在这里做，
+     * 无法自动恢复的（进程被杀、授权被撤销）如实留痕，不假装还在。
+     */
+    private fun recoverShizukuIfTampered(app: Context) {
+        val p = prefs(app)
+        if (!p.getBoolean(KEY_SHIZUKU_WAS_READY, false)) return
+        if (ShizukuEnhancer.isReady()) return
+        // 只有 Dhizuku 还能用时才有资格「改别人」；否则只能记录
+        if (DhizukuEnhancer.ensureReady(app)) {
+            val suspended = installedPackages(app, listOf(SHIZUKU_PKG))
+                .filter { stillSuspended(app, setOf(it)) }
+            if (suspended.isNotEmpty()) {
+                DhizukuEnhancer.setPackagesSuspended(app, suspended, false)
+                Log.w(TAG, "检测到 Shizuku 被挂起（疑似破解工具所为），已尝试恢复")
+            }
+            if (DhizukuEnhancer.isApplicationHidden(app, SHIZUKU_PKG)) {
+                DhizukuEnhancer.setApplicationHidden(app, listOf(SHIZUKU_PKG), false)
+                Log.w(TAG, "检测到 Shizuku 被隐藏（疑似破解工具所为），已尝试恢复")
+            }
+        }
+        if (!p.getBoolean(KEY_SHIZUKU_LOST_LOGGED, false)) {
+            p.edit().putBoolean(KEY_SHIZUKU_LOST_LOGGED, true).apply()
+            Log.w(TAG, "锁机中 Shizuku 掉线：冻结能力已降级")
+            runCatching {
+                com.focusguard.app.data.LogStore(app).addLog(
+                    com.focusguard.app.data.DetectionLog(
+                        classification = "NEUTRAL",
+                        confidence = 1f,
+                        reason = "锁机中 Shizuku 掉线：可能被破解工具关闭/撤销授权，冻结能力已降级",
+                        action = "NONE",
+                        source = "APP_CATEGORY",
+                        appLabel = ""
+                    )
+                )
+            }
+        }
+    }
+
+    /**
      * 锁机期间的定期补设（低频调用，必须后台线程）：
      * 上次没设置成功的限制/加固这里重试，避免「一次失败 = 整轮锁机都没保护」。
      */
     fun reassertWhileLocked(context: Context) {
         val app = context.applicationContext
         val p = prefs(app)
+        runCatching { recoverShizukuIfTampered(app) }
         if (DhizukuEnhancer.ensureReady(app) && !p.getBoolean(KEY_RESTRICTED, false)) {
             val allOk = restrictions(app).all { DhizukuEnhancer.setUserRestriction(app, it, true) }
             if (allOk) p.edit().putBoolean(KEY_RESTRICTED, true).apply()

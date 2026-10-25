@@ -44,7 +44,9 @@ object CrackGuard {
         "xposed", "magisk", "lsposed", "lucky.patcher", "chelpus",
         "teamviewer", "anydesk", "airdroid", "sunlogin", "oray.sunlogin", "todesk", "rustdesk",
         "omarea", "ice.box", "freezeyou", "kernelsu", "apatch", "virtualxposed", "vphonegaga",
-        "youlong", "yltool"
+        "youlong", "yltool",
+        // 游龙工具（「防锁机」工具箱）：明确列出主包名及其变体，不依赖模糊特征
+        "com.youlong.tool", "com.youlong.tools", "com.yltool"
     )
 
     /** 应用名特征（中文工具基本靠这个命中）。 */
