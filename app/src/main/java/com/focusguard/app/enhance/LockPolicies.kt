@@ -95,13 +95,15 @@ object LockPolicies {
      *
      * 用于区分「被破解工具掐掉」和「我们自己按加固项关掉」：后者不能去恢复，
      * 否则每 20 秒的补设就会把自己的防线拆掉。
-     * 注意这里判断的是「开关是否开启」而不是「实际是否成功」——只要开启了
-     * shell 切断，adb 就会先关，Shizuku 掉线属预期，不该记成被破解。
+     * 必须同时满足「开关开着」和「本次确实切断了」：没有 Dhizuku 时开关开着也切不断，
+     * 那种情况下 Shizuku 仍然可用，不能把它当成已被我们挂起而停止使用。
      */
     fun isShizukuSuspendedByUs(c: Context): Boolean =
-        isHardeningEnabled(c, Hardening.SHIZUKU_LOCK) ||
-            prefs(c).getStringSet(KEY_HARDENING_APPLIED, emptySet()).orEmpty()
-                .contains(Hardening.SHIZUKU_LOCK.key)
+        isHardeningEnabled(c, Hardening.SHIZUKU_LOCK) && isHardeningApplied(c, Hardening.SHIZUKU_LOCK)
+
+    /** 某一项加固在**本次锁机**里是否真正生效（只读记录，不重新施加）。 */
+    fun isHardeningApplied(c: Context, item: Hardening): Boolean =
+        prefs(c).getStringSet(KEY_HARDENING_APPLIED, emptySet()).orEmpty().contains(item.key)
 
     /**
      * 本次锁机要施加的用户限制。
@@ -347,6 +349,22 @@ object LockPolicies {
     }.getOrDefault(fallback)
 
     /**
+     * 记下锁机前的 adb / 无线调试开关原值。
+     *
+     * 必须在**任何**禁调试动作之前调用：一旦加上 DISALLOW_DEBUGGING_FEATURES（或写
+     * adb_enabled=0），adb 就已经是关的，此时再读就把「关」当成用户原值，锁机结束
+     * 会永久关掉用户原本开着的调试。
+     */
+    private fun recordShellLockOriginals(app: Context, p: android.content.SharedPreferences) {
+        if (p.getBoolean(KEY_SHELL_LOCK_APPLIED, false)) return
+        p.edit()
+            .putBoolean(KEY_ADB_ORIGINAL, globalFlag(app, Settings.Global.ADB_ENABLED, true))
+            .putBoolean(KEY_ADB_WIFI_ORIGINAL, globalFlag(app, GLOBAL_ADB_WIFI_ENABLED, true))
+            .putBoolean(KEY_SHELL_LOCK_APPLIED, true)
+            .apply()
+    }
+
+    /**
      * 清掉破解工具**已经跑起来**的 shell 守护进程。
      *
      * 游龙内置 Stellar（Shizuku 兼容层 + libadb 无线配对）：一旦配对过，
@@ -355,6 +373,8 @@ object LockPolicies {
      * 这里借我们自己的 Shizuku（同为 shell 身份）先清掉，其余通道随后关闭。
      *
      * 模式里的方括号是为了避免 pkill 匹配到执行它的这条 `sh -c` 自身。
+     * 杀完必须再查一次进程表：部分机型的 toybox 没有 pkill，只看命令是否发起会
+     * 误判成「已清理」，于是一整轮锁机都不再重试。
      */
     private fun killCrackDaemons(app: Context): Boolean {
         if (!ShizukuEnhancer.isReady()) return false
@@ -362,11 +382,14 @@ object LockPolicies {
         val out = ShizukuEnhancer.runForOutput(
             "sh", "-c",
             "pkill -f stellar[_]daemon; pkill -f stellar[_]server; " +
-                "pkill -f roro[.]stellar; pkill -f com[.]youlong[.]hd",
-            timeoutMs = 2_500L
+                "pkill -f roro[.]stellar; pkill -f com[.]youlong[.]hd; " +
+                "sleep 0.3; ps -A 2>/dev/null | grep -E 'stellar[_](daemon|server)|roro[.]stellar'",
+            timeoutMs = 3_000L
         )
-        Log.d(TAG, "清理破解工具 shell 守护：${out != null}")
-        return out != null
+        // 输出为空 = 进程表里已经找不到这些守护进程
+        val cleared = out != null && out.isBlank()
+        Log.d(TAG, "清理破解工具 shell 守护：${if (cleared) "已清理" else "仍有残留/无法执行"}")
+        return cleared
     }
 
     /** 恢复锁机期间关掉的 adb / 无线调试开关（幂等；Dhizuku 不在就留到下次重试）。 */
@@ -505,17 +528,8 @@ object LockPolicies {
         // 而强行停止后闹钟、看门狗、START_STICKY 全部失效，系统层面无法自动拉起。
         // 所以必须在锁机开始时就把 shell 通道关掉，而不是等它动手后再补救。
         if (isHardeningEnabled(app, Hardening.SHIZUKU_LOCK)) {
-            if (!p.getBoolean(KEY_SHELL_LOCK_APPLIED, false)) {
-                // 记下用户原来的 adb 开关，锁机结束恢复（不擅自永久关掉）
-                p.edit()
-                    .putBoolean(KEY_ADB_ORIGINAL, globalFlag(app, Settings.Global.ADB_ENABLED, true))
-                    .putBoolean(
-                        KEY_ADB_WIFI_ORIGINAL,
-                        globalFlag(app, GLOBAL_ADB_WIFI_ENABLED, true)
-                    )
-                    .putBoolean(KEY_SHELL_LOCK_APPLIED, true)
-                    .apply()
-            }
+            // 原值在锁机开始时已记录；这里只兜底「服务中途才启动/上次记录丢失」
+            recordShellLockOriginals(app, p)
             // 每轮锁机只清一次：它可能在上锁前就已完成无线配对并留下 shell 守护进程，
             // 只挂起它的 App 杀不掉这些进程，它们仍能继续 am force-stop 我们。
             if (!p.getBoolean(KEY_DAEMONS_KILLED, false) && killCrackDaemons(app)) {
@@ -536,10 +550,11 @@ object LockPolicies {
             val shizukuOff = shizuku.isEmpty() ||
                 DhizukuEnhancer.setPackagesSuspended(app, shizuku, true) ||
                 stillSuspended(app, shizuku.toSet())
-            if (adbOff || wifiOff || shizukuOff) {
+            // 三样都断了才算生效：adb 没关掉却记成「已切断」，状态页会骗人
+            if (adbOff && wifiOff && shizukuOff) {
                 applied.add(Hardening.SHIZUKU_LOCK.key)
             } else {
-                Log.w(TAG, "切断 shell 通道失败，下轮重试")
+                Log.w(TAG, "切断 shell 通道未全部成功（adb=$adbOff wifi=$wifiOff shizuku=$shizukuOff），下轮重试")
             }
         }
         if (isHardeningEnabled(app, Hardening.CRACK_HIDE) && CrackGuard.applyHide(app)) {
@@ -625,6 +640,8 @@ object LockPolicies {
         runCatching { com.focusguard.app.enforce.AppBlockOverlay.hide() }
         val p = prefs(app)
         val editor = p.edit()
+        // 先记 adb/无线调试原值，再施加任何禁调试限制：顺序反了会把「已关」当成用户原值
+        if (isHardeningEnabled(app, Hardening.SHIZUKU_LOCK)) recordShellLockOriginals(app, p)
         // 记录锁机开始时的授权工具状态：锁机中掉了才能判断是「被破解工具掐掉」
         editor.putBoolean(KEY_SHIZUKU_WAS_READY, ShizukuEnhancer.isReady())
         editor.putBoolean(KEY_SHIZUKU_LOST_LOGGED, false)
@@ -674,19 +691,21 @@ object LockPolicies {
         // 陌生人守卫加的冻结/隐藏先还原（它记的是自己那一份，引用计数在内部处理）
         runCatching { com.focusguard.app.enforce.LockTopGuard.releaseAll(app) }
         val p = prefs(app)
-        runCatching { revertHardening(app) }.onFailure { Log.w(TAG, "撤销加固失败：${it.message}") }
         val editor = p.edit()
         editor.remove(KEY_SHIZUKU_WAS_READY)
         editor.remove(KEY_SHIZUKU_LOST_LOGGED)
         // 下一轮锁机要重新清一次守护进程（期间可能又被拉起过）
         editor.remove(KEY_DAEMONS_KILLED)
-        // 无条件撤销**全量**限制：此前以 KEY_RESTRICTED 为条件，而该标志只在当初
+        // 必须先撤限制、再恢复 adb：DISALLOW_DEBUGGING_FEATURES 还挂着时写 adb_enabled=1
+        // 会被系统挡回去，用户原本开着的调试就再也回不来。
+        // 无条件撤销**全量**列表：此前以 KEY_RESTRICTED 为条件，而该标志只在当初
         // 「全部设置成功」时才置位 —— 任一项失败就导致已生效的限制（禁改时间/禁安全模式/
         // 禁安装…）永不撤销，用户被永久限制。撤销全量列表是无害且幂等的。
         if (DhizukuEnhancer.ensureReady(app)) {
             ALL_RESTRICTIONS.forEach { DhizukuEnhancer.setUserRestriction(app, it, false) }
             editor.putBoolean(KEY_RESTRICTED, false)
         }
+        runCatching { revertHardening(app) }.onFailure { Log.w(TAG, "撤销加固失败：${it.message}") }
         val autoTimeOriginal = p.getString(KEY_AUTO_TIME_ORIGINAL, null)
         if (autoTimeOriginal != null) {
             ShizukuEnhancer.restoreAutoTime(autoTimeOriginal)

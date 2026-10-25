@@ -41,7 +41,7 @@ data class DefenseStatus(
             !blockingRequested -> "已开启（仅检测，不阻断）"
             antiCrackEffective && lockedNow -> "已开启（本次生效）"
             antiCrackEffective -> "已开启（锁机时生效）"
-            else -> "已开启，但本机无法冻结工具"
+            else -> "已开启，但本机缺少授权，关键项未生效"
         }
 }
 
@@ -68,12 +68,15 @@ object DefenseStatusReader {
         val freezeOn = LockPolicies.isHardeningEnabled(app, LockPolicies.Hardening.CRACK_FREEZE)
         val hideOn = LockPolicies.isHardeningEnabled(app, LockPolicies.Hardening.CRACK_HIDE)
         val detectOn = LockPolicies.isHardeningEnabled(app, LockPolicies.Hardening.CRACK_DETECT)
-        val antiCrackRequested = freezeOn || hideOn || detectOn
-        // 冻结可走 Shizuku 或 Dhizuku；隐藏目前只走 Dhizuku。检测只留痕，不算阻断能力。
+        val shellLockOn = LockPolicies.isHardeningEnabled(app, LockPolicies.Hardening.SHIZUKU_LOCK)
+        val shellLockApplied = LockPolicies.isHardeningApplied(app, LockPolicies.Hardening.SHIZUKU_LOCK)
+        val antiCrackRequested = freezeOn || hideOn || detectOn || shellLockOn
+        // 冻结可走 Shizuku 或 Dhizuku；隐藏与切断 shell 只走 Dhizuku；检测只留痕。
         val freezeEffective = freezeOn && (dhizuku || shizukuReady)
         val hideEffective = hideOn && dhizuku
-        val antiCrackEffective = freezeEffective || hideEffective
-        val detectOnly = antiCrackRequested && !freezeOn && !hideOn
+        val shellLockEffective = shellLockOn && dhizuku && (!locked || shellLockApplied)
+        val antiCrackEffective = freezeEffective || hideEffective || shellLockEffective
+        val detectOnly = antiCrackRequested && !freezeOn && !hideOn && !shellLockOn
         val restrictionsApplied = LockPolicies.restrictionsApplied(app)
         val noDebug = LockPolicies.isHardeningEnabled(app, LockPolicies.Hardening.NO_DEBUG)
 
@@ -100,10 +103,18 @@ object DefenseStatusReader {
                 }
             }
 
-            if (noDebug && shizukuAvailable) {
+            if (noDebug && shizukuAvailable && !shellLockOn) {
                 add("Shizuku 运行中，禁调试未生效：adb 仍可用")
-            } else if (noDebug && !dhizuku) {
+            } else if (noDebug && !dhizuku && !shellLockOn) {
                 add("禁调试需要 Dhizuku 授权，当前 adb 可用")
+            }
+
+            if (shellLockOn) {
+                if (!dhizuku) {
+                    add("切断 shell 通道需要 Dhizuku 授权：adb/无线调试仍开着，破解工具能直接强停本应用")
+                } else if (locked && !shellLockApplied) {
+                    add("shell 通道尚未切断成功：adb/无线调试可能仍可用，下轮巡检会重试")
+                }
             }
 
             if (!dhizuku) {
@@ -127,7 +138,7 @@ object DefenseStatusReader {
             shizukuReady = shizukuReady,
             admin = admin,
             antiCrackRequested = antiCrackRequested,
-            blockingRequested = freezeOn || hideOn,
+            blockingRequested = freezeOn || hideOn || shellLockOn,
             antiCrackEffective = antiCrackEffective,
             restrictionsApplied = restrictionsApplied,
             lockedNow = locked,
