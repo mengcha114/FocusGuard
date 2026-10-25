@@ -379,14 +379,11 @@ object LockPolicies {
     private fun killCrackDaemons(app: Context): Boolean {
         if (!ShizukuEnhancer.isReady()) return false
         val tools = CrackGuard.matched(app)
-        // 同时收回它们的 shell 通道授权：Shizuku 服务进程即使还活着，没有 API_V23
-        // 权限也执行不了命令；Dhizuku 授权同理。LA 工具箱实测就是靠 Shizuku 执行
-        // `pm disable-user` / `pm revoke` 来掐守护的。
-        val revoke = tools.joinToString("") { pkg ->
-            "pm revoke --user 0 $pkg moe.shizuku.manager.permission.API_V23 2>/dev/null; " +
-                "pm revoke --user 0 $pkg com.rosan.dhizuku.permission.API 2>/dev/null; "
-        }
-        // 按「实际跑着的进程」清：包名 / 自带守护 / LA 工具箱的 LaAntiFreeze 脚本
+        // 只清**正在运行的进程**，不动任何权限授权：
+        // - `pm revoke` 会让工具在锁机结束后仍然失去 Shizuku 授权，属于永久副作用，
+        //   不符合「锁机结束恢复原状」；而它带来的收益与 pkill 完全重叠
+        //   （工具被挂起后本来就无法再调用 Shizuku）。
+        // - 按「实际跑着的进程」清：包名 / 自带守护 / LA 工具箱的 LaAntiFreeze 脚本
         val kills = tools.joinToString("") { pkg ->
             "pkill -f ${pkg.replace(".", "[.]")}; "
         }
@@ -395,7 +392,7 @@ object LockPolicies {
             "sh", "-c",
             "pkill -f stellar[_]daemon; pkill -f stellar[_]server; " +
                 "pkill -f roro[.]stellar; pkill -f com[.]youlong[.]hd; " +
-                "pkill -f LaAnti[F]reeze; " + kills + revoke +
+                "pkill -f LaAnti[F]reeze; " + kills +
                 "sleep 0.3; ps -A 2>/dev/null | grep -E " +
                 "'stellar[_](daemon|server)|roro[.]stellar|LaAnti[F]reeze'",
             timeoutMs = 3_500L
