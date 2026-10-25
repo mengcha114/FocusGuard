@@ -67,6 +67,17 @@ fun SettingsScreen(
     // 降低限制方向修改的答题验证（增强限制无需答题）
     var showVerifyDialog by remember { mutableStateOf(false) }
 
+    // ── API 测试与锁定 ────────────────────────────────────────────
+    // 测试通过 → 锁定当前 API；锁定后输入框不可编辑，改 API 需答题。
+    var apiLocked by remember { mutableStateOf(settings.apiLocked) }
+    // 本次进入设置页是否已通过答题解锁（仅内存状态，退出页面即失效）
+    var apiEditUnlocked by remember { mutableStateOf(false) }
+    var apiTestRequested by remember { mutableStateOf(false) }
+    var apiTesting by remember { mutableStateOf(false) }
+    var apiTestMessage by remember { mutableStateOf<String?>(null) }
+    var apiTestOk by remember { mutableStateOf(false) }
+    var showApiVerifyDialog by remember { mutableStateOf(false) }
+
     // Token 节约系统开关
     var tokenSavingEnabled by remember { mutableStateOf(settings.tokenSavingEnabled) }
     var screenHashDedup by remember { mutableStateOf(settings.screenHashDedupEnabled) }
@@ -109,25 +120,97 @@ fun SettingsScreen(
 
         // ── API 设置 ──────────────────────────────────────────────
         SettingsSection(title = "API 设置", icon = Icons.Default.Api) {
+            // 锁定后四个输入框全部只读；答题解锁后本次进入页面内可编辑；
+            // 测试进行中也禁止编辑，避免「测的是旧值、锁的是新值」
+            val apiEditable = (!apiLocked || apiEditUnlocked) && !apiTesting
+
             OutlinedTextField(
-                value = apiBaseUrl, onValueChange = { apiBaseUrl = it },
+                value = apiBaseUrl, onValueChange = { apiBaseUrl = it; apiTestMessage = null },
                 label = { Text("API 地址") },
                 placeholder = { Text("https://api.moonshot.cn/v1") },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                enabled = apiEditable
             )
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
-                value = apiKey, onValueChange = { apiKey = it },
+                value = apiKey, onValueChange = { apiKey = it; apiTestMessage = null },
                 label = { Text("API 密钥") }, placeholder = { Text("sk-...") },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                enabled = apiEditable
             )
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
-                value = modelName, onValueChange = { modelName = it },
+                value = modelName, onValueChange = { modelName = it; apiTestMessage = null },
                 label = { Text("模型名称") },
                 placeholder = { Text("moonshot-v1-8k-vision-preview") },
-                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                enabled = apiEditable
             )
+            Spacer(Modifier.height(10.dp))
+
+            // ── 测试连接 / 锁定状态 ─────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = { apiTestRequested = true },
+                    enabled = !apiTesting,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (apiTesting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("测试中…", fontSize = 14.sp)
+                    } else {
+                        Text("测试连接", fontSize = 14.sp)
+                    }
+                }
+                if (apiLocked) {
+                    OutlinedButton(
+                        onClick = {
+                            if (com.focusguard.app.data.LockState(context).isLocked) {
+                                Toast.makeText(
+                                    context,
+                                    "锁机期间不能修改 API，锁机结束后再改",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                showApiVerifyDialog = true
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !apiTesting
+                    ) { Text("修改 API（需答题）", fontSize = 13.sp) }
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = when {
+                    apiTestMessage != null -> apiTestMessage!!.let {
+                        if (apiTestOk) "✓ $it" else "✗ $it"
+                    }
+                    apiLocked ->
+                        "已锁定：该 API 已通过测试，修改需答题验证"
+                    else ->
+                        "未锁定：点「测试连接」，测试成功后自动锁定该 API"
+                },
+                fontSize = 11.sp,
+                color = when {
+                    apiTestMessage == null -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                    apiTestOk -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.error
+                }
+            )
+
             Spacer(Modifier.height(8.dp))
 
             // ── 厂商预设一键填充 ────────────────────────
@@ -167,10 +250,13 @@ fun SettingsScreen(
                                     apiBaseUrl = cfg.second
                                     modelName = cfg.third
                                 }
+                                // 改动配置后旧的测试结论失效
+                                apiTestMessage = null
                             },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp)
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            enabled = apiEditable
                         ) {
                             Text(name, fontSize = 11.sp)
                         }
@@ -1052,6 +1138,49 @@ fun SettingsScreen(
             settings.sensitiveApps = sensitiveApps
         }
 
+        // ── 测试连接（成功后自动锁定当前 API） ────────────────────
+        // 用状态触发而不是在按钮里直接调协程：saveAll 定义在下方，
+        // 这样能保证「先落盘、再按落盘内容生成锁定指纹」。
+        LaunchedEffect(apiTestRequested) {
+            if (!apiTestRequested) return@LaunchedEffect
+            apiTestRequested = false
+            apiTesting = true
+            apiTestMessage = null
+            val report = com.focusguard.app.ai.AiClient()
+                .testConnection(apiBaseUrl.trim(), apiKey.trim(), modelName.trim(), apiFormat)
+            apiTesting = false
+            apiTestOk = report.ok
+            if (report.ok) {
+                // 测试用的是 trim 后的值；落盘前先归一化，
+                // 避免「测试通过但实际请求带着首尾空白而鉴权失败」
+                apiBaseUrl = apiBaseUrl.trim()
+                apiKey = apiKey.trim()
+                modelName = modelName.trim()
+                // 先保存再锁定：锁定指纹取自持久化后的真实配置
+                saveAll()
+                // 密钥走 Keystore 加密落盘，个别机型可能写入失败。
+                // 若不校验就锁定，会出现「测试通过、检测却用空密钥」的假锁定。
+                if (settings.apiKey != apiKey.trim()) {
+                    apiTestOk = false
+                    apiTestMessage = "密钥保存失败（系统安全存储不可用），请重启应用后重试"
+                    Toast.makeText(
+                        context,
+                        "密钥保存失败，未锁定；请重启应用后重试",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@LaunchedEffect
+                }
+                settings.lockApi()
+                apiLocked = true
+                apiEditUnlocked = false
+                apiTestMessage = "连接成功（${report.latencyMs}ms），已锁定当前 API"
+                Toast.makeText(context, "API 测试通过，已锁定当前接口", Toast.LENGTH_SHORT).show()
+            } else {
+                apiTestMessage = report.message
+                Toast.makeText(context, "API 测试失败：${report.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+
         // ── 方向判定：修改是否在「降低对自己的限制」 ──────────────
         // 增强限制（锁得更久/更容易触发/更难解锁）→ 直接保存；
         // 降低限制（缩短锁机/更难触发/更容易解锁）→ 需答题验证（防被监管对象篡改）。
@@ -1230,6 +1359,28 @@ fun SettingsScreen(
                     revertUnsaved()
                     Toast.makeText(context, "已恢复原设置", Toast.LENGTH_SHORT).show()
                 }
+            )
+        }
+
+        // ── 修改已锁定的 API 需先答题 ─────────────────────────────
+        if (showApiVerifyDialog) {
+            com.focusguard.app.ui.components.VerifyDialog(
+                title = "修改 API 需先答题",
+                description = "API 接口已锁定（已通过连接测试）。修改地址、密钥、模型或协议前，请先答对一道题。",
+                confirmText = "验证并解锁",
+                onPassed = {
+                    showApiVerifyDialog = false
+                    settings.unlockApi()
+                    apiLocked = false
+                    apiEditUnlocked = true
+                    apiTestMessage = null
+                    Toast.makeText(
+                        context,
+                        "已解锁，可修改 API；修改后请重新测试连接以再次锁定",
+                        Toast.LENGTH_LONG
+                    ).show()
+                },
+                onCancel = { showApiVerifyDialog = false }
             )
         }
 

@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.61",
-  "notes": "新增了截屏识别：开=无障碍截图，关=共享屏幕\n新增了守护自愈：权限被撤、后台被拦都会明确提示\n新增了闹钟授权：Android 12+ 可一键开启，被杀后秒级恢复\n优化了识别：切前台等 5.5 秒再判，日志里能看到耗时拆分\n优化了速度：去掉每轮多余的前台查询\n优化了日志：AI 判定附带「取图/网络」耗时\n优化了兼容：Android 11–16 的前台服务与投影流程适配\n修复了闪退：检测更新、导出诊断日志不再退出应用\n修复了漏检：同一应用停留较久后不再停止识别\n修复了通知：开守护后通知栏正文不再被隐藏\n修复了投屏：Android 14 不再只能选单个应用\n修复了更新：测试版通道改为按版本号判断\n修复了卡顿：超长日志与超大响应限量处理\n修复了错判：前台应用改按事件流判定，不再误判",
+  "tag": "v3.11.67",
+  "notes": "新增了 API 测试：填好地址/密钥/模型后可一键测试连接，成功会自动锁定该 API\n新增了 API 锁：锁定后不能直接改地址/密钥/模型/协议，修改需先答题验证\n新增了 shell 通道切断：开启「防破解」后，破解工具无法再借 Shizuku/无线调试强停本应用\n新增了 破解工具拦截：游龙、Sd tool、LA 工具箱等常见工具的冻结/隐藏/强停\n新增了 无障碍白名单：只允许本应用与系统服务使用无障碍，防被代点绕过\n优化了 防破解状态：按系统实际生效值显示，不再出现「看着开了其实没生效」\n修复了 主线程卡顿：Shizuku/Dhizuku 检测不再阻塞主线程，消除 6 秒无响应\n修复了 系统包误判：不再对系统（android）发起强行停止\n修复了 Shizuku 掉线：授权丢失后自动恢复并留痕\n修复了 后台自愈：服务被杀后闹钟与看门狗自动重建\n修复了 工具授权：拦截破解工具时不再撤销其 Shizuku 授权（无永久副作用）",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.61/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.61/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.67/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.67/app-general-release.apk"
   }
 }

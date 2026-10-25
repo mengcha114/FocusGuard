@@ -38,6 +38,13 @@ data class ChatMessage(
     val content: String
 )
 
+/** 「测试连接」结果：成功即代表地址/密钥/模型/协议四项都可用。 */
+data class ApiTestReport(
+    val ok: Boolean,
+    val message: String,
+    val latencyMs: Long
+)
+
 /**
  * 视觉大模型客户端。
  *
@@ -119,6 +126,13 @@ class AiClient {
         // 之前 45s 导致频繁 "请求失败：timeout"
         .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
+        .build()
+
+    /** 测试连接专用的短超时客户端：失败要尽快反馈，不能让用户干等 90 秒。 */
+    private val testClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
     suspend fun analyzeScreen(
@@ -507,6 +521,130 @@ class AiClient {
             Log.e(TAG, "对话失败", e)
             recordDiagnostic("对话失败 ${e.message}")
             "请求失败：${e.message}"
+        }
+    }
+
+    /**
+     * 测试 API 连接（设置页「测试连接」按钮）。
+     *
+     * 只发一条极短消息（max_tokens 8），验证四件事：
+     * 地址正确、密钥有效、模型存在、协议格式匹配。
+     * 返回 [ApiTestReport]，不抛异常（成功/失败都由 UI 展示）。
+     */
+    suspend fun testConnection(
+        baseUrl: String,
+        apiKey: String,
+        modelName: String,
+        apiFormat: String = "openai"
+    ): ApiTestReport = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
+        fun done(ok: Boolean, message: String): ApiTestReport =
+            ApiTestReport(ok, message, System.currentTimeMillis() - started)
+
+        val base = baseUrl.trim().trimEnd('/')
+        val key = apiKey.trim()
+        val model = modelName.trim()
+        // 本地先做参数校验：省一次网络往返，也避免把空密钥发给对方
+        if (base.isBlank()) return@withContext done(false, "请先填写 API 地址")
+        if (!base.startsWith("http://") && !base.startsWith("https://")) {
+            return@withContext done(false, "API 地址需以 http:// 或 https:// 开头")
+        }
+        if (key.isBlank()) return@withContext done(false, "请先填写 API 密钥")
+        if (model.isBlank()) return@withContext done(false, "请先填写模型名称")
+
+        val (body, url, headers) = try {
+            when (apiFormat) {
+                "anthropic" -> Triple(
+                    JSONObject().apply {
+                        put("model", model)
+                        put("messages", JSONArray().put(
+                            JSONObject().put("role", "user").put("content", "hi")
+                        ))
+                        put("max_tokens", 8)
+                    },
+                    "$base/v1/messages",
+                    mapOf(
+                        "x-api-key" to key,
+                        "anthropic-version" to "2023-06-01",
+                        "Content-Type" to "application/json"
+                    )
+                )
+                "gemini" -> Triple(
+                    JSONObject().apply {
+                        put("contents", JSONArray().put(
+                            JSONObject()
+                                .put("role", "user")
+                                .put("parts", JSONArray().put(JSONObject().put("text", "hi")))
+                        ))
+                        put("generationConfig", JSONObject().put("maxOutputTokens", 8))
+                    },
+                    "$base/v1beta/models/$model:generateContent",
+                    mapOf("x-goog-api-key" to key, "Content-Type" to "application/json")
+                )
+                else -> Triple(
+                    JSONObject().apply {
+                        put("model", model)
+                        put("messages", JSONArray().put(
+                            JSONObject().put("role", "user").put("content", "hi")
+                        ))
+                        put("max_tokens", 8)
+                    },
+                    "$base/chat/completions",
+                    mapOf("Authorization" to "Bearer $key", "Content-Type" to "application/json")
+                )
+            }
+        } catch (e: Exception) {
+            return@withContext done(false, "请求构造失败：${e.message}")
+        }
+
+        try {
+            val builder = Request.Builder().url(url)
+            headers.forEach { (k, v) -> builder.addHeader(k, v) }
+            val request = builder
+                .post(body.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            testClient.newCall(request).execute().use { resp ->
+                val respBody = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    recordDiagnostic("连接测试 HTTP ${resp.code} 响应=${respBody.take(200)}")
+                    val detail = respBody.take(160).ifBlank { "无响应内容" }
+                    return@use done(
+                        false,
+                        when (resp.code) {
+                            401, 403 -> "密钥无效或无权限（HTTP ${resp.code}）"
+                            404 -> "地址或模型不存在（HTTP 404）"
+                            429 -> "请求过于频繁或额度不足（HTTP 429）"
+                            else -> "HTTP ${resp.code}：$detail"
+                        }
+                    )
+                }
+                // 200 但格式不对：多半是地址填成了网页/网关首页，或协议选错
+                val shapeOk = try {
+                    when (apiFormat) {
+                        "anthropic" -> JSONObject(respBody).optJSONArray("content") != null
+                        "gemini" -> JSONObject(respBody).optJSONArray("candidates") != null
+                        else -> JSONObject(respBody).optJSONArray("choices") != null
+                    }
+                } catch (e: Exception) {
+                    false
+                }
+                if (!shapeOk) {
+                    recordDiagnostic("连接测试格式异常 响应=${respBody.take(200)}")
+                    return@use done(false, "接口返回格式不符合「$apiFormat」协议，请检查地址与协议是否匹配")
+                }
+                recordDiagnostic("连接测试成功 模型=$model 协议=$apiFormat")
+                done(true, "连接成功")
+            }
+        } catch (e: Exception) {
+            recordDiagnostic("连接测试失败 ${e.message}")
+            val hint = when {
+                e is java.net.SocketTimeoutException -> "连接超时，请检查网络或地址"
+                e is java.net.UnknownHostException -> "域名解析失败，请检查地址"
+                e is java.net.ConnectException -> "无法连接，请检查地址与网络"
+                else -> e.message ?: "未知错误"
+            }
+            done(false, hint)
         }
     }
 

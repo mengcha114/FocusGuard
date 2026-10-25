@@ -43,6 +43,52 @@ class Settings(context: Context) {
         private const val KEY_CUSTOM_API_BASE_URL = "custom_api_base_url"
         private const val KEY_CUSTOM_API_MODEL = "custom_api_model"
 
+        // API 锁定：测试连接成功后锁定当前接口，改 API 需答题
+        private const val KEY_API_LOCKED = "api_locked"
+        private const val KEY_API_LOCK_FINGERPRINT = "api_lock_fingerprint"
+        private const val KEY_API_LOCKED_AT = "api_locked_at"
+
+        /**
+         * 计算 API 配置指纹（纯函数，便于单测）。
+         *
+         * 参与字段：地址（去首尾空白与末尾斜杠）、模型、协议、密钥。
+         * 任一字段变化 → 指纹变化 → 锁定自动失效（避免锁着一个与实际配置
+         * 不符的"假锁"，例如备份恢复到新设备后 Keystore 密钥丢失）。
+         */
+        fun fingerprintOf(
+            baseUrl: String,
+            modelName: String,
+            apiFormat: String,
+            apiKey: String
+        ): String {
+            val raw = "${baseUrl.trim().trimEnd('/')}|${modelName.trim()}|" +
+                "${apiFormat.trim()}|$apiKey"
+            return try {
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(raw.toByteArray(Charsets.UTF_8))
+                digest.joinToString("") {
+                    (it.toInt() and 0xff).toString(16).padStart(2, '0')
+                }
+            } catch (e: Exception) {
+                ""
+            }
+        }
+
+        /**
+         * 锁定判定（纯函数，便于单测）：锁定开关为真且「保存的指纹」
+         * 与「当前配置指纹」一致，才算真正锁定。
+         *
+         * 不一致时按未锁定处理——配置已经变了（如备份恢复后密钥丢失、
+         * 或被外部改写），继续显示"已锁定"就是假锁。
+         */
+        fun isApiLocked(
+            lockedSwitch: Boolean,
+            storedFingerprint: String,
+            currentFingerprint: String
+        ): Boolean = lockedSwitch &&
+            storedFingerprint.isNotEmpty() &&
+            storedFingerprint == currentFingerprint
+
         // 智能检测模式（风险驱动的秒级动态间隔）
         private const val KEY_SMART_SCHEDULE = "smart_schedule"
 
@@ -251,6 +297,46 @@ gacha
     var apiFormat: String
         get() = prefs.getString(KEY_API_FORMAT, "openai") ?: "openai"
         set(value) = prefs.edit().putString(KEY_API_FORMAT, value).apply()
+
+    // ── API 接口锁定 ───────────────────────────────────────────────
+    // 「测试连接」成功后自动锁定当前 API 配置（地址/密钥/模型/协议）。
+    // 锁定后设置页的四个输入框不可直接编辑，需答对一题才能解锁修改。
+    // 指纹包含密钥，所以备份恢复到别的设备（Keystore 密钥丢失、密钥读不出）
+    // 或外部改写了配置时，指纹不匹配 → 自动视为未锁定，避免锁着一个与
+    // 实际配置不符的"假锁"。
+
+    /** 当前 API 配置的指纹（地址|模型|协议|密钥 的 SHA-256）。 */
+    fun apiFingerprint(): String =
+        fingerprintOf(apiBaseUrl, modelName, apiFormat, apiKey)
+
+    /** 是否已锁定 API（仅当锁定指纹与当前配置一致时才算锁定）。 */
+    val apiLocked: Boolean
+        get() = isApiLocked(
+            lockedSwitch = prefs.getBoolean(KEY_API_LOCKED, false),
+            storedFingerprint = prefs.getString(KEY_API_LOCK_FINGERPRINT, "").orEmpty(),
+            currentFingerprint = apiFingerprint()
+        )
+
+    /** 锁定当前 API 配置（测试连接成功后调用）。 */
+    fun lockApi() {
+        prefs.edit()
+            .putString(KEY_API_LOCK_FINGERPRINT, apiFingerprint())
+            .putBoolean(KEY_API_LOCKED, true)
+            .putLong(KEY_API_LOCKED_AT, System.currentTimeMillis())
+            .apply()
+    }
+
+    /** 解除锁定（答题通过后调用；修改完成后需重新测试才会再次锁定）。 */
+    fun unlockApi() {
+        prefs.edit()
+            .putBoolean(KEY_API_LOCKED, false)
+            .remove(KEY_API_LOCK_FINGERPRINT)
+            .apply()
+    }
+
+    /** 上次锁定时间（毫秒，0 = 从未锁定）。 */
+    val apiLockedAt: Long
+        get() = prefs.getLong(KEY_API_LOCKED_AT, 0L)
     
     // Detection settings
     var intervalMinutes: Int
