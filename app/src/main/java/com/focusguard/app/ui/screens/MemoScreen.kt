@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -334,21 +336,38 @@ data class MemoStyle(
     val cardLine: Color,
     val text: Color,
     val sub: Color,
-    val fontSize: Float
+    val fontSize: Float,
+    val corner: Int,
+    val vPad: Int,
+    val listGap: Int
 ) {
     companion object {
-        fun resolve(prefs: MemoPrefs, palette: FocusColors.Palette): MemoStyle {
-            val (bg, defaultText) = when (prefs.cardStyle) {
+        fun of(
+            palette: FocusColors.Palette,
+            cardStyle: Int,
+            textColor: Int,
+            fontScale: Int,
+            cornerStyle: Int,
+            density: Int
+        ): MemoStyle {
+            val (bg, defaultText) = when (cardStyle) {
                 MemoPrefs.CARD_INK -> Color(0xFF151B22) to Color(0xFFEDE6D6)
                 MemoPrefs.CARD_PAPER -> Color(0xFFF0E9DA) to Color(0xFF1D1A14)
                 MemoPrefs.CARD_AMBER_NIGHT -> Color(0xFF221A10) to Color(0xFFEDE6D6)
+                MemoPrefs.CARD_SLATE -> Color(0xFF141C2B) to Color(0xFFDCE6F5)
+                MemoPrefs.CARD_MINT -> Color(0xFFE8F5EE) to Color(0xFF14251C)
+                MemoPrefs.CARD_ROSE -> Color(0xFFF6E9E6) to Color(0xFF2B1E1B)
                 else -> palette.card.copy(alpha = 0.6f) to palette.text
             }
-            val lightCard = prefs.cardStyle == MemoPrefs.CARD_PAPER
-            val text = when (prefs.textColor) {
+            val lightCard = cardStyle == MemoPrefs.CARD_PAPER ||
+                cardStyle == MemoPrefs.CARD_MINT ||
+                cardStyle == MemoPrefs.CARD_ROSE
+            val text = when (textColor) {
                 MemoPrefs.TEXT_PAPER -> Color(0xFFEDE6D6)
                 MemoPrefs.TEXT_AMBER -> Color(0xFFE2A65D)
                 MemoPrefs.TEXT_SAGE -> Color(0xFF8AAE8C)
+                MemoPrefs.TEXT_SKY -> Color(0xFFA9C6E8)
+                MemoPrefs.TEXT_ROSE -> Color(0xFFE7B7B7)
                 else -> defaultText
             }
             return MemoStyle(
@@ -356,9 +375,29 @@ data class MemoStyle(
                 cardLine = if (lightCard) Color(0xFFD6CDB9).copy(alpha = 0.8f) else palette.line,
                 text = text,
                 sub = if (lightCard) Color(0xFF6B6455) else palette.haze,
-                fontSize = prefs.itemFontSize()
+                fontSize = when (fontScale) {
+                    MemoPrefs.FONT_SMALL -> 12f
+                    MemoPrefs.FONT_LARGE -> 16f
+                    else -> 14f
+                },
+                corner = when (cornerStyle) {
+                    MemoPrefs.CORNER_SMALL -> 9
+                    MemoPrefs.CORNER_LARGE -> 20
+                    else -> 13
+                },
+                vPad = if (density == MemoPrefs.DENSITY_COMPACT) 7 else 11,
+                listGap = if (density == MemoPrefs.DENSITY_COMPACT) 6 else 10
             )
         }
+
+        fun resolve(prefs: MemoPrefs, palette: FocusColors.Palette): MemoStyle = of(
+            palette = palette,
+            cardStyle = prefs.cardStyle,
+            textColor = prefs.textColor,
+            fontScale = prefs.fontScale,
+            cornerStyle = prefs.cardCorner,
+            density = prefs.listDensity
+        )
     }
 }
 
@@ -399,7 +438,7 @@ private fun TodoTab(
         if (noDue.isNotEmpty()) add("待安排" to noDue)
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(style.listGap.dp)) {
         // 精确提醒降级提示
         if (!exactAlarm && pending.any { it.dueAt > 0 }) {
             item {
@@ -429,9 +468,9 @@ private fun TodoTab(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(style.corner.dp))
                     .background(style.cardBg)
-                    .border(1.dp, style.cardLine.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                    .border(1.dp, style.cardLine.copy(alpha = 0.7f), RoundedCornerShape(style.corner.dp))
                     .padding(vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
@@ -557,11 +596,11 @@ private fun MemoItemRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(style.corner.dp))
             .background(style.cardBg)
-            .border(1.dp, style.cardLine.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+            .border(1.dp, style.cardLine.copy(alpha = 0.7f), RoundedCornerShape(style.corner.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = style.vPad.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -1148,13 +1187,26 @@ private fun StylePanelDialog(
     var fontScale by remember { mutableIntStateOf(prefs.fontScale) }
     var textColor by remember { mutableIntStateOf(prefs.textColor) }
     var cardStyle by remember { mutableIntStateOf(prefs.cardStyle) }
+    var cornerStyle by remember { mutableIntStateOf(prefs.cardCorner) }
+    var density by remember { mutableIntStateOf(prefs.listDensity) }
 
     fun save() {
         prefs.fontScale = fontScale
         prefs.textColor = textColor
         prefs.cardStyle = cardStyle
+        prefs.cardCorner = cornerStyle
+        prefs.listDensity = density
         onChanged()
     }
+
+    val previewStyle = MemoStyle.of(
+        palette = palette,
+        cardStyle = cardStyle,
+        textColor = textColor,
+        fontScale = fontScale,
+        cornerStyle = cornerStyle,
+        density = density
+    )
 
     AlertDialog(
         onDismissRequest = { save(); onDismiss() },
@@ -1173,17 +1225,11 @@ private fun StylePanelDialog(
         text = {
             Column(
                 modifier = Modifier
-                    .heightIn(max = 460.dp)
+                    .heightIn(max = 470.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // 实时预览：调字号/文字色/卡片背景时当场看效果
-                MemoStylePreview(
-                    palette = palette,
-                    fontScale = fontScale,
-                    textColor = textColor,
-                    cardStyle = cardStyle
-                )
+                MemoStylePreview(palette = palette, style = previewStyle)
 
                 // 字号
                 SectionLabel("文字大小", palette)
@@ -1193,85 +1239,107 @@ private fun StylePanelDialog(
                         MemoPrefs.FONT_NORMAL to "标准",
                         MemoPrefs.FONT_LARGE to "大"
                     ).forEach { (v, label) ->
-                        FilterChip(
-                            shape = RoundedCornerShape(10.dp),
+                        OptionChip(
+                            label = label,
                             selected = fontScale == v,
-                            onClick = { fontScale = v },
-                            label = { Text(label, fontSize = 11.sp) },
+                            palette = palette,
                             modifier = Modifier.weight(1f)
-                        )
+                        ) { fontScale = v }
                     }
                 }
 
                 // 文字颜色
                 SectionLabel("文字颜色", palette)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val colors = listOf(
-                        MemoPrefs.TEXT_AUTO to ("跟随卡片" to Color.Transparent),
-                        MemoPrefs.TEXT_PAPER to ("暖纸白" to Color(0xFFEDE6D6)),
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    ColorSwatch(
+                        label = "自动",
+                        color = palette.card.copy(alpha = 0.6f),
+                        selected = textColor == MemoPrefs.TEXT_AUTO,
+                        palette = palette,
+                        auto = true
+                    ) { textColor = MemoPrefs.TEXT_AUTO }
+                    listOf(
+                        MemoPrefs.TEXT_PAPER to ("暖白" to Color(0xFFEDE6D6)),
                         MemoPrefs.TEXT_AMBER to ("琥珀" to Color(0xFFE2A65D)),
-                        MemoPrefs.TEXT_SAGE to ("灰绿" to Color(0xFF8AAE8C))
-                    )
-                    colors.forEach { (v, pair) ->
-                        val (label, c) = pair
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(
-                                modifier = Modifier
-                                    .size(30.dp)
-                                    .clip(RoundedCornerShape(9.dp))
-                                    .background(palette.card)
-                                    .border(
-                                        if (textColor == v) 2.dp else 1.dp,
-                                        if (textColor == v) palette.accent else palette.line,
-                                        RoundedCornerShape(9.dp)
-                                    )
-                                    .clickable { textColor = v },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (v == MemoPrefs.TEXT_AUTO) {
-                                    Text("A", fontSize = 13.sp, color = palette.text, fontWeight = FontWeight.Bold)
-                                } else {
-                                    Box(
-                                        Modifier
-                                            .size(14.dp)
-                                            .clip(CircleShape)
-                                            .background(c)
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(3.dp))
-                            Text(label, fontSize = 9.sp, color = palette.haze)
-                        }
+                        MemoPrefs.TEXT_SAGE to ("灰绿" to Color(0xFF8AAE8C)),
+                        MemoPrefs.TEXT_SKY to ("雾蓝" to Color(0xFFA9C6E8)),
+                        MemoPrefs.TEXT_ROSE to ("淡粉" to Color(0xFFE7B7B7))
+                    ).forEach { (v, pair) ->
+                        ColorSwatch(
+                            label = pair.first,
+                            color = pair.second,
+                            selected = textColor == v,
+                            palette = palette
+                        ) { textColor = v }
                     }
                 }
 
                 // 卡片背景
                 SectionLabel("卡片背景", palette)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val cards = listOf(
-                        MemoPrefs.CARD_AUTO to ("跟随主题" to palette.card.copy(alpha = 0.6f)),
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    ColorSwatch(
+                        label = "跟随主题",
+                        color = palette.card.copy(alpha = 0.6f),
+                        selected = cardStyle == MemoPrefs.CARD_AUTO,
+                        palette = palette
+                    ) { cardStyle = MemoPrefs.CARD_AUTO }
+                    listOf(
                         MemoPrefs.CARD_INK to ("墨" to Color(0xFF151B22)),
                         MemoPrefs.CARD_PAPER to ("暖纸" to Color(0xFFF0E9DA)),
-                        MemoPrefs.CARD_AMBER_NIGHT to ("琥珀夜" to Color(0xFF221A10))
-                    )
-                    cards.forEach { (v, pair) ->
-                        val (label, c) = pair
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(
-                                modifier = Modifier
-                                    .size(30.dp)
-                                    .clip(RoundedCornerShape(9.dp))
-                                    .background(c)
-                                    .border(
-                                        if (cardStyle == v) 2.dp else 1.dp,
-                                        if (cardStyle == v) palette.accent else palette.line,
-                                        RoundedCornerShape(9.dp)
-                                    )
-                                    .clickable { cardStyle = v }
-                            )
-                            Spacer(Modifier.height(3.dp))
-                            Text(label, fontSize = 9.sp, color = palette.haze)
-                        }
+                        MemoPrefs.CARD_AMBER_NIGHT to ("琥珀夜" to Color(0xFF221A10)),
+                        MemoPrefs.CARD_SLATE to ("夜蓝" to Color(0xFF141C2B)),
+                        MemoPrefs.CARD_MINT to ("薄荷" to Color(0xFFE8F5EE)),
+                        MemoPrefs.CARD_ROSE to ("豆沙" to Color(0xFFF6E9E6))
+                    ).forEach { (v, pair) ->
+                        ColorSwatch(
+                            label = pair.first,
+                            color = pair.second,
+                            selected = cardStyle == v,
+                            palette = palette
+                        ) { cardStyle = v }
+                    }
+                }
+
+                // 卡片圆角
+                SectionLabel("卡片圆角", palette)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        MemoPrefs.CORNER_SMALL to "小",
+                        MemoPrefs.CORNER_MEDIUM to "中",
+                        MemoPrefs.CORNER_LARGE to "大"
+                    ).forEach { (v, label) ->
+                        OptionChip(
+                            label = label,
+                            selected = cornerStyle == v,
+                            palette = palette,
+                            modifier = Modifier.weight(1f)
+                        ) { cornerStyle = v }
+                    }
+                }
+
+                // 列表间距
+                SectionLabel("列表间距", palette)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        MemoPrefs.DENSITY_COMPACT to "紧凑",
+                        MemoPrefs.DENSITY_COMFORTABLE to "舒适"
+                    ).forEach { (v, label) ->
+                        OptionChip(
+                            label = label,
+                            selected = density == v,
+                            palette = palette,
+                            modifier = Modifier.weight(1f)
+                        ) { density = v }
                     }
                 }
             }
@@ -1293,82 +1361,157 @@ private fun StylePanelDialog(
 
 // ══════════════════════════ 外观实时预览 ══════════════════════════
 
-/** 外观弹窗顶部的实时预览卡：随字号 / 文字颜色 / 卡片背景即时变化。 */
+/** 外观弹窗顶部的实时预览：概览条 + 两条待办，随所有外观选项即时变化。 */
 @Composable
-private fun MemoStylePreview(
-    palette: FocusColors.Palette,
-    fontScale: Int,
-    textColor: Int,
-    cardStyle: Int
-) {
-    val lightCard = cardStyle == MemoPrefs.CARD_PAPER
-    val cardBg = when (cardStyle) {
-        MemoPrefs.CARD_INK -> Color(0xFF151B22)
-        MemoPrefs.CARD_PAPER -> Color(0xFFF0E9DA)
-        MemoPrefs.CARD_AMBER_NIGHT -> Color(0xFF221A10)
-        else -> palette.card.copy(alpha = 0.6f)
-    }
-    val defaultText = if (lightCard) Color(0xFF1D1A14) else palette.text
-    val text = when (textColor) {
-        MemoPrefs.TEXT_PAPER -> Color(0xFFEDE6D6)
-        MemoPrefs.TEXT_AMBER -> Color(0xFFE2A65D)
-        MemoPrefs.TEXT_SAGE -> Color(0xFF8AAE8C)
-        else -> defaultText
-    }
-    val sub = if (lightCard) Color(0xFF6B6455) else palette.haze
-    val line = if (lightCard) Color(0xFFD6CDB9).copy(alpha = 0.8f) else palette.line
-    val size = when (fontScale) {
-        MemoPrefs.FONT_SMALL -> 12f
-        MemoPrefs.FONT_LARGE -> 16f
-        else -> 14f
-    }
-
+private fun MemoStylePreview(palette: FocusColors.Palette, style: MemoStyle) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(cardBg)
-            .border(1.dp, line, RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(palette.bg.copy(alpha = 0.55f))
+            .border(1.dp, palette.line.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(style.listGap.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(16.dp)
-                    .clip(CircleShape)
-                    .border(1.5.dp, palette.accent.copy(alpha = 0.7f), CircleShape)
-            )
-            Spacer(Modifier.width(9.dp))
-            Text(
-                "整理本周专注记录",
-                fontSize = size.sp,
-                fontWeight = FontWeight.Medium,
-                color = text
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(16.dp)
-                    .clip(CircleShape)
-                    .background(palette.accent.copy(alpha = 0.9f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.Check, null, tint = palette.bg, modifier = Modifier.size(11.dp))
+        // 概览条
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(style.corner.dp))
+                .background(style.cardBg)
+                .border(1.dp, style.cardLine.copy(alpha = 0.7f), RoundedCornerShape(style.corner.dp))
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            listOf("2" to "待办中", "0" to "今日到期", "1" to "今日完成").forEach { (v, label) ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        v,
+                        fontSize = (style.fontSize + 3).sp,
+                        fontWeight = FontWeight.Bold,
+                        color = style.text
+                    )
+                    Text(
+                        label,
+                        fontSize = (style.fontSize - 5).coerceAtLeast(8f).sp,
+                        color = style.sub
+                    )
+                }
             }
-            Spacer(Modifier.width(9.dp))
+        }
+
+        MemoPreviewRow(
+            palette = palette,
+            style = style,
+            text = "整理本周专注记录",
+            tag = "今天 18:00 · 中优先级",
+            done = false
+        )
+        MemoPreviewRow(
+            palette = palette,
+            style = style,
+            text = "写复盘总结",
+            tag = "重要 · 已完成",
+            done = true
+        )
+    }
+}
+
+@Composable
+private fun MemoPreviewRow(
+    palette: FocusColors.Palette,
+    style: MemoStyle,
+    text: String,
+    tag: String,
+    done: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(style.corner.dp))
+            .background(style.cardBg)
+            .border(1.dp, style.cardLine.copy(alpha = 0.7f), RoundedCornerShape(style.corner.dp))
+            .padding(horizontal = 10.dp, vertical = style.vPad.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (done) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (done) palette.success else style.sub,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
             Text(
-                "写复盘总结",
-                fontSize = size.sp,
-                color = sub,
-                textDecoration = TextDecoration.LineThrough
+                text = text,
+                fontSize = style.fontSize.sp,
+                color = style.text.copy(alpha = if (done) 0.4f else 0.92f),
+                textDecoration = if (done) TextDecoration.LineThrough else null,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = tag,
+                fontSize = (style.fontSize - 4).coerceAtLeast(9f).sp,
+                color = style.sub
             )
         }
+    }
+}
+
+/** 颜色/卡片色板：方形色块 + 名称，选中时加粗描边并打勾。 */
+@Composable
+private fun ColorSwatch(
+    label: String,
+    color: Color,
+    selected: Boolean,
+    palette: FocusColors.Palette,
+    modifier: Modifier = Modifier,
+    auto: Boolean = false,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(13.dp)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .width(56.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 2.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(shape)
+                .background(color)
+                .border(
+                    if (selected) 2.dp else 1.dp,
+                    if (selected) palette.accent else palette.line.copy(alpha = 0.8f),
+                    shape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            when {
+                auto -> Text(
+                    "A",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.text
+                )
+                selected -> Icon(
+                    Icons.Default.Check,
+                    null,
+                    tint = if (color.luminance() > 0.5f) Color(0xFF14251C) else Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
         Text(
-            "今天 18:00 · 中优先级",
-            fontSize = (size - 2f).coerceAtLeast(10f).sp,
-            color = sub.copy(alpha = 0.85f)
+            text = label,
+            fontSize = 9.sp,
+            maxLines = 1,
+            color = if (selected) palette.accent else palette.haze
         )
     }
 }
@@ -1429,7 +1572,7 @@ private fun ReminderSettingsDialog(
                         5 to "5 分钟",
                         15 to "15 分钟"
                     ).forEach { (v, label) ->
-                        ReminderChip(
+                        OptionChip(
                             label = label,
                             selected = lead == v,
                             palette = palette,
@@ -1442,7 +1585,7 @@ private fun ReminderSettingsDialog(
                         30 to "30 分钟",
                         60 to "1 小时"
                     ).forEach { (v, label) ->
-                        ReminderChip(
+                        OptionChip(
                             label = label,
                             selected = lead == v,
                             palette = palette,
@@ -1470,7 +1613,7 @@ private fun ReminderSettingsDialog(
                         MemoPrefs.REMINDER_FULLSCREEN to "全屏"
                     ).forEach { (flag, label) ->
                         val locked = flag == MemoPrefs.REMINDER_NOTIFY
-                        ReminderChip(
+                        OptionChip(
                             label = label,
                             selected = (flags and flag) != 0,
                             palette = palette,
@@ -1510,9 +1653,9 @@ private fun ReminderSettingsDialog(
     )
 }
 
-/** 提醒设置里的选项胶囊：选中用强调色填充 + 描边，一眼能看出当前状态。 */
+/** 选项胶囊：选中用强调色填充 + 描边，一眼能看出当前状态。 */
 @Composable
-private fun ReminderChip(
+private fun OptionChip(
     label: String,
     selected: Boolean,
     palette: FocusColors.Palette,

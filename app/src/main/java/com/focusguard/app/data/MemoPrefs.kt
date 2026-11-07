@@ -21,6 +21,8 @@ class MemoPrefs(context: Context) {
         private const val KEY_FONT_SCALE = "font_scale"
         private const val KEY_TEXT_COLOR = "text_color"
         private const val KEY_CARD_STYLE = "card_style"
+        private const val KEY_CARD_CORNER = "card_corner"
+        private const val KEY_LIST_DENSITY = "list_density"
         private const val KEY_REMINDER_LEAD = "reminder_lead_minutes"
         private const val KEY_REMINDER_FLAGS = "reminder_flags"
 
@@ -34,12 +36,26 @@ class MemoPrefs(context: Context) {
         const val TEXT_PAPER = 1     // 暖纸白 #EDE6D6
         const val TEXT_AMBER = 2     // 琥珀 #E2A65D
         const val TEXT_SAGE = 3      // 灰绿 #8AAE8C
+        const val TEXT_SKY = 4       // 雾蓝 #A9C6E8
+        const val TEXT_ROSE = 5      // 淡粉 #E7B7B7
 
         /** 卡片背景模式。 */
         const val CARD_AUTO = 0      // 跟随全局主题玻璃卡
         const val CARD_INK = 1       // 墨 #151B22（暗）
         const val CARD_PAPER = 2     // 暖纸 #F0E9DA（亮）
         const val CARD_AMBER_NIGHT = 3 // 琥珀夜光 #221A10（暗棕）
+        const val CARD_SLATE = 4     // 夜蓝 #141C2B（暗蓝）
+        const val CARD_MINT = 5      // 薄荷 #E8F5EE（亮绿）
+        const val CARD_ROSE = 6      // 豆沙 #F6E9E6（亮粉）
+
+        /** 卡片圆角档位。 */
+        const val CORNER_SMALL = 0
+        const val CORNER_MEDIUM = 1
+        const val CORNER_LARGE = 2
+
+        /** 列表密度。 */
+        const val DENSITY_COMPACT = 0
+        const val DENSITY_COMFORTABLE = 1
 
         /** 提醒形式位标记（可按位组合）。 */
         const val REMINDER_NOTIFY = 1      // 通知横幅：基础形式，永远开启
@@ -76,13 +92,38 @@ class MemoPrefs(context: Context) {
 
     /** 文字颜色模式。 */
     var textColor: Int
-        get() = prefs.getInt(KEY_TEXT_COLOR, TEXT_AUTO).coerceIn(0, 3)
-        set(value) = prefs.edit().putInt(KEY_TEXT_COLOR, value.coerceIn(0, 3)).apply()
+        get() = prefs.getInt(KEY_TEXT_COLOR, TEXT_AUTO).coerceIn(0, 5)
+        set(value) = prefs.edit().putInt(KEY_TEXT_COLOR, value.coerceIn(0, 5)).apply()
 
     /** 卡片背景模式。 */
     var cardStyle: Int
-        get() = prefs.getInt(KEY_CARD_STYLE, CARD_AUTO).coerceIn(0, 3)
-        set(value) = prefs.edit().putInt(KEY_CARD_STYLE, value.coerceIn(0, 3)).apply()
+        get() = prefs.getInt(KEY_CARD_STYLE, CARD_AUTO).coerceIn(0, 6)
+        set(value) = prefs.edit().putInt(KEY_CARD_STYLE, value.coerceIn(0, 6)).apply()
+
+    /** 卡片圆角档位。 */
+    var cardCorner: Int
+        get() = prefs.getInt(KEY_CARD_CORNER, CORNER_MEDIUM).coerceIn(0, 2)
+        set(value) = prefs.edit().putInt(KEY_CARD_CORNER, value.coerceIn(0, 2)).apply()
+
+    /** 列表密度：紧凑 / 舒适。 */
+    var listDensity: Int
+        get() = prefs.getInt(KEY_LIST_DENSITY, DENSITY_COMFORTABLE).coerceIn(0, 1)
+        set(value) = prefs.edit().putInt(KEY_LIST_DENSITY, value.coerceIn(0, 1)).apply()
+
+    /** 卡片圆角（dp）。 */
+    fun cardCornerDp(): Int = when (cardCorner) {
+        CORNER_SMALL -> 9
+        CORNER_LARGE -> 20
+        else -> 13
+    }
+
+    /** 单条待办上下内边距（dp）。 */
+    fun itemVerticalPadding(): Int =
+        if (listDensity == DENSITY_COMPACT) 7 else 11
+
+    /** 列表条目间距（dp）。 */
+    fun listSpacing(): Int =
+        if (listDensity == DENSITY_COMPACT) 6 else 10
 
     /** 提醒提前量（分钟）：0 / 5 / 15 / 30 / 60。 */
     var reminderLeadMinutes: Int

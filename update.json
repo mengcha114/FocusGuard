@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.72",
-  "notes": "修复了 提醒设置里的选项文字被截断（只剩 5… / 1… 这种），现在分两行完整显示\n优化了 提醒选项的选中状态：强调色填充 + 描边 + 加粗，一眼能看出当前选择\n修复了 全屏提醒没效果：屏幕亮着时系统只会弹横幅，现在有悬浮窗权限会直接把提醒页拉到前台；锁屏状态下会点亮屏幕显示\n删除了 几乎没有变化的「光晕缓慢漂移」开关\n优化了 背景图模糊改为 关 / 弱 / 中 / 强 四档，拉到不同档位效果差别明显\n删除了 外观与提醒设置里的多余提示文案",
+  "tag": "v3.11.73",
+  "notes": "重做了 备忘录外观面板：新增 6 种文字颜色、7 种卡片背景、卡片圆角与列表间距，可调项更多\n优化了 外观预览：现在按真实列表展示概览条和两条待办，选什么立刻能看到效果\n优化了 选项选中状态：强调色填充 + 加粗描边 + 打勾，不再看不清\n统一了 备忘录外观与提醒设置的操作样式",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.72/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.72/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.73/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.73/app-general-release.apk"
   }
 }
