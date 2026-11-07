@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.70",
-  "notes": "修复了 选背景图时闪退 / 像被强制退出：打开相册被误判成用户离开，应用主动销毁了任务和选图回调；现在识别图片选择器、相册与文件选择器，不再自杀\n修复了 屏幕录制授权被系统回收后不会自动恢复：现在会尝试重新拉起授权（悬浮窗权限可用时），并做节流防骚扰\n新增了 待办提醒形式可多选组合：通知、提示音、震动、全屏提醒\n修复了 隐藏耗时明细只隐藏了日志，执法弹窗里仍会显示耗时；现在从源头不再写入\n调整了 授权页说明文案为「以下权限为非必须权限」",
+  "tag": "v3.11.71",
+  "notes": "调整了 提醒设置的位置：提前量与提醒形式从「备忘录外观」里独立出来，改到备忘录顶部栏的铃铛入口\n新增了 备忘录外观实时预览：调字号、文字颜色、卡片背景时当场就能看到效果\n优化了 主题个性化：新增 7 套配色预设（跟随主题 / 极光 / 暖砂 / 深海 / 森野 / 紫雾 / 灰阶），渐变背景与流光光晕共用一套色板\n新增了 卡片描边强度滑杆，可自由调节轮廓轻重\n优化了 主题设置面板的排版与观感：顶部实时预览、分组标题带图标、渐变配色以色块卡片呈现",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.70/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.70/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.71/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.71/app-general-release.apk"
   }
 }

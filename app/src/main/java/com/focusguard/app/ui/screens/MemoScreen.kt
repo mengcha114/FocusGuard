@@ -83,6 +83,7 @@ fun MemoScreen(
     var tab by remember { mutableIntStateOf(0) }
     var editor by remember { mutableStateOf<EditorTarget?>(null) }
     var showStyle by remember { mutableStateOf(false) }
+    var showReminder by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
     var styleTick by remember { mutableIntStateOf(0) } // 外观变化强制重组
 
@@ -147,6 +148,9 @@ fun MemoScreen(
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { showImport = true }) {
                     Icon(Icons.Default.FileDownload, "导入", tint = palette.haze)
+                }
+                IconButton(onClick = { showReminder = true }) {
+                    Icon(Icons.Default.NotificationsActive, "提醒设置", tint = palette.haze)
                 }
                 IconButton(onClick = { showStyle = true }) {
                     Icon(Icons.Default.Palette, "外观", tint = palette.haze)
@@ -261,13 +265,23 @@ fun MemoScreen(
         StylePanelDialog(
             palette = palette,
             prefs = memoPrefs,
-            exactAlarm = MemoReminder.canScheduleExact(context),
-            fullScreenAllowed = MemoReminder.canUseFullScreen(context),
             onChanged = {
                 styleTick++
                 refresh()
             },
-            onDismiss = { showStyle = false },
+            onDismiss = { showStyle = false }
+        )
+    }
+
+    // ── 提醒设置（从外观面板独立出来）────────────────────
+    if (showReminder) {
+        ReminderSettingsDialog(
+            palette = palette,
+            prefs = memoPrefs,
+            exactAlarm = MemoReminder.canScheduleExact(context),
+            fullScreenAllowed = MemoReminder.canUseFullScreen(context),
+            onChanged = { refresh() },
+            onDismiss = { showReminder = false },
             onOpenExactAlarmSetting = {
                 runCatching {
                     com.focusguard.app.util.LeaveGuard.markLeaving()
@@ -1128,31 +1142,34 @@ object PickedDateTime {
 private fun StylePanelDialog(
     palette: FocusColors.Palette,
     prefs: MemoPrefs,
-    exactAlarm: Boolean,
-    fullScreenAllowed: Boolean,
     onChanged: () -> Unit,
-    onDismiss: () -> Unit,
-    onOpenExactAlarmSetting: () -> Unit,
-    onOpenFullScreenSetting: () -> Unit
+    onDismiss: () -> Unit
 ) {
     var fontScale by remember { mutableIntStateOf(prefs.fontScale) }
     var textColor by remember { mutableIntStateOf(prefs.textColor) }
     var cardStyle by remember { mutableIntStateOf(prefs.cardStyle) }
-    var lead by remember { mutableIntStateOf(prefs.reminderLeadMinutes) }
-    var reminderFlags by remember { mutableIntStateOf(prefs.reminderFlags) }
 
     fun save() {
         prefs.fontScale = fontScale
         prefs.textColor = textColor
         prefs.cardStyle = cardStyle
-        prefs.reminderLeadMinutes = lead
-        prefs.reminderFlags = reminderFlags
         onChanged()
     }
 
     AlertDialog(
         onDismissRequest = { save(); onDismiss() },
-        title = { Text("备忘录外观", fontSize = 17.sp) },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Palette,
+                    null,
+                    tint = palette.accent,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("备忘录外观", fontSize = 17.sp)
+            }
+        },
         text = {
             Column(
                 modifier = Modifier
@@ -1160,6 +1177,14 @@ private fun StylePanelDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // 实时预览：调字号/文字色/卡片背景时当场看效果
+                MemoStylePreview(
+                    palette = palette,
+                    fontScale = fontScale,
+                    textColor = textColor,
+                    cardStyle = cardStyle
+                )
+
                 // 字号
                 SectionLabel("文字大小", palette)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1250,47 +1275,213 @@ private fun StylePanelDialog(
                     }
                 }
 
-                // 提醒提前量
-                SectionLabel("到期提醒", palette)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(0 to "准时", 5 to "提前5分", 15 to "提前15分").forEach { (v, label) ->
+                HorizontalDivider(color = palette.line.copy(alpha = 0.5f))
+                Text(
+                    text = "提醒时间与提醒形式已移至顶部栏的「提醒设置」",
+                    fontSize = 10.sp,
+                    color = palette.faint
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { save(); onDismiss() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = palette.accent,
+                    contentColor = palette.bg
+                ),
+                shape = RoundedCornerShape(10.dp)
+            ) { Text("完成") }
+        },
+        containerColor = palette.surface,
+        shape = RoundedCornerShape(14.dp)
+    )
+}
+
+// ══════════════════════════ 外观实时预览 ══════════════════════════
+
+/** 外观弹窗顶部的实时预览卡：随字号 / 文字颜色 / 卡片背景即时变化。 */
+@Composable
+private fun MemoStylePreview(
+    palette: FocusColors.Palette,
+    fontScale: Int,
+    textColor: Int,
+    cardStyle: Int
+) {
+    val lightCard = cardStyle == MemoPrefs.CARD_PAPER
+    val cardBg = when (cardStyle) {
+        MemoPrefs.CARD_INK -> Color(0xFF151B22)
+        MemoPrefs.CARD_PAPER -> Color(0xFFF0E9DA)
+        MemoPrefs.CARD_AMBER_NIGHT -> Color(0xFF221A10)
+        else -> palette.card.copy(alpha = 0.6f)
+    }
+    val defaultText = if (lightCard) Color(0xFF1D1A14) else palette.text
+    val text = when (textColor) {
+        MemoPrefs.TEXT_PAPER -> Color(0xFFEDE6D6)
+        MemoPrefs.TEXT_AMBER -> Color(0xFFE2A65D)
+        MemoPrefs.TEXT_SAGE -> Color(0xFF8AAE8C)
+        else -> defaultText
+    }
+    val sub = if (lightCard) Color(0xFF6B6455) else palette.haze
+    val line = if (lightCard) Color(0xFFD6CDB9).copy(alpha = 0.8f) else palette.line
+    val size = when (fontScale) {
+        MemoPrefs.FONT_SMALL -> 12f
+        MemoPrefs.FONT_LARGE -> 16f
+        else -> 14f
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(cardBg)
+            .border(1.dp, line, RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .border(1.5.dp, palette.accent.copy(alpha = 0.7f), CircleShape)
+            )
+            Spacer(Modifier.width(9.dp))
+            Text(
+                "整理本周专注记录",
+                fontSize = size.sp,
+                fontWeight = FontWeight.Medium,
+                color = text
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(palette.accent.copy(alpha = 0.9f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Check, null, tint = palette.bg, modifier = Modifier.size(11.dp))
+            }
+            Spacer(Modifier.width(9.dp))
+            Text(
+                "写复盘总结",
+                fontSize = size.sp,
+                color = sub,
+                textDecoration = TextDecoration.LineThrough
+            )
+        }
+        Text(
+            "今天 18:00 · 中优先级",
+            fontSize = (size - 2f).coerceAtLeast(10f).sp,
+            color = sub.copy(alpha = 0.85f)
+        )
+    }
+}
+
+// ══════════════════════════ 提醒设置 ══════════════════════════
+
+/**
+ * 待办提醒设置：提前量 + 提醒形式组合。
+ *
+ * 从「备忘录外观」中独立出来——外观只管长什么样，提醒管什么时候、以什么方式响，
+ * 两件事混在一个弹窗里既不直观也容易找不到。
+ */
+@Composable
+private fun ReminderSettingsDialog(
+    palette: FocusColors.Palette,
+    prefs: MemoPrefs,
+    exactAlarm: Boolean,
+    fullScreenAllowed: Boolean,
+    onChanged: () -> Unit,
+    onDismiss: () -> Unit,
+    onOpenExactAlarmSetting: () -> Unit,
+    onOpenFullScreenSetting: () -> Unit
+) {
+    var lead by remember { mutableIntStateOf(prefs.reminderLeadMinutes) }
+    var flags by remember { mutableIntStateOf(prefs.reminderFlags) }
+
+    fun persist() {
+        prefs.reminderLeadMinutes = lead
+        prefs.reminderFlags = flags
+        onChanged()
+    }
+
+    AlertDialog(
+        onDismissRequest = { persist(); onDismiss() },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.NotificationsActive,
+                    null,
+                    tint = palette.accent,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("提醒设置", fontSize = 17.sp)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SectionLabel("提前多久提醒", palette)
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    listOf(
+                        0 to "准时",
+                        5 to "5分钟",
+                        15 to "15分钟",
+                        30 to "30分钟",
+                        60 to "1小时"
+                    ).forEach { (v, label) ->
                         FilterChip(
                             shape = RoundedCornerShape(10.dp),
                             selected = lead == v,
-                            onClick = { lead = v },
-                            label = { Text(label, fontSize = 11.sp) },
+                            onClick = { lead = v; persist() },
+                            label = {
+                                Text(
+                                    label,
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
                 if (!exactAlarm) {
                     Text(
-                        text = "精确闹钟权限未开启，提醒可能延迟",
+                        text = "精确闹钟权限未开启，提醒可能延迟，点击前往授权",
                         fontSize = 10.sp,
                         color = palette.error,
                         modifier = Modifier.clickable(onClick = onOpenExactAlarmSetting)
                     )
                 }
 
-                // 提醒形式：通知为必选基础，其余可任意组合；改动即时保存
+                HorizontalDivider(color = palette.line.copy(alpha = 0.5f))
+
                 SectionLabel("提醒形式", palette)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(
                         MemoPrefs.REMINDER_NOTIFY to "通知",
                         MemoPrefs.REMINDER_SOUND to "提示音",
                         MemoPrefs.REMINDER_VIBRATE to "震动",
-                        MemoPrefs.REMINDER_FULLSCREEN to "全屏提醒"
+                        MemoPrefs.REMINDER_FULLSCREEN to "全屏"
                     ).forEach { (flag, label) ->
                         val locked = flag == MemoPrefs.REMINDER_NOTIFY
                         FilterChip(
                             shape = RoundedCornerShape(10.dp),
-                            selected = (reminderFlags and flag) != 0,
+                            selected = (flags and flag) != 0,
                             onClick = {
                                 // 通知位锁定：取消勾选会静默无提醒，因此不允许
                                 if (!locked) {
-                                    reminderFlags = MemoPrefs.sanitizeReminderFlags(reminderFlags xor flag)
-                                    prefs.reminderFlags = reminderFlags
-                                    onChanged()
+                                    flags = MemoPrefs.sanitizeReminderFlags(flags xor flag)
+                                    persist()
                                 }
                             },
                             label = { Text(label, fontSize = 11.sp) },
@@ -1298,8 +1489,12 @@ private fun StylePanelDialog(
                         )
                     }
                 }
-                Text("通知为必选形式，其余可任意组合", fontSize = 10.sp, color = palette.faint)
-                if (!fullScreenAllowed && (reminderFlags and MemoPrefs.REMINDER_FULLSCREEN) != 0) {
+                Text(
+                    text = "通知为必选形式，其余可任意组合叠加",
+                    fontSize = 10.sp,
+                    color = palette.faint
+                )
+                if (!fullScreenAllowed && (flags and MemoPrefs.REMINDER_FULLSCREEN) != 0) {
                     Text(
                         text = "全屏提醒权限未开启，点击前往授权（未授权时退化为普通通知）",
                         fontSize = 10.sp,
@@ -1311,7 +1506,7 @@ private fun StylePanelDialog(
         },
         confirmButton = {
             Button(
-                onClick = { save(); onDismiss() },
+                onClick = { persist(); onDismiss() },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = palette.accent,
                     contentColor = palette.bg

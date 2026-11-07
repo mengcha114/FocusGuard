@@ -84,10 +84,10 @@ class MemoPrefs(context: Context) {
         get() = prefs.getInt(KEY_CARD_STYLE, CARD_AUTO).coerceIn(0, 3)
         set(value) = prefs.edit().putInt(KEY_CARD_STYLE, value.coerceIn(0, 3)).apply()
 
-    /** 提醒提前量（分钟）：0 / 5 / 15。 */
+    /** 提醒提前量（分钟）：0 / 5 / 15 / 30 / 60。 */
     var reminderLeadMinutes: Int
-        get() = prefs.getInt(KEY_REMINDER_LEAD, 0).coerceIn(0, 15)
-        set(value) = prefs.edit().putInt(KEY_REMINDER_LEAD, value.coerceIn(0, 15)).apply()
+        get() = prefs.getInt(KEY_REMINDER_LEAD, 0).coerceIn(0, 60)
+        set(value) = prefs.edit().putInt(KEY_REMINDER_LEAD, value.coerceIn(0, 60)).apply()
 
     /**
      * 提醒形式组合（位标记，见 [REMINDER_NOTIFY] 等）。

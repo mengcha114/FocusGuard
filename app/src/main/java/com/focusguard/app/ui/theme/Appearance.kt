@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 
 /**
  * 个性化外观设置（背景、光晕、卡片、圆角、字体、动画）。
@@ -23,6 +24,10 @@ data class Appearance(
     val imageDim: Int = 45,
     /** 流光光晕开关。 */
     val glow: Boolean = true,
+    /** 背景渐变配色预设：0 跟随主题，1 极光，2 暖砂，3 深海，4 森野，5 紫雾，6 灰阶。 */
+    val gradientStyle: Int = 0,
+    /** 卡片描边强度（0–100，0 为无描边）。 */
+    val cardBorder: Int = 45,
     /** 光晕强度（10–100）。 */
     val glowIntensity: Int = 60,
     /** 光晕缓慢漂移动画。 */
@@ -62,6 +67,37 @@ data class Appearance(
         const val FONT_SANS = 1
         const val FONT_MONO = 2
 
+        /** 渐变配色预设：三色从顶到底。0 表示跟随主题，返回 null。 */
+        fun gradientPreset(style: Int, light: Boolean): List<Color>? = when (style) {
+            1 -> if (light) listOf(Color(0xFFEAF4FF), Color(0xFFD9E9FF), Color(0xFFF6F2FF))
+            else listOf(Color(0xFF0A1024), Color(0xFF12294A), Color(0xFF0B1526))
+            2 -> if (light) listOf(Color(0xFFFFF7EC), Color(0xFFFCEAD2), Color(0xFFF7E2C6))
+            else listOf(Color(0xFF1A1410), Color(0xFF251A11), Color(0xFF120E0A))
+            3 -> if (light) listOf(Color(0xFFEAF7FF), Color(0xFFD5ECFA), Color(0xFFEAF6FF))
+            else listOf(Color(0xFF05111E), Color(0xFF0B2238), Color(0xFF05121F))
+            4 -> if (light) listOf(Color(0xFFF1FBF3), Color(0xFFDFF4E5), Color(0xFFF4FBF0))
+            else listOf(Color(0xFF0A130F), Color(0xFF13251A), Color(0xFF09110C))
+            5 -> if (light) listOf(Color(0xFFF6F1FF), Color(0xFFEBE1FF), Color(0xFFFAF3FF))
+            else listOf(Color(0xFF120E20), Color(0xFF21183E), Color(0xFF110D1C))
+            6 -> if (light) listOf(Color(0xFFF7F8FA), Color(0xFFECEFF4), Color(0xFFF7F8FA))
+            else listOf(Color(0xFF0F1114), Color(0xFF181C21), Color(0xFF0B0D0F))
+            else -> null
+        }
+
+        /** 与渐变预设配套的光晕双色；0 表示跟随主题。 */
+        fun presetGlow(style: Int, light: Boolean): Pair<Color, Color>? = when (style) {
+            1 -> Color(0xFF5EEAD4) to Color(0xFFA78BFA)
+            2 -> Color(0xFFF59E0B) to Color(0xFFFB7185)
+            3 -> Color(0xFF38BDF8) to Color(0xFF6366F1)
+            4 -> Color(0xFF34D399) to Color(0xFF84CC16)
+            5 -> Color(0xFFA78BFA) to Color(0xFFF472B6)
+            6 -> Color(0xFF94A3B8) to Color(0xFFE2E8F0)
+            else -> null
+        }
+
+        /** 预设名称（与 [gradientPreset] 下标对应）。 */
+        val gradientNames: List<String> = listOf("跟随主题", "极光", "暖砂", "深海", "森野", "紫雾", "灰阶")
+
         private const val PREFS = "focus_guard_appearance"
 
         fun load(context: Context): Appearance {
@@ -75,6 +111,8 @@ data class Appearance(
                 imageDim = p.getInt("image_dim", d.imageDim),
                 // 迁移旧开关：bg_blur_enabled → glow
                 glow = p.getBoolean("glow", legacy.getBoolean("bg_blur_enabled", true)),
+                gradientStyle = p.getInt("gradient_style", d.gradientStyle),
+                cardBorder = p.getInt("card_border", d.cardBorder),
                 glowIntensity = p.getInt("glow_intensity", d.glowIntensity),
                 glowMotion = p.getBoolean("glow_motion", d.glowMotion),
                 cardStyle = p.getInt("card_style", d.cardStyle),
@@ -99,6 +137,8 @@ data class Appearance(
                 .putInt("image_blur", a.imageBlur)
                 .putInt("image_dim", a.imageDim)
                 .putBoolean("glow", a.glow)
+                .putInt("gradient_style", a.gradientStyle)
+                .putInt("card_border", a.cardBorder)
                 .putInt("glow_intensity", a.glowIntensity)
                 .putBoolean("glow_motion", a.glowMotion)
                 .putInt("card_style", a.cardStyle)

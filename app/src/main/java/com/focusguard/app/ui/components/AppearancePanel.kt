@@ -4,27 +4,48 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.ui.theme.Appearance
 import com.focusguard.app.ui.theme.AppearanceState
+import com.focusguard.app.ui.theme.ImageBackground
+import com.focusguard.app.ui.theme.inkCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 个性化外观面板：背景、光晕、卡片、圆角、字号、锁机页元素、动画。
+ * 个性化外观面板：背景、配色、光晕、卡片、圆角、字号、锁机页元素、动画。
  * 所有修改立即写入 [AppearanceState]，全应用（含锁机页）即时生效。
+ *
+ * 顶部是实时预览：改配色/卡片/圆角/字号能当场看到效果，不用退出再进设置。
  */
 @Composable
 fun AppearancePanel() {
@@ -92,8 +113,10 @@ fun AppearancePanel() {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        AppearancePreview(a)
+
         // ── 背景 ──
-        Label("背景")
+        SectionTitle(Icons.Default.Wallpaper, "背景")
         FxOptionRow(
             options = listOf(Appearance.BG_SOLID, Appearance.BG_GRADIENT, Appearance.BG_MESH, Appearance.BG_IMAGE),
             selected = a.background,
@@ -113,6 +136,29 @@ fun AppearancePanel() {
                 }
             }
         )
+
+        // 配色预设：渐变背景与流光光晕共用一套色板，选完不用再分别调
+        Label("配色预设")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Appearance.gradientNames.indices.forEach { style ->
+                GradientChip(
+                    style = style,
+                    selected = a.gradientStyle == style,
+                    onClick = { set { it.copy(gradientStyle = style) } }
+                )
+            }
+        }
+        Text(
+            "渐变背景与流光光晕共用这套配色；纯色/网格/图片背景只影响光晕",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
         FxExpand(visible = a.background == Appearance.BG_IMAGE) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
@@ -143,9 +189,10 @@ fun AppearancePanel() {
         }
 
         // ── 流光光晕 ──
+        SectionTitle(Icons.Default.AutoAwesome, "流光")
         SwitchRow(
             title = "流光光晕",
-            hint = "页面背景两团柔和光晕，颜色跟随主题",
+            hint = "页面背景两团柔和光晕，默认跟随主题配色",
             checked = a.glow
         ) { on -> set { it.copy(glow = on) } }
         FxExpand(visible = a.glow) {
@@ -158,7 +205,7 @@ fun AppearancePanel() {
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
 
         // ── 卡片 ──
-        Label("卡片")
+        SectionTitle(Icons.Default.Layers, "卡片")
         FxOptionRow(
             options = listOf(Appearance.CARD_GLASS, Appearance.CARD_SOLID, Appearance.CARD_OUTLINE),
             selected = a.cardStyle,
@@ -176,6 +223,13 @@ fun AppearancePanel() {
                 set { it.copy(cardOpacity = v) }
             }
         }
+        SliderRow(
+            title = "描边强度",
+            value = a.cardBorder,
+            range = 0f..100f,
+            suffix = "%",
+            hint = "0 为无描边，越高轮廓越清晰"
+        ) { v -> set { it.copy(cardBorder = v) } }
         Label("圆角")
         FxOptionRow(
             options = listOf(Appearance.CORNER_SMALL, Appearance.CORNER_MEDIUM, Appearance.CORNER_LARGE),
@@ -191,6 +245,7 @@ fun AppearancePanel() {
         )
 
         // ── 文字 ──
+        SectionTitle(Icons.Default.TextFields, "文字")
         SliderRow(title = "字号", value = a.fontScale, range = 85f..125f, suffix = "%", steps = 7) { v ->
             set { it.copy(fontScale = v) }
         }
@@ -198,8 +253,8 @@ fun AppearancePanel() {
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
 
         // ── 锁机页 ──
-        Label("锁机页")
-        Text("倒计时字体", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SectionTitle(Icons.Default.Lock, "锁机页")
+        Label("倒计时字体")
         FxOptionRow(
             options = listOf(Appearance.FONT_SERIF, Appearance.FONT_SANS, Appearance.FONT_MONO),
             selected = a.lockFont,
@@ -231,6 +286,137 @@ fun AppearancePanel() {
             Spacer(Modifier.width(4.dp))
             Text("恢复默认外观")
         }
+    }
+}
+
+/**
+ * 实时预览：背景 + 一张真实样式的卡片 + 字号。
+ *
+ * 卡片用的是全局 [inkCard]，因此卡片风格/不透明度/圆角/描边都会被如实反映；
+ * 背景是图片时直接复用 [ImageBackground]，不会为了预览额外引入一套解码逻辑。
+ */
+@Composable
+private fun AppearancePreview(a: Appearance) {
+    val scheme = MaterialTheme.colorScheme
+    val light = scheme.background.luminance() > 0.5f
+    val preset = Appearance.gradientPreset(a.gradientStyle, light)
+    val brush = when {
+        a.background == Appearance.BG_SOLID -> Brush.verticalGradient(listOf(scheme.background, scheme.background))
+        preset != null && a.background != Appearance.BG_IMAGE -> Brush.verticalGradient(preset)
+        else -> Brush.verticalGradient(
+            listOf(
+                lerp(scheme.background, scheme.primary, 0.10f),
+                scheme.background,
+                lerp(scheme.background, scheme.tertiary, 0.08f)
+            )
+        )
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(158.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(brush)
+    ) {
+        if (a.background == Appearance.BG_IMAGE) {
+            ImageBackground(a, scheme.background)
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .inkCard()
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "今日专注",
+                            fontSize = 11.sp,
+                            color = scheme.onSurfaceVariant
+                        )
+                        Text(
+                            "25:00",
+                            fontSize = (26 * a.fontScale / 100f).sp,
+                            fontWeight = FontWeight.Bold,
+                            color = scheme.onSurface
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(scheme.primary.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("▶", fontSize = 12.sp, color = scheme.primary)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "预览会随下方设置实时变化",
+                fontSize = 10.sp,
+                color = scheme.onSurfaceVariant.copy(alpha = 0.75f)
+            )
+        }
+    }
+}
+
+/** 渐变配色小样：色块 + 名称，选中加主色描边。 */
+@Composable
+private fun GradientChip(style: Int, selected: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val light = scheme.background.luminance() > 0.5f
+    val colors = Appearance.gradientPreset(style, light)
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(64.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 58.dp, height = 42.dp)
+                .clip(shape)
+                .then(
+                    if (colors != null) Modifier.background(Brush.linearGradient(colors))
+                    else Modifier.background(scheme.surfaceVariant)
+                )
+                .then(
+                    if (selected) Modifier.border(2.dp, scheme.primary, shape) else Modifier
+                )
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            if (colors == null) {
+                Icon(Icons.Default.Palette, null, Modifier.size(18.dp), tint = scheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            Appearance.gradientNames.getOrElse(style) { "" },
+            fontSize = 10.sp,
+            color = if (selected) scheme.primary else scheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SectionTitle(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 

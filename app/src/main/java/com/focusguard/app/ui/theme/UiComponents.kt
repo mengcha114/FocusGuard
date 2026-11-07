@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.Spring
@@ -55,9 +56,9 @@ fun Modifier.inkCard(
         else -> scheme.surfaceVariant.copy(alpha = a.cardOpacity.coerceIn(40, 100) / 100f)
     }
     val stroke = borderColor ?: when (a.cardStyle) {
-        Appearance.CARD_OUTLINE -> scheme.outline
-        Appearance.CARD_SOLID -> scheme.outline.copy(alpha = 0.25f)
-        else -> scheme.outline.copy(alpha = 0.45f)
+        Appearance.CARD_OUTLINE -> scheme.outline.copy(alpha = (a.cardBorder / 70f).coerceIn(0f, 1f))
+        Appearance.CARD_SOLID -> scheme.outline.copy(alpha = (a.cardBorder / 100f * 0.55f).coerceIn(0f, 1f))
+        else -> scheme.outline.copy(alpha = (a.cardBorder / 100f * 0.9f).coerceIn(0f, 1f))
     }
     return this.clip(shape).background(fill).border(1.dp, stroke, shape)
 }
@@ -78,6 +79,13 @@ fun AppBackground(
 ) {
     val context = LocalContext.current
     val a = AppearanceState.get(context)
+    // 渐变/光晕配色：预设优先，否则跟随主题色。
+    // 浅色主题传同一下标会拿到浅色变体，避免"换配色后白字看不清"。
+    val isLight = base.luminance() > 0.5f
+    val presetGradient = Appearance.gradientPreset(a.gradientStyle, isLight)
+    val presetGlow = Appearance.presetGlow(a.gradientStyle, isLight)
+    val glowA = presetGlow?.first ?: accent
+    val glowB = presetGlow?.second ?: secondary
     Box(modifier) {
         when (a.background) {
             Appearance.BG_SOLID -> Box(Modifier.fillMaxSize().background(base))
@@ -85,11 +93,14 @@ fun AppBackground(
             Appearance.BG_IMAGE -> ImageBackground(a, base)
             else -> Box(
                 Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(listOf(lerp(base, accent, 0.06f), base, lerp(base, secondary, 0.05f)))
+                    if (presetGradient != null) Brush.verticalGradient(presetGradient)
+                    else Brush.verticalGradient(
+                        listOf(lerp(base, accent, 0.06f), base, lerp(base, secondary, 0.05f))
+                    )
                 )
             )
         }
-        if (a.glow) GlowLayer(accent, secondary, a.glowIntensity / 100f, a.glowMotion && a.motion)
+        if (a.glow) GlowLayer(glowA, glowB, a.glowIntensity / 100f, a.glowMotion && a.motion)
     }
 }
 
@@ -163,7 +174,7 @@ private fun MeshBackground(base: Color, surface: Color, accent: Color, secondary
 
 /** 自定义图片背景：居中裁切 + 可选模糊 + 主题色遮罩（保证文字可读）。 */
 @Composable
-private fun ImageBackground(a: Appearance, base: Color) {
+fun ImageBackground(a: Appearance, base: Color) {
     val context = LocalContext.current
     val file = AppearanceState.imageFile(context, a)
     // 关键：自定义背景图**不能在主线程整图解码**。
