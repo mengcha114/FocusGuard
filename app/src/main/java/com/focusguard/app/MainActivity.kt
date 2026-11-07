@@ -39,6 +39,7 @@ import androidx.navigation.compose.rememberNavController
 import com.focusguard.app.data.Settings as AppSettings
 import com.focusguard.app.ui.screens.*
 import com.focusguard.app.ui.theme.FocusGuardTheme
+import com.kyant.backdrop.backdrops.layerBackdrop
 
 /** 底栏顶层页面。 */
 private val topLevelRoutes = setOf("home", "apps", "timer_lock", "ai_chat", "settings")
@@ -559,6 +560,17 @@ class MainActivity : ComponentActivity() {
                         onRequestPermission = { permission -> requestPermission(permission) }
                     )
                 } else {
+                    // 液态玻璃的背景抓取：把「纯色/渐变/光晕/自定义图」录进离屏图层，
+                    // 卡片用 drawBackdrop 采样它做真实折射；只录背景、不录前景内容，
+                    // 避免卡片采样到自身造成递归。
+                    val bgColor = MaterialTheme.colorScheme.background
+                    val bgBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop {
+                        drawRect(bgColor)
+                        drawContent()
+                    }
+                    CompositionLocalProvider(
+                        com.focusguard.app.ui.theme.LocalAppBackdrop provides bgBackdrop
+                    ) {
                     androidx.compose.foundation.layout.Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -566,7 +578,9 @@ class MainActivity : ComponentActivity() {
                     ) {
                         // 全局背景层：纯色 / 渐变 / 网格 / 自定义图片 + 流光光晕（设置里可调）
                         com.focusguard.app.ui.theme.AppBackground(
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .layerBackdrop(bgBackdrop)
                         )
                     Scaffold(
                         bottomBar = {
@@ -745,6 +759,7 @@ class MainActivity : ComponentActivity() {
                                 TimerLockScreen(onBack = { navController.popBackStack() })
                             }
                         }
+                    }
                     }
                     }
                 }

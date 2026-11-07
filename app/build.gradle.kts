@@ -1,6 +1,8 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    // Kotlin 2.x：Compose 编译器随 Kotlin 版本发布，不再写 kotlinCompilerExtensionVersion
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -11,8 +13,8 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 177
-        versionName = "3.11.76"
+        versionCode = 178
+        versionName = "3.12.0"
     }
 
     // 固定签名：CI 从 GitHub Secrets 恢复同一 PKCS12，密钥不进入公开仓库；
@@ -50,10 +52,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         // 两版通过 BuildConfig.CHALLENGE_MODE 在编译期确定答题模式（AGP 8 默认关闭该特性）
@@ -76,10 +74,6 @@ android {
         }
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
-    }
-
     testOptions {
         // LockState 依赖 android.util / SharedPreferences 接口；测试中用假实现，
         // 未覆盖的 android.* 调用返回默认值而不是抛异常
@@ -93,9 +87,16 @@ android {
     }
 }
 
+// Kotlin 2.x 统一用 compilerOptions 指定 JVM 目标（kotlinOptions 已弃用）
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
 dependencies {
-    // Compose BOM
-    val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
+    // Compose BOM（Kotlin 2.x / Compose 1.12，与液态玻璃库对齐）
+    val composeBom = platform("androidx.compose:compose-bom:2025.11.01")
     implementation(composeBom)
     
     // Compose
@@ -106,30 +107,34 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     
     // Activity & Lifecycle
-    implementation("androidx.activity:activity-compose:1.8.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    implementation("androidx.activity:activity-compose:1.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     
     // Navigation
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation("androidx.navigation:navigation-compose:2.9.6")
     
     // Core
-    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.core:core-ktx:1.17.0")
 
     // Material Components XML 库——themes.xml 中的 Theme.Material3.* 主题依赖它
-    implementation("com.google.android.material:material:1.11.0")
+    implementation("com.google.android.material:material:1.13.0")
     
     // OkHttp for AI API
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     // WorkManager：守护看门狗（进程被杀后仍能被系统唤起重启守护服务）
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.5")
 
     // AI 对话 Markdown 渲染（借鉴开源 compose-markdown 实现）
-    implementation("com.github.jeziellago:compose-markdown:0.5.8")
+    implementation("com.github.jeziellago:compose-markdown:0.7.3")
+
+    // 液态玻璃：真·背景折射（io.github.kyant0:backdrop）
+    // 要求 Kotlin 2.4+ / Compose Multiplatform 1.12，对应 AndroidX Compose 1.12
+    implementation("io.github.kyant0:backdrop:1.0.1")
 
     // ── Shizuku / Dhizuku 高级权限增强（可选，无授权时自动降级） ──
     // Shizuku：免 Root 以 shell 身份执行命令（自动授权使用情况/电池优化白名单）

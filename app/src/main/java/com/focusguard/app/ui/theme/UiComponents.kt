@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+
+/**
+ * 全局背景抓取器。
+ *
+ * 由 [MainActivity] 在根布局创建并注入：背景层用 `Modifier.layerBackdrop`
+ * 把「纯色/渐变/光晕/自定义图」录进一个离屏图层，液态玻璃卡片再用
+ * `drawBackdrop` 采样这块背景做真实折射。为 null 时（锁机页、全屏提醒页等
+ * 独立 Activity）自动退回纯绘制的近似效果。
+ */
+val LocalAppBackdrop = staticCompositionLocalOf<com.kyant.backdrop.Backdrop?> { null }
 
 /**
  * 纸墨时间统一卡片样式（DESIGN.md §3.4 + 玻璃材质）：
@@ -52,6 +67,33 @@ fun Modifier.inkCard(
     val a = AppearanceState.get(LocalContext.current)
     val shape = RoundedCornerShape(corner ?: a.cardCorner.dp)
     if (a.cardStyle == Appearance.CARD_LIQUID && container == null && borderColor == null) {
+        val backdrop = LocalAppBackdrop.current
+        if (backdrop != null) {
+            // 真·液态玻璃：采样背景图层，做提饱和 + 模糊 + 边缘折射
+            return this
+                .clip(shape)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { shape },
+                    effects = {
+                        vibrancy()
+                        blur(12f.dp.toPx())
+                        lens(10f.dp.toPx(), 26f.dp.toPx())
+                    },
+                    onDrawSurface = {
+                        drawRect(
+                            scheme.surfaceVariant.copy(
+                                alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.42f
+                            )
+                        )
+                    }
+                )
+                .border(
+                    1.dp,
+                    scheme.outline.copy(alpha = (a.cardBorder / 100f * 0.6f).coerceIn(0f, 1f)),
+                    shape
+                )
+        }
         return this.liquidGlass(
             shape = shape,
             scheme = scheme,
