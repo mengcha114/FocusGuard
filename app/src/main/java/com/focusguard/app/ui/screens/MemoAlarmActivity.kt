@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +36,7 @@ import com.focusguard.app.ui.theme.AppBackground
 import com.focusguard.app.ui.theme.FocusColors
 import com.focusguard.app.ui.theme.FocusGuardTheme
 import com.focusguard.app.ui.theme.ThemeState
+import com.kyant.backdrop.backdrops.layerBackdrop
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -128,8 +130,16 @@ private fun MemoAlarmScreen(
     val date = SimpleDateFormat("M月d日 EEEE", Locale.getDefault()).format(now)
     val snoozeMinutes = repeatMinutes.takeIf { it > 0 } ?: 10
 
+    // 与主界面一致的背景图层：全屏提醒页若有液态卡片也能真实折射
+    val bgBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop {
+        drawRect(palette.bg)
+        drawContent()
+    }
+    CompositionLocalProvider(
+        com.focusguard.app.ui.theme.LocalAppBackdrop provides bgBackdrop
+    ) {
     Box(Modifier.fillMaxSize()) {
-        AppBackground(Modifier.fillMaxSize())
+        AppBackground(Modifier.fillMaxSize().layerBackdrop(bgBackdrop))
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -222,5 +232,6 @@ private fun MemoAlarmScreen(
                 color = palette.faint
             )
         }
+    }
     }
 }

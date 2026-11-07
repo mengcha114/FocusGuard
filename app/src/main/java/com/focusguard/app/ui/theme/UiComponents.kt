@@ -66,33 +66,82 @@ fun Modifier.inkCard(
     val scheme = MaterialTheme.colorScheme
     val a = AppearanceState.get(LocalContext.current)
     val shape = RoundedCornerShape(corner ?: a.cardCorner.dp)
-    if (a.cardStyle == Appearance.CARD_LIQUID && container == null && borderColor == null) {
+    if (a.cardStyle == Appearance.CARD_LIQUID) {
         val backdrop = LocalAppBackdrop.current
         if (backdrop != null) {
-            // 真·液态玻璃：采样背景图层，做提饱和 + 模糊 + 边缘折射
-            return this
+            // 真·液态玻璃：采样背景图层，做提饱和 + 模糊 + 边缘折射/色散。
+            // 背景大面积是渐变时，单靠模糊几乎看不出变化，所以：
+            // 1) 折射量给足（26dp 高度 / 64dp 位移）并开启色散，边缘会明显弯折；
+            // 2) 表面色压到 0.22，让背景透出来；
+            // 3) 额外叠一层顶部高光 + 左上光斑，任何背景上都有玻璃质感。
+            val surface = container ?: scheme.surfaceVariant
+            var m = this
                 .clip(shape)
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { shape },
                     effects = {
                         vibrancy()
-                        blur(12f.dp.toPx())
-                        lens(10f.dp.toPx(), 26f.dp.toPx())
+                        blur(14f.dp.toPx())
+                        lens(
+                            26f.dp.toPx(),
+                            64f.dp.toPx(),
+                            depthEffect = true,
+                            chromaticAberration = true
+                        )
+                    },
+                    highlight = {
+                        com.kyant.backdrop.highlight.Highlight(
+                            width = 1.2.dp,
+                            alpha = 0.95f
+                        )
                     },
                     onDrawSurface = {
                         drawRect(
-                            scheme.surfaceVariant.copy(
-                                alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.42f
+                            surface.copy(
+                                alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.22f
+                            )
+                        )
+                        drawRect(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.18f),
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = 0.04f)
+                                )
+                            )
+                        )
+                        drawRect(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.20f),
+                                    Color.Transparent
+                                ),
+                                center = androidx.compose.ui.geometry.Offset(
+                                    size.width * 0.2f,
+                                    0f
+                                ),
+                                radius = size.width * 0.75f
                             )
                         )
                     }
                 )
-                .border(
+            m = if (borderColor != null) {
+                m.border(1.dp, borderColor, shape)
+            } else {
+                m.border(
                     1.dp,
-                    scheme.outline.copy(alpha = (a.cardBorder / 100f * 0.6f).coerceIn(0f, 1f)),
+                    Brush.linearGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.55f),
+                            scheme.outline.copy(alpha = 0.25f),
+                            Color.White.copy(alpha = 0.10f)
+                        )
+                    ),
                     shape
                 )
+            }
+            return m
         }
         return this.liquidGlass(
             shape = shape,

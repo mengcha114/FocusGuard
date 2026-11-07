@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.LockState
 import com.focusguard.app.service.LockGuardService
 import com.focusguard.app.ui.theme.inkCard
+import com.kyant.backdrop.backdrops.layerBackdrop
 
 /**
  * 全局强制锁机界面（全屏覆盖）。
@@ -1106,12 +1107,23 @@ private fun LockScreenContent(
         else (shownSeconds.toFloat() / totalSeconds).coerceIn(0f, 1f)
 
     val appearance = com.focusguard.app.ui.theme.AppearanceState.get(mottoContext)
+    // 锁机页同样注入背景图层：液态玻璃卡片在这里也要有真实折射，
+    // 否则切到液态后只有主界面生效、锁机页仍是旧的渐变近似。
+    val bgBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop {
+        drawRect(palette.bg)
+        drawContent()
+    }
+    CompositionLocalProvider(
+        com.focusguard.app.ui.theme.LocalAppBackdrop provides bgBackdrop
+    ) {
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
         // 全局背景层（与主界面同源：纯色 / 渐变 / 网格 / 自定义图片 + 流光）
         com.focusguard.app.ui.theme.AppBackground(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .layerBackdrop(bgBackdrop),
             accent = accent,
             secondary = palette.glow,
             base = palette.bg,
@@ -1507,6 +1519,7 @@ private fun LockScreenContent(
         }
             }
             }
+    }
     }
 }
 
