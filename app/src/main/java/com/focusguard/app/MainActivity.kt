@@ -250,6 +250,7 @@ class MainActivity : ComponentActivity() {
         // ── 备忘录入口意图处理（分享导入 / 到期通知点击）────
         // 锁机中不会走到这里；处理完再进入 setContent，冷启动直达备忘录页。
         handleMemoIntent(intent)
+        applyFullScreenReminder(intent)
 
         // ── 待办到期提醒重排（打开应用即兜底，防系统清理闹钟）────
         runCatching { com.focusguard.app.service.MemoReminder.sync(this) }
@@ -777,6 +778,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleMemoIntent(intent)
+        applyFullScreenReminder(intent)
         if (intent.getBooleanExtra(EXTRA_AUTO_RESUME_GUARD, false)) {
             pendingAutoResumeGuard = true
         }
@@ -803,6 +805,31 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra(EXTRA_OPEN_MEMO, false) || memoId > 0L) {
             pendingMemoOpen = true
             if (memoId > 0L) pendingMemoId = memoId
+        }
+    }
+
+    /**
+     * 全屏提醒：被待办提醒拉起时允许越过锁屏并点亮屏幕。
+     * 只对提醒意图生效，用户正常打开应用不受影响。
+     */
+    private fun applyFullScreenReminder(intent: Intent?) {
+        intent ?: return
+        val fromReminder = intent.getBooleanExtra(EXTRA_OPEN_MEMO, false) ||
+            intent.getLongExtra(EXTRA_MEMO_ID, 0L) > 0L
+        if (!fromReminder) return
+        val prefs = com.focusguard.app.data.MemoPrefs(this)
+        if (!prefs.hasReminderFlag(com.focusguard.app.data.MemoPrefs.REMINDER_FULLSCREEN)) return
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+            } else {
+                @Suppress("DEPRECATION")
+                window.addFlags(
+                    android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                )
+            }
         }
     }
 

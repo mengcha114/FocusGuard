@@ -188,8 +188,7 @@ fun ImageBackground(a: Appearance, base: Color) {
         // 模糊不再用 Modifier.blur（RenderEffect）：部分 Mali/Adreno 机型对全屏
         // RenderEffect 会直接原生崩溃（无 Java 堆栈），表现就是"设完背景图就闪退"。
         // 改为按模糊强度降采样后放大绘制：视觉接近模糊，且完全走 CPU/常规绘制。
-        val blurOn = a.imageBlur > 0 &&
-            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+        val blurOn = a.imageBlur > 0
         val sample = when {
             !blurOn -> 2
             a.imageBlur <= 8 -> 4

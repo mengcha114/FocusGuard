@@ -1274,13 +1274,6 @@ private fun StylePanelDialog(
                         }
                     }
                 }
-
-                HorizontalDivider(color = palette.line.copy(alpha = 0.5f))
-                Text(
-                    text = "提醒时间与提醒形式已移至顶部栏的「提醒设置」",
-                    fontSize = 10.sp,
-                    color = palette.faint
-                )
             }
         },
         confirmButton = {
@@ -1430,33 +1423,36 @@ private fun ReminderSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 SectionLabel("提前多久提醒", palette)
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(
                         0 to "准时",
-                        5 to "5分钟",
-                        15 to "15分钟",
-                        30 to "30分钟",
-                        60 to "1小时"
+                        5 to "5 分钟",
+                        15 to "15 分钟"
                     ).forEach { (v, label) ->
-                        FilterChip(
-                            shape = RoundedCornerShape(10.dp),
+                        ReminderChip(
+                            label = label,
                             selected = lead == v,
-                            onClick = { lead = v; persist() },
-                            label = {
-                                Text(
-                                    label,
-                                    fontSize = 10.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            },
+                            palette = palette,
                             modifier = Modifier.weight(1f)
-                        )
+                        ) { lead = v; persist() }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        30 to "30 分钟",
+                        60 to "1 小时"
+                    ).forEach { (v, label) ->
+                        ReminderChip(
+                            label = label,
+                            selected = lead == v,
+                            palette = palette,
+                            modifier = Modifier.weight(1f)
+                        ) { lead = v; persist() }
                     }
                 }
                 if (!exactAlarm) {
                     Text(
-                        text = "精确闹钟权限未开启，提醒可能延迟，点击前往授权",
+                        text = "精确闹钟权限未开启，提醒可能延迟，点击授权",
                         fontSize = 10.sp,
                         color = palette.error,
                         modifier = Modifier.clickable(onClick = onOpenExactAlarmSetting)
@@ -1474,29 +1470,24 @@ private fun ReminderSettingsDialog(
                         MemoPrefs.REMINDER_FULLSCREEN to "全屏"
                     ).forEach { (flag, label) ->
                         val locked = flag == MemoPrefs.REMINDER_NOTIFY
-                        FilterChip(
-                            shape = RoundedCornerShape(10.dp),
+                        ReminderChip(
+                            label = label,
                             selected = (flags and flag) != 0,
-                            onClick = {
-                                // 通知位锁定：取消勾选会静默无提醒，因此不允许
-                                if (!locked) {
-                                    flags = MemoPrefs.sanitizeReminderFlags(flags xor flag)
-                                    persist()
-                                }
-                            },
-                            label = { Text(label, fontSize = 11.sp) },
+                            palette = palette,
+                            locked = locked,
                             modifier = Modifier.weight(1f)
-                        )
+                        ) {
+                            // 通知位锁定：取消勾选会静默无提醒，因此不允许
+                            if (!locked) {
+                                flags = MemoPrefs.sanitizeReminderFlags(flags xor flag)
+                                persist()
+                            }
+                        }
                     }
                 }
-                Text(
-                    text = "通知为必选形式，其余可任意组合叠加",
-                    fontSize = 10.sp,
-                    color = palette.faint
-                )
                 if (!fullScreenAllowed && (flags and MemoPrefs.REMINDER_FULLSCREEN) != 0) {
                     Text(
-                        text = "全屏提醒权限未开启，点击前往授权（未授权时退化为普通通知）",
+                        text = "全屏提醒权限未开启，点击授权",
                         fontSize = 10.sp,
                         color = palette.error,
                         modifier = Modifier.clickable(onClick = onOpenFullScreenSetting)
@@ -1517,6 +1508,54 @@ private fun ReminderSettingsDialog(
         containerColor = palette.surface,
         shape = RoundedCornerShape(14.dp)
     )
+}
+
+/** 提醒设置里的选项胶囊：选中用强调色填充 + 描边，一眼能看出当前状态。 */
+@Composable
+private fun ReminderChip(
+    label: String,
+    selected: Boolean,
+    palette: FocusColors.Palette,
+    modifier: Modifier = Modifier,
+    locked: Boolean = false,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        modifier = modifier
+            .height(38.dp)
+            .clip(shape)
+            .background(
+                if (selected) palette.accent.copy(alpha = 0.22f)
+                else palette.card.copy(alpha = 0.55f)
+            )
+            .border(
+                if (selected) 1.5.dp else 1.dp,
+                if (selected) palette.accent else palette.line.copy(alpha = 0.8f),
+                shape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (locked) {
+            Icon(
+                Icons.Default.Lock,
+                null,
+                tint = if (selected) palette.accent else palette.haze,
+                modifier = Modifier.size(11.dp)
+            )
+            Spacer(Modifier.width(3.dp))
+        }
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            maxLines = 1,
+            color = if (selected) palette.accent else palette.haze,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+        )
+    }
 }
 
 @Composable

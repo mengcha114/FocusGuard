@@ -153,11 +153,6 @@ fun AppearancePanel() {
                 )
             }
         }
-        Text(
-            "渐变背景与流光光晕共用这套配色；纯色/网格/图片背景只影响光晕",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
 
         FxExpand(visible = a.background == Appearance.BG_IMAGE) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -178,28 +173,39 @@ fun AppearancePanel() {
                 title = "遮罩",
                 value = a.imageDim,
                 range = 0f..90f,
-                suffix = "%",
-                hint = "调高可提升图片上的文字可读性"
+                suffix = "%"
             ) { v -> set { it.copy(imageDim = v) } }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                SliderRow(title = "模糊", value = a.imageBlur, range = 0f..40f, suffix = "dp") { v ->
-                    set { it.copy(imageBlur = v) }
-                }
-            }
+            Label("模糊")
+            FxOptionRow(
+                options = listOf(0, 10, 20, 40),
+                selected = when {
+                    a.imageBlur <= 0 -> 0
+                    a.imageBlur <= 10 -> 10
+                    a.imageBlur <= 20 -> 20
+                    else -> 40
+                },
+                label = {
+                    when (it) {
+                        0 -> "关"
+                        10 -> "弱"
+                        20 -> "中"
+                        else -> "强"
+                    }
+                },
+                onSelect = { v -> set { it.copy(imageBlur = v) } }
+            )
         }
 
         // ── 流光光晕 ──
         SectionTitle(Icons.Default.AutoAwesome, "流光")
         SwitchRow(
             title = "流光光晕",
-            hint = "页面背景两团柔和光晕，默认跟随主题配色",
             checked = a.glow
         ) { on -> set { it.copy(glow = on) } }
         FxExpand(visible = a.glow) {
             SliderRow(title = "光晕强度", value = a.glowIntensity, range = 10f..100f, suffix = "%") { v ->
                 set { it.copy(glowIntensity = v) }
             }
-            SwitchRow(title = "光晕缓慢漂移", checked = a.glowMotion) { on -> set { it.copy(glowMotion = on) } }
         }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
@@ -227,8 +233,7 @@ fun AppearancePanel() {
             title = "描边强度",
             value = a.cardBorder,
             range = 0f..100f,
-            suffix = "%",
-            hint = "0 为无描边，越高轮廓越清晰"
+            suffix = "%"
         ) { v -> set { it.copy(cardBorder = v) } }
         Label("圆角")
         FxOptionRow(
@@ -274,7 +279,6 @@ fun AppearancePanel() {
 
         SwitchRow(
             title = "界面动画",
-            hint = "入场、按压回弹与数字滚动；关闭后更省电",
             checked = a.motion
         ) { on -> set { it.copy(motion = on) } }
 
@@ -358,12 +362,6 @@ private fun AppearancePreview(a: Appearance) {
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "预览会随下方设置实时变化",
-                fontSize = 10.sp,
-                color = scheme.onSurfaceVariant.copy(alpha = 0.75f)
-            )
         }
     }
 }

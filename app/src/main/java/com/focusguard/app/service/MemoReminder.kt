@@ -7,6 +7,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import com.focusguard.app.FocusGuardApp
 import com.focusguard.app.MainActivity
@@ -164,13 +166,14 @@ class MemoReminderReceiver : BroadcastReceiver() {
             val fullScreen = prefs.hasReminderFlag(MemoPrefs.REMINDER_FULLSCREEN)
 
             // 全屏与普通通知共用同一个 PendingIntent：点击后都能定位到这条待办
+            val openIntent = Intent(context, MainActivity::class.java)
+                .putExtra(MainActivity.EXTRA_OPEN_MEMO, true)
+                .putExtra(MainActivity.EXTRA_MEMO_ID, id)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val openPi = PendingIntent.getActivity(
                 context,
                 (id % 1_000_000).toInt(),
-                Intent(context, MainActivity::class.java)
-                    .putExtra(MainActivity.EXTRA_OPEN_MEMO, true)
-                    .putExtra(MainActivity.EXTRA_MEMO_ID, id)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
@@ -196,10 +199,24 @@ class MemoReminderReceiver : BroadcastReceiver() {
             }
 
             nm.notify(NOTIF_BASE + (id % 1000).toInt(), builder.build())
+
+            // 屏幕亮着时系统对全屏 Intent 只降级成横幅，「全屏提醒」等于失效。
+            // 有悬浮窗权限就有后台启动 Activity 的资格，这里直接把提醒页拉到前台。
+            if (fullScreen && isInteractive(context) && canStartActivity(context)) {
+                runCatching { context.startActivity(openIntent) }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "发送提醒通知失败：${e.message}")
         }
     }
+
+    private fun isInteractive(context: Context): Boolean = runCatching {
+        (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: false
+    }.getOrDefault(false)
+
+    /** Android 10+ 后台启动界面需要悬浮窗权限；没有就退回通知横幅。 */
+    private fun canStartActivity(context: Context): Boolean =
+        Build.VERSION.SDK_INT < 29 || runCatching { Settings.canDrawOverlays(context) }.getOrDefault(false)
 
     private companion object {
         const val TAG = "MemoReminder"
