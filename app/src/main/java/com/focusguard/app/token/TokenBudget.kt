@@ -35,8 +35,9 @@ class TokenBudget(context: Context) {
         const val ESTIMATED_TOKENS_PER_CALL = 480
     }
 
+    private val appContext: Context = context.applicationContext
     private val prefs: SharedPreferences =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     init {
         rolloverIfNewDay()
@@ -69,6 +70,11 @@ class TokenBudget(context: Context) {
     /** 今日剩余可用调用次数，不限制时返回 Int.MAX_VALUE。 */
     val remainingCallsToday: Int
         get() {
+            // 省 token 总开关关闭时不做任何次数限制：
+            // 之前只判断了 dailyCallLimit，导致「关了省 token 仍被每日配额拦住」。
+            if (!com.focusguard.app.data.Settings(appContext).tokenSavingEnabled) {
+                return Int.MAX_VALUE
+            }
             val limit = dailyCallLimit
             if (limit <= 0) return Int.MAX_VALUE
             return (limit - callsToday).coerceAtLeast(0)

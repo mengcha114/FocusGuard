@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.75",
-  "notes": "新增了 液态玻璃卡片样式：高光渐变填充 + 光线弯折描边 + 折射光斑，在「界面主题 → 卡片」里可选「液态」\n修复了 自定义背景图发糊的根因：不模糊时按 1:1 解码，不再把 2560 的图压成 1280 再铺满屏幕\n优化了 背景图导入画质：JPEG 质量 92 → 96，解码改用 ARGB_8888（低内存机型自动回退）\n优化了 背景图缩放质量：绘制改用高质量过滤，缩小到屏幕尺寸时更锐利\n提示：旧版本导入的背景图已被压缩保存，更新后重新选择一次图片才能获得最佳画质",
+  "tag": "v3.11.76",
+  "notes": "修复了 关闭「省 Token」后仍被每日调用次数限制的问题：现在关闭该开关即不做任何次数限制\n说明：调用次数只在「省 Token」开启时按设置的上限生效",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.75/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.75/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.76/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.76/app-general-release.apk"
   }
 }
