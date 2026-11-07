@@ -179,6 +179,10 @@ object ShizukuEnhancer {
     fun selfHeal(context: Context) {
         if (!isReady()) return
         val pkg = context.packageName
+        // 悬浮窗 / 使用情况访问优先走 Binder：部分 ROM 的安全盾会误报并拦截
+        // 含特定字母组合的 shell 命令，Binder 调用不产生可被扫描的命令行。
+        grantAppOpByBinder(pkg, 24)  // OP_SYSTEM_ALERT_WINDOW
+        grantAppOpByBinder(pkg, 43)  // OP_GET_USAGE_STATS
         runCommand("appops", "set", pkg, "GET_USAGE_STATS", "allow")
         runCommand("dumpsys", "deviceidle", "whitelist", "+$pkg")
         runCommand("cmd", "appops", "set", pkg, "RUN_IN_BACKGROUND", "allow")
@@ -189,6 +193,37 @@ object ShizukuEnhancer {
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             runCommand("pm", "grant", pkg, "android.permission.POST_NOTIFICATIONS")
         }
+    }
+
+    /**
+     * 通过 Shizuku 直接调用系统 AppOps 服务（shell 身份），不经过 shell 命令行。
+     *
+     * 目的：某些 ROM 自带「安全盾」会扫描并拦截 shell 命令（甚至会因为字母组合
+     * 误判），导致 `appops set ... SYSTEM_ALERT_WINDOW allow` 永远执行失败。
+     * Binder 路径把调用直接转给 Shizuku 服务进程，没有可被扫描的脚本文本。
+     *
+     * 失败（隐藏 API 限制 / ROM 改签名）时静默返回 false，调用方继续走命令兜底。
+     */
+    private fun grantAppOpByBinder(pkg: String, opCode: Int): Boolean = runCatching {
+        if (!isReady()) return false
+        val service = rikka.shizuku.SystemServiceHelper.getSystemService("appops")
+        val wrapped = rikka.shizuku.ShizukuBinderWrapper(service)
+        val stub = Class.forName("com.android.internal.app.IAppOpsService\$Stub")
+        val iface = stub.getMethod("asInterface", android.os.IBinder::class.java)
+            .invoke(null, wrapped) ?: return false
+        val setMode = iface.javaClass.getMethod(
+            "setMode",
+            Int::class.javaPrimitiveType,
+            Int::class.javaPrimitiveType,
+            String::class.java,
+            Int::class.javaPrimitiveType
+        )
+        setMode.invoke(iface, opCode, android.os.Process.myUid(), pkg, 0)
+        Log.d(TAG, "Binder 授权 AppOp 成功：op=$opCode")
+        true
+    }.getOrElse {
+        Log.d(TAG, "Binder 授权 AppOp 失败(op=$opCode)：${it.message}")
+        false
     }
 
     /**

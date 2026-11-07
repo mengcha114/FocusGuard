@@ -69,7 +69,18 @@ object LeaveGuard {
             pkg == "com.vivo.gallery" ||
             pkg == "com.sec.android.gallery3d" ||
             pkg == "com.android.gallery3d" ||
+            pkg == "com.android.fileexplorer" ||
+            pkg == "com.miui.fileexplorer" ||
+            pkg == "com.huawei.filemanager" ||
+            pkg == "com.coloros.filemanager" ||
+            pkg == "com.vivo.filemanager" ||
+            pkg == "com.sec.android.app.myfiles" ||
+            pkg == "com.google.android.apps.nbu.files" ||
             pkg.contains("photopicker") ||
-            pkg.contains("gallery")
+            pkg.contains("gallery") ||
+            pkg.contains("documentsui") ||
+            pkg.contains("filemanager") ||
+            pkg.contains("fileexplorer") ||
+            pkg.contains("myfiles")
     }
 }

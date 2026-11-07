@@ -219,15 +219,14 @@ object AppearanceState {
     }
 
     /**
-     * 导入用户选择的图片：等比缩放到长边 ≤ 1440px 后存入私有目录
+     * 导入用户选择的图片：等比缩放到长边 ≤ 2560px 后存入私有目录
      * （不保留原图，也不需要存储权限）。返回新文件名，失败返回 null。
      *
      * 注意：解码/缩放/压缩都很重，**调用方必须放到 IO 线程**，
      * 以前在主线程同步调用，大图会把应用卡到被系统杀掉（表现成"选图闪退"）。
      *
-     * 内存控制：长边 1280 且用 RGB_565，单张图解码后约 2–3 MB；
-     * 早先 2160 + ARGB_8888 在 4GB 内存机型上容易触发 OOM（表现为无日志闪退）。
-     * 任何异常（含 OutOfMemoryError）都在这里兜住并返回 null，由上层提示重试。
+     * 画质优先：长边 2560 + JPEG 92，2K 屏上不再糊；
+     * 仍用 RGB_565 控制内存（2560 长边解码约 6–8 MB），异常统一兜底。
      */
     fun importImage(context: Context, uri: android.net.Uri): String? = try {
         val resolver = context.contentResolver
@@ -240,7 +239,7 @@ object AppearanceState {
             null
         } else {
             var sample = 1
-            while (longEdge / sample > 1280) sample *= 2
+            while (longEdge / sample > 2560) sample *= 2
             val opts = android.graphics.BitmapFactory.Options().apply {
                 inSampleSize = sample
                 inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
@@ -257,7 +256,7 @@ object AppearanceState {
                     val dest = java.io.File(context.filesDir, name)
                     val ok = try {
                         java.io.FileOutputStream(dest).use {
-                            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it)
+                            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it)
                         }
                     } catch (e: Throwable) {
                         false

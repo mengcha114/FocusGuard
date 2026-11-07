@@ -34,9 +34,12 @@ import com.focusguard.app.data.MemoStore
 object MemoReminder {
 
     private const val TAG = "MemoReminder"
+    private const val NOTIF_BASE = 11000
     const val ACTION = "com.focusguard.app.action.MEMO_DUE"
+    const val ACTION_DONE = "com.focusguard.app.action.MEMO_DONE"
     const val EXTRA_ID = "memo_id"
     const val EXTRA_TEXT = "memo_text"
+    const val EXTRA_REPEAT = "memo_repeat"
 
     /** 应用启动 / 开机 / 数据变更后调用：为全部未完成的未来待办重排闹钟。 */
     fun sync(context: Context) {
@@ -44,10 +47,11 @@ object MemoReminder {
             val store = MemoStore(context)
             val now = System.currentTimeMillis()
             val leadMs = MemoPrefs(context).reminderLeadMinutes * 60_000L
-            val dueItems = store.getPending().filter { it.dueAt > now }
+            // 只排「触发时间仍在未来」的条目：已触发过的（含提前提醒）不再重复排队，
+            // 否则提前量生效时会在触发后每秒重排一次，疯狂弹通知。
+            val dueItems = store.getPending().filter { it.dueAt - leadMs > now + 1_000L }
             dueItems.forEach { item ->
-                val triggerAt = (item.dueAt - leadMs).coerceAtLeast(now + 1_000L)
-                schedule(context, item.id, item.text, triggerAt)
+                schedule(context, item.id, item.text, item.dueAt - leadMs)
             }
             Log.d(TAG, "提醒重排完成：${dueItems.size} 条待办闹钟")
         } catch (e: Exception) {
@@ -60,9 +64,16 @@ object MemoReminder {
         try {
             val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
             am.cancel(pendingIntent(context, id, ""))
+            am.cancel(pendingIntent(context, id, "", repeat = true))
         } catch (e: Exception) {
             Log.w(TAG, "取消提醒失败：${e.message}")
         }
+    }
+
+    /** 提醒页「稍后提醒」：延迟 [minutes] 分钟再响一次。 */
+    fun snooze(context: Context, id: Long, text: String, minutes: Int = 10) {
+        val delay = (if (minutes > 0) minutes else 10) * 60_000L
+        schedule(context, id, text, System.currentTimeMillis() + delay)
     }
 
     /** 是否具备精确闹钟能力（Android 12+ 需 SCHEDULE_EXACT_ALARM 授权）。 */
@@ -110,16 +121,51 @@ object MemoReminder {
         }
     }
 
-    private fun pendingIntent(context: Context, id: Long, text: String): PendingIntent =
+    private fun pendingIntent(
+        context: Context,
+        id: Long,
+        text: String,
+        repeat: Boolean = false
+    ): PendingIntent =
         PendingIntent.getBroadcast(
             context,
-            (id % 1_000_000).toInt(),
+            (id % 1_000_000).toInt() + if (repeat) 700_000 else 0,
             Intent(context, MemoReminderReceiver::class.java)
                 .setAction(ACTION)
                 .putExtra(EXTRA_ID, id)
-                .putExtra(EXTRA_TEXT, text),
+                .putExtra(EXTRA_TEXT, text)
+                .putExtra(EXTRA_REPEAT, repeat),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+
+    /** 安排下一次重复提醒（0 表示关闭）。 */
+    fun scheduleRepeat(context: Context, id: Long, text: String, minutes: Int) {
+        if (minutes <= 0) return
+        scheduleAt(context, pendingIntent(context, id, text, repeat = true),
+            System.currentTimeMillis() + minutes * 60_000L)
+    }
+
+    /** 关掉这条待办常驻的通知（全屏页里点完成/稍后时用）。 */
+    fun dismissNotification(context: Context, id: Long) {
+        runCatching {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                as? android.app.NotificationManager ?: return
+            nm.cancel(NOTIF_BASE + (id % 1000).toInt())
+        }
+    }
+
+    private fun scheduleAt(context: Context, pi: PendingIntent, triggerAt: Long) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        try {
+            if (canScheduleExact(context)) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            } else {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            }
+        } catch (e: Exception) {
+            runCatching { am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi) }
+        }
+    }
 }
 
 /**
@@ -130,12 +176,21 @@ class MemoReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         try {
             val appCtx = context.applicationContext
-            if (intent.action != MemoReminder.ACTION) return
             val id = intent.getLongExtra(MemoReminder.EXTRA_ID, -1L)
             val text = intent.getStringExtra(MemoReminder.EXTRA_TEXT).orEmpty()
+            val store = MemoStore(appCtx)
+
+            // 通知上的「完成」按钮：标记完成并停掉后续重复提醒
+            if (intent.action == MemoReminder.ACTION_DONE) {
+                store.markDone(id)
+                MemoReminder.cancel(appCtx, id)
+                (appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)
+                    ?.cancel(NOTIF_BASE + (id % 1000).toInt())
+                return
+            }
+            if (intent.action != MemoReminder.ACTION) return
 
             // 幂等检查：已完成 / 已删除的条目静默跳过
-            val store = MemoStore(appCtx)
             val item = store.getAll().firstOrNull { it.id == id && !it.done }
             if (item == null) {
                 Log.d(TAG, "待办已不存在或已完成，跳过提醒：$text")
@@ -143,6 +198,14 @@ class MemoReminderReceiver : BroadcastReceiver() {
             }
 
             sendNotification(appCtx, item.id, item.text)
+
+            // 未完成则按设置间隔继续提醒，直到用户点「完成」或删除条目
+            MemoReminder.scheduleRepeat(
+                appCtx,
+                item.id,
+                item.text,
+                MemoPrefs(appCtx).reminderRepeatMinutes
+            )
 
             // 本条闹钟已消耗，重排其余（防提前量设置变化）
             MemoReminder.sync(appCtx)
@@ -165,15 +228,31 @@ class MemoReminderReceiver : BroadcastReceiver() {
             val vibrate = prefs.hasReminderFlag(MemoPrefs.REMINDER_VIBRATE)
             val fullScreen = prefs.hasReminderFlag(MemoPrefs.REMINDER_FULLSCREEN)
 
-            // 全屏与普通通知共用同一个 PendingIntent：点击后都能定位到这条待办
-            val openIntent = Intent(context, MainActivity::class.java)
+            // 全屏提醒用独立的锁机同款提醒页；普通提醒仍进入备忘录
+            val openIntent = Intent(
+                context,
+                if (fullScreen) com.focusguard.app.ui.screens.MemoAlarmActivity::class.java
+                else MainActivity::class.java
+            )
                 .putExtra(MainActivity.EXTRA_OPEN_MEMO, true)
                 .putExtra(MainActivity.EXTRA_MEMO_ID, id)
+                .putExtra(MemoReminder.EXTRA_ID, id)
+                .putExtra(MemoReminder.EXTRA_TEXT, text)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val openPi = PendingIntent.getActivity(
                 context,
                 (id % 1_000_000).toInt(),
                 openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // 通知上的「完成」按钮：不用打开应用也能结束这条待办的重复提醒
+            val donePi = PendingIntent.getBroadcast(
+                context,
+                (id % 1_000_000).toInt() + 800_000,
+                Intent(context, MemoReminderReceiver::class.java)
+                    .setAction(MemoReminder.ACTION_DONE)
+                    .putExtra(MemoReminder.EXTRA_ID, id),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
@@ -191,6 +270,13 @@ class MemoReminderReceiver : BroadcastReceiver() {
                 .setCategory(android.app.Notification.CATEGORY_REMINDER)
                 .setPriority(android.app.Notification.PRIORITY_HIGH)
                 .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
+                .addAction(
+                    android.app.Notification.Action.Builder(
+                        R.drawable.ic_shield,
+                        "完成",
+                        donePi
+                    ).build()
+                )
 
             if (fullScreen) {
                 // 权限缺失/ROM 拒绝时 setFullScreenIntent 会被忽略或抛异常：

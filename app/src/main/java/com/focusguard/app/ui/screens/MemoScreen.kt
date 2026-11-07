@@ -41,6 +41,8 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.focusguard.app.data.*
 import com.focusguard.app.service.MemoReminder
 import com.focusguard.app.ui.theme.FocusColors
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.time.*
 import java.util.Date
@@ -659,6 +661,7 @@ private fun StatsTab(palette: FocusColors.Palette, memoStore: MemoStore) {
     val context = LocalContext.current
     var tick by remember { mutableIntStateOf(0) }
     var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
+    var confirmClear by remember { mutableStateOf(false) }
 
     val dayCounts = remember(tick) { memoStore.completionsByDay(98) }
     val streak = remember(tick) { memoStore.completionStreak() }
@@ -828,11 +831,7 @@ private fun StatsTab(palette: FocusColors.Palette, memoStore: MemoStore) {
         item {
             if (total > 0) {
                 OutlinedButton(
-                    onClick = {
-                        memoStore.clearHistory()
-                        selectedDay = null
-                        tick++
-                    },
+                    onClick = { confirmClear = true },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(1.dp, palette.error.copy(alpha = 0.6f))
@@ -845,6 +844,36 @@ private fun StatsTab(palette: FocusColors.Palette, memoStore: MemoStore) {
         item {
             Spacer(Modifier.height(72.dp))
         }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("清空完成历史？", fontSize = 17.sp) },
+            text = { Text("将删除全部完成记录与热力图数据，此操作不可恢复。", fontSize = 13.sp) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        memoStore.clearHistory()
+                        selectedDay = null
+                        tick++
+                        confirmClear = false
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.error,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) { Text("清空") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) {
+                    Text("取消", color = palette.haze)
+                }
+            },
+            containerColor = palette.surface,
+            shape = RoundedCornerShape(14.dp)
+        )
     }
 }
 
@@ -1537,10 +1566,12 @@ private fun ReminderSettingsDialog(
 ) {
     var lead by remember { mutableIntStateOf(prefs.reminderLeadMinutes) }
     var flags by remember { mutableIntStateOf(prefs.reminderFlags) }
+    var repeatMin by remember { mutableIntStateOf(prefs.reminderRepeatMinutes) }
 
     fun persist() {
         prefs.reminderLeadMinutes = lead
         prefs.reminderFlags = flags
+        prefs.reminderRepeatMinutes = repeatMin
         onChanged()
     }
 
@@ -1636,6 +1667,37 @@ private fun ReminderSettingsDialog(
                         modifier = Modifier.clickable(onClick = onOpenFullScreenSetting)
                     )
                 }
+
+                HorizontalDivider(color = palette.line.copy(alpha = 0.5f))
+
+                SectionLabel("未完成时重复提醒", palette)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        0 to "关闭",
+                        5 to "5 分钟",
+                        10 to "10 分钟"
+                    ).forEach { (v, label) ->
+                        OptionChip(
+                            label = label,
+                            selected = repeatMin == v,
+                            palette = palette,
+                            modifier = Modifier.weight(1f)
+                        ) { repeatMin = v; persist() }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        15 to "15 分钟",
+                        30 to "30 分钟"
+                    ).forEach { (v, label) ->
+                        OptionChip(
+                            label = label,
+                            selected = repeatMin == v,
+                            palette = palette,
+                            modifier = Modifier.weight(1f)
+                        ) { repeatMin = v; persist() }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -1723,19 +1785,43 @@ private fun ImportDialog(
     val context = LocalContext.current
     // 分享桥文本：外部（分享/通知点击）进入时，随 dialog 首次组合读入
     var preview by remember { mutableStateOf(ImportPreviewHolder.text) }
+    var reading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            val text = runCatching {
-                context.contentResolver.openInputStream(uri)
-                    ?.bufferedReader()?.use { it.readText() }
-            }.getOrNull()
-            if (text.isNullOrBlank()) {
-                Toast.makeText(context, "无法读取文件", Toast.LENGTH_SHORT).show()
-            } else {
-                preview = text
+            reading = true
+            // 读文件必须离开主线程：几 MB 的 txt 同步读取会卡住界面，
+            // 部分 ROM 直接把无响应的应用杀掉——和之前选图闪退是同一类问题。
+            scope.launch {
+                val text = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            input.bufferedReader().use { reader ->
+                                val sb = StringBuilder()
+                                val buf = CharArray(8192)
+                                var total = 0
+                                while (true) {
+                                    val n = reader.read(buf)
+                                    if (n < 0) break
+                                    total += n
+                                    // 限制 2MB，避免超大文件把内存吃光
+                                    if (total > 2_000_000) break
+                                    sb.append(buf, 0, n)
+                                }
+                                sb.toString()
+                            }
+                        }
+                    }.getOrNull()
+                }
+                reading = false
+                if (text.isNullOrBlank()) {
+                    Toast.makeText(context, "无法读取文件", Toast.LENGTH_SHORT).show()
+                } else {
+                    preview = text
+                }
             }
         }
     }
@@ -1772,13 +1858,18 @@ private fun ImportDialog(
                     Text("从剪贴板粘贴", fontSize = 13.sp)
                 }
                 OutlinedButton(
-                    onClick = { filePicker.launch(arrayOf("text/*", "application/csv")) },
+                    onClick = {
+                        // 标记主动离开：部分 ROM 会把「打开文件选择器」当成用户退出应用
+                        com.focusguard.app.util.LeaveGuard.markLeaving()
+                        filePicker.launch(arrayOf("text/*", "application/csv"))
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !reading
                 ) {
                     Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("从文件导入（txt / csv）", fontSize = 13.sp)
+                    Text(if (reading) "读取中…" else "从文件导入（txt / csv）", fontSize = 13.sp)
                 }
             }
         },

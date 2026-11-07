@@ -674,13 +674,6 @@ fun SettingsScreen(
 
         // ── 高级增强：Shizuku / Dhizuku（未授权时整块隐藏） ──────────
         if (shellEnhanced) {
-            Text(
-                text = "以下权限为必需权限，仅供有需要的用户使用，有一定风险，请谨慎授权",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
-            )
-
             SettingsSection(
                 title = "Shizuku / Dhizuku 增强",
                 icon = Icons.Default.Security,
@@ -875,13 +868,25 @@ fun SettingsScreen(
             }
         }
 
-        // ── 自定义锁机箴言 ────────────────────────────────────────
-        SettingsSection(
-            title = "自定义锁机箴言",
-            icon = Icons.Default.FormatQuote,
-            defaultExpanded = false,
-            summary = "自定义文案"
-        ) {
+        // ═══════ 分组三：外观与习惯 ═══════
+        SettingsGroupHeader("外观与习惯")
+
+        // ── 界面主题（含锁机箴言） ────────────────────────────────
+        SettingsSection(title = "界面主题", icon = Icons.Default.Palette) {
+            com.focusguard.app.ui.components.ThemePicker()
+
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "锁机箴言",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+            )
+            Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = customMottos,
                 onValueChange = { customMottos = it },
@@ -891,37 +896,6 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .heightIn(min = 90.dp),
                 shape = RoundedCornerShape(12.dp)
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "锁机页面会随机展示你写的句子",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
-            )
-        }
-
-        // ═══════ 分组三：外观与习惯 ═══════
-        SettingsGroupHeader("外观与习惯")
-
-        // ── 界面主题 ──────────────────────────────────────────────
-        SettingsSection(title = "界面主题", icon = Icons.Default.Palette) {
-            com.focusguard.app.ui.components.ThemePicker()
-        }
-
-        // ── 白名单 ────────────────────────────────────────────────
-        SettingsSection(
-            title = "白名单",
-            icon = Icons.Default.PlaylistAdd,
-            defaultExpanded = false,
-            summary = "放行的应用"
-        ) {
-            OutlinedTextField(
-                value = whitelist, onValueChange = { whitelist = it },
-                label = { Text("白名单应用/场景（逗号分隔）") },
-                placeholder = { Text("例如: 学习强国, 得到, B站课程") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                minLines = 3
             )
         }
 

@@ -24,6 +24,7 @@ class MemoPrefs(context: Context) {
         private const val KEY_CARD_CORNER = "card_corner"
         private const val KEY_LIST_DENSITY = "list_density"
         private const val KEY_REMINDER_LEAD = "reminder_lead_minutes"
+        private const val KEY_REMINDER_REPEAT = "reminder_repeat_minutes"
         private const val KEY_REMINDER_FLAGS = "reminder_flags"
 
         /** 字号档位。 */
@@ -129,6 +130,11 @@ class MemoPrefs(context: Context) {
     var reminderLeadMinutes: Int
         get() = prefs.getInt(KEY_REMINDER_LEAD, 0).coerceIn(0, 60)
         set(value) = prefs.edit().putInt(KEY_REMINDER_LEAD, value.coerceIn(0, 60)).apply()
+
+    /** 未完成时的重复提醒间隔（分钟）：0 关闭，默认 10。 */
+    var reminderRepeatMinutes: Int
+        get() = prefs.getInt(KEY_REMINDER_REPEAT, 10).coerceIn(0, 60)
+        set(value) = prefs.edit().putInt(KEY_REMINDER_REPEAT, value.coerceIn(0, 60)).apply()
 
     /**
      * 提醒形式组合（位标记，见 [REMINDER_NOTIFY] 等）。
