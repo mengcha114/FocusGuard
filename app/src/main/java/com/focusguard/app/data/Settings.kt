@@ -174,6 +174,7 @@ gacha
         private const val KEY_SCREEN_CAPTURE_GRANTED = "screen_capture_granted"
         private const val KEY_OVERLAY_GRANTED = "overlay_granted"
         private const val KEY_ACCESSIBILITY_GRANTED = "accessibility_granted"
+        private const val KEY_ACCESSIBILITY_LOST_AT = "accessibility_lost_notified_at"
 
         // ── 隐私保护 ───────────────────────────────────────────
         // 敏感应用隐私保护（默认开启）：检测到银行/支付/密码管理等
@@ -678,6 +679,16 @@ gacha
     var accessibilityGranted: Boolean
         get() = prefs.getBoolean(KEY_ACCESSIBILITY_GRANTED, false)
         set(value) = prefs.edit().putBoolean(KEY_ACCESSIBILITY_GRANTED, value).apply()
+
+    /**
+     * 「无障碍已关闭」提醒的最近发送时刻。
+     *
+     * 必须持久化：进程被杀后重建时内存里的节流变量会归零，
+     * 否则每次守护重启都会再弹一条（用户眼里就是"一直骚扰我"）。
+     */
+    var accessibilityLostNotifiedAt: Long
+        get() = prefs.getLong(KEY_ACCESSIBILITY_LOST_AT, 0L)
+        set(value) = prefs.edit().putLong(KEY_ACCESSIBILITY_LOST_AT, value).apply()
 
     // ── 隐私保护 ───────────────────────────────────────────────
 

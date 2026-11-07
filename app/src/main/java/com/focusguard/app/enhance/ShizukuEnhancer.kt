@@ -192,20 +192,25 @@ object ShizukuEnhancer {
     }
 
     /**
-     * 锁机期间无障碍被关闭 → 写回开启。
+     * 无障碍被系统关闭 → 写回开启。
      *
      * `settings put` 是整表覆盖，这里先读出现有列表再**追加**本应用，绝不丢掉
-     * 用户的其他无障碍服务（TalkBack 等）。只在锁机期间调用，解锁后不干预。
+     * 用户的其他无障碍服务（TalkBack 等）。
+     * 调用场景：锁机期间每 ~10 秒一次；非锁机期发现掉线时也立即尝试一次。
      * 必须在后台线程调用（会等待命令输出）。
      */
     fun ensureAccessibility(context: Context): Boolean {
         if (!isReady()) return false
-        val self = android.content.ComponentName(context, com.focusguard.app.access.GuardAccessibilityService::class.java)
-            .flattenToShortString()
+        val component = android.content.ComponentName(
+            context, com.focusguard.app.access.GuardAccessibilityService::class.java
+        )
+        // 系统里存的可能是 flattenToString（pkg/full.Class）也可能是
+        // flattenToShortString（pkg/.Class），两种都认，否则会误判为"没开"而重复追加。
+        val names = setOf(component.flattenToString(), component.flattenToShortString())
         val current = runForOutput("settings", "get", "secure", "enabled_accessibility_services")
             ?.trim()?.takeIf { it.isNotEmpty() && it != "null" } ?: ""
-        if (current.split(':').any { it.equals(self, true) }) return true
-        val merged = if (current.isEmpty()) self else "$current:$self"
+        if (current.split(':').any { e -> names.any { it.equals(e.trim(), true) } }) return true
+        val merged = if (current.isEmpty()) component.flattenToString() else "$current:${component.flattenToString()}"
         val ok = runCommand("settings", "put", "secure", "enabled_accessibility_services", merged)
         runCommand("settings", "put", "secure", "accessibility_enabled", "1")
         Log.d(TAG, "锁机中无障碍已被关闭，已写回")

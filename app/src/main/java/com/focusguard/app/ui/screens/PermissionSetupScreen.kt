@@ -75,7 +75,9 @@ fun PermissionSetupScreen(
             PermissionItem(
                 key = "accessibility",
                 title = "无障碍服务（强烈建议）",
-                description = "锁机顶回、拦截通知栏、屏幕文字预过滤省 token。未开启时锁机仍有效，但防破解能力减弱。请在列表中开启「专注卫士」",
+                description = "锁机顶回、拦截通知栏、屏幕文字预过滤省 token。未开启时锁机仍有效，但防破解能力减弱。\n" +
+                    "注意：清理后台或重启后，系统可能把它自动关闭（华为/小米/OPPO 常见），" +
+                    "请在系统设置里同时允许本应用「自启动 / 允许后台活动」；关闭后守监会发通知提醒你重开",
                 icon = Icons.Default.Accessibility,
                 isGranted = PermissionChecker.isAccessibilityEnabled(context),
                 isRequired = false

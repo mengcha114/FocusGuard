@@ -799,6 +799,11 @@ class MainActivity : ComponentActivity() {
         if (com.focusguard.app.util.PermissionChecker.canDrawOverlays(this)) {
             appSettings.overlayGranted = true
         }
+        // 记住「无障碍确实开过」：退出/被清理后掉线时，守护据此判断该提醒用户，
+        // 而不是把新用户（还停在权限引导页）也当成掉线。
+        if (com.focusguard.app.util.PermissionChecker.isAccessibilityEnabled(this)) {
+            appSettings.accessibilityGranted = true
+        }
     }
 
     private fun requestPermission(permission: String) {

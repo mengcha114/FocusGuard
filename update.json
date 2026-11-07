@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.67",
-  "notes": "新增了 API 测试：填好地址/密钥/模型后可一键测试连接，成功会自动锁定该 API\n新增了 API 锁：锁定后不能直接改地址/密钥/模型/协议，修改需先答题验证\n新增了 shell 通道切断：开启「防破解」后，破解工具无法再借 Shizuku/无线调试强停本应用\n新增了 破解工具拦截：游龙、Sd tool、LA 工具箱等常见工具的冻结/隐藏/强停\n新增了 无障碍白名单：只允许本应用与系统服务使用无障碍，防被代点绕过\n优化了 防破解状态：按系统实际生效值显示，不再出现「看着开了其实没生效」\n修复了 主线程卡顿：Shizuku/Dhizuku 检测不再阻塞主线程，消除 6 秒无响应\n修复了 系统包误判：不再对系统（android）发起强行停止\n修复了 Shizuku 掉线：授权丢失后自动恢复并留痕\n修复了 后台自愈：服务被杀后闹钟与看门狗自动重建\n修复了 工具授权：拦截破解工具时不再撤销其 Shizuku 授权（无永久副作用）",
+  "tag": "v3.11.68",
+  "notes": "修复了 选背景图闪退：选图后的大图解码与压缩改到后台线程，选择器缺失时也不再闪退\n修复了 换背景丢原图：改为先写新图、确认成功后再删旧图\n新增了 无障碍掉线自愈：被系统关闭时，有 Shizuku 时自动写回，没有时发通知一键重开\n修复了 无障碍写回误判：兼容系统里两种组件名格式，不再重复追加本应用",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.67/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.67/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.68/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.68/app-general-release.apk"
   }
 }

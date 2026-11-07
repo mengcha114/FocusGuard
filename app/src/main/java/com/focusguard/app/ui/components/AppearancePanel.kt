@@ -1,5 +1,6 @@
 package com.focusguard.app.ui.components
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +18,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.ui.theme.Appearance
 import com.focusguard.app.ui.theme.AppearanceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 个性化外观面板：背景、光晕、卡片、圆角、字号、锁机页元素、动画。
@@ -30,13 +34,35 @@ fun AppearancePanel() {
 
     var importing by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         importing = true
-        val name = AppearanceState.importImage(context, uri)
-        importing = false
-        importError = name == null
-        if (name != null) set { it.copy(background = Appearance.BG_IMAGE, imageFile = name) }
+        importError = false
+        // 关键：解码 + 缩放 + 压缩整张照片必须离开主线程。
+        // 原来在主线程同步 importImage：选一张 4000 万像素的图会卡住好几秒，
+        // 系统判定无响应后直接把应用杀掉——用户看到的就是"选图片闪退"，
+        // 而且"导入中…"根本来不及显示。
+        scope.launch {
+            val name = withContext(Dispatchers.IO) {
+                AppearanceState.importImage(context.applicationContext, uri)
+            }
+            importing = false
+            importError = name == null
+            if (name != null) set { it.copy(background = Appearance.BG_IMAGE, imageFile = name) }
+        }
+    }
+    // 相册选择器的启动也可能失败：部分机型/精简 ROM 既没有系统相册选择器，
+    // 也没有可用的文档选择器，launch() 会直接抛 ActivityNotFoundException。
+    // 不接住就是"点选图片就闪退"。
+    fun launchPicker() {
+        runCatching {
+            picker.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+        }.onFailure {
+            Toast.makeText(context, "当前系统没有可用的图片选择器", Toast.LENGTH_LONG).show()
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -55,7 +81,7 @@ fun AppearancePanel() {
             },
             onSelect = { bg ->
                 if (bg == Appearance.BG_IMAGE && AppearanceState.imageFile(context, a) == null) {
-                    picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    launchPicker()
                 } else {
                     set { it.copy(background = bg) }
                 }
@@ -64,8 +90,9 @@ fun AppearancePanel() {
         FxExpand(visible = a.background == Appearance.BG_IMAGE) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                    modifier = Modifier.weight(1f)
+                    onClick = { launchPicker() },
+                    modifier = Modifier.weight(1f),
+                    enabled = !importing
                 ) {
                     Icon(Icons.Default.Image, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))

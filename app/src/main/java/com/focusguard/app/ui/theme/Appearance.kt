@@ -152,11 +152,16 @@ object AppearanceState {
     /**
      * 导入用户选择的图片：等比缩放到屏幕长边 ≤ 2160px 后存入私有目录
      * （不保留原图，也不需要存储权限）。返回新文件名，失败返回 null。
+     *
+     * 注意：解码/缩放/压缩都很重，**调用方必须放到 IO 线程**，
+     * 以前在主线程同步调用，大图会把应用卡到被系统杀掉（表现成"选图闪退"）。
      */
     fun importImage(context: Context, uri: android.net.Uri): String? = runCatching {
         val resolver = context.contentResolver
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        resolver.openInputStream(uri)?.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+        }
         val longEdge = maxOf(bounds.outWidth, bounds.outHeight)
         if (longEdge <= 0) return null
         var sample = 1
@@ -165,13 +170,20 @@ object AppearanceState {
         val bmp = resolver.openInputStream(uri)?.use {
             android.graphics.BitmapFactory.decodeStream(it, null, opts)
         } ?: return null
-        // 删除旧图，文件名带时间戳以让 Compose 重新解码
-        context.filesDir.listFiles { f -> f.name.startsWith("custom_bg_") }?.forEach { it.delete() }
         val name = "custom_bg_${System.currentTimeMillis()}.jpg"
-        java.io.FileOutputStream(java.io.File(context.filesDir, name)).use {
+        val dest = java.io.File(context.filesDir, name)
+        val ok = java.io.FileOutputStream(dest).use {
             bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, it)
         }
         bmp.recycle()
+        // 先写新图再删旧图：写失败时保留原背景，不会出现"换图失败后背景全空"
+        if (!ok || dest.length() == 0L) {
+            dest.delete()
+            return null
+        }
+        // 文件名带时间戳以让 Compose 重新解码
+        context.filesDir.listFiles { f -> f.name.startsWith("custom_bg_") && f.name != name }
+            ?.forEach { it.delete() }
         name
     }.getOrNull()
 }

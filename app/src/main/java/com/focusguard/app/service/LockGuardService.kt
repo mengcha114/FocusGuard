@@ -69,6 +69,12 @@ class LockGuardService : Service() {
         /** 通知刷新间隔（每 10 次巡检刷一次，约 6 秒）。 */
         private const val NOTIFY_EVERY_N_TICKS = 10
 
+        /** 「无障碍被系统关闭」提醒的通知位（避开常驻通知与其他告警位）。 */
+        private const val A11Y_LOST_NOTIFICATION_ID = 1014
+
+        /** 同一轮掉线最多每 12 小时提醒一次（持久化节流，进程重启也算数）。 */
+        private const val A11Y_LOST_REMIND_INTERVAL_MS = 12 * 60 * 60 * 1000L
+
         @Volatile
         var isRunning: Boolean = false
             private set
@@ -197,6 +203,12 @@ class LockGuardService : Service() {
 
     /** 使用情况权限失权告警是否已发过（恢复后复位，避免每 30 秒刷一条通知）。 */
     private var usageStatsWarned = false
+
+    /** 无障碍掉线告警是否已发过（恢复后复位；跨进程的节流另有持久化时间戳）。 */
+    private var a11yWarned = false
+
+    /** 连续判定"无障碍不在线"的次数：开机绑定、应用升级重绑会有几十秒空窗，连续 2 次（约 60 秒）才算真掉线。 */
+    private var a11yMissCount = 0
 
     /** 破解工具即时处置：上次判定的前台组合与时刻（避免每 300ms 都做包名查询）。 */
     private var lastCrackKey: String = ""
@@ -522,6 +534,8 @@ class LockGuardService : Service() {
      *    一次状态（用户可能在系统设置里改回来），首页提示才不会一直挂着。
      */
     private fun recheckPermissions() {
+        // 无障碍掉线监控放在最前：下面两项的早退（都正常时直接 return）会把它跳过。
+        watchAccessibility()
         val granted = com.focusguard.app.util.PermissionChecker.isUsageStatsGranted(this)
         MonitorService.usageStatsLost = !granted
         MonitorService.notificationsBlocked = !runCatching {
@@ -553,6 +567,99 @@ class LockGuardService : Service() {
             "「使用情况访问」权限被关闭，锁机与应用封锁可能失效。点开应用重新授权。",
             id = 1010
         )
+    }
+
+    /**
+     * 无障碍掉线监控 + 自愈（每 30 秒随 [recheckPermissions] 跑一次）。
+     *
+     * 背景：华为/小米/OPPO 等 ROM 在「清理后台 / 重启」后会把第三方应用进程清掉，
+     * 无障碍服务随之解绑，系统设置里的开关就显示为关闭（华为官方文档已确认）。
+     * 应用侧无法阻止这种清理，能做的只有两件事：
+     * 1. 有 Shizuku/Device Owner 时把 `enabled_accessibility_services` 写回（真自愈）；
+     * 2. 没有时发一条可直达系统设置的通知，让用户一键重开（否则用户完全无感知）。
+     *
+     * 只在「用户曾经开通过」时告警：从没开过的用户还在走权限引导，不该被骚扰。
+     */
+    private fun watchAccessibility() {
+        val on = com.focusguard.app.util.PermissionChecker.isAccessibilityEnabled(this)
+        val s = com.focusguard.app.data.Settings(this)
+        if (on) {
+            // 记住「开通过」：进程被杀重建后仍能判断这是一次掉线，而不是从没开过
+            if (!s.accessibilityGranted) s.accessibilityGranted = true
+            a11yMissCount = 0
+            if (a11yWarned) {
+                a11yWarned = false
+                runCatching {
+                    getSystemService(NotificationManager::class.java)
+                        ?.cancel(A11Y_LOST_NOTIFICATION_ID)
+                }
+            }
+            return
+        }
+        if (!s.accessibilityGranted) return
+        // 开机时服务绑定、应用升级后重绑都会有几十秒空窗，连续两次（约 60 秒）才当真掉线，
+        // 否则每次重启都会误报「被系统关闭」。
+        a11yMissCount++
+        if (a11yMissCount < 2) return
+        a11yWarned = true
+
+        // ① 有 Shizuku 就直接写回（不限锁机期）。
+        //    锁机期间另有一条每 ~10 秒的写回路径（见 guardTick），这里不重复调用。
+        //    「锁机期间挂起 Shizuku」是我们自己的策略，此时写回必然失败，跳过。
+        if (!lockState.isLocked &&
+            com.focusguard.app.enhance.ShizukuEnhancer.isReady() &&
+            !com.focusguard.app.enhance.LockPolicies.isShizukuSuspendedByUs(this)
+        ) {
+            Thread {
+                runCatching {
+                    com.focusguard.app.enhance.ShizukuEnhancer.ensureAccessibility(applicationContext)
+                }
+            }.start()
+        }
+
+        // ② 提醒用户。跨进程重启节流：时间戳存在 Settings 里，重启后不会重复弹。
+        val now = System.currentTimeMillis()
+        if (now - s.accessibilityLostNotifiedAt < A11Y_LOST_REMIND_INTERVAL_MS) return
+        s.accessibilityLostNotifiedAt = now
+        notifyAccessibilityLost()
+    }
+
+    /** 无障碍被系统关闭时的提醒：点击直达系统无障碍设置页。 */
+    private fun notifyAccessibilityLost() {
+        try {
+            val nm = getSystemService(NotificationManager::class.java) ?: return
+            if (!nm.areNotificationsEnabled()) {
+                Log.w(TAG, "无障碍已关闭，但通知被禁用，无法提醒用户")
+                return
+            }
+            val pi = PendingIntent.getActivity(
+                this,
+                A11Y_LOST_NOTIFICATION_ID,
+                Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val full = "锁机顶回与通知栏拦截已降级。点这里进入系统设置重新开启。\n\n" +
+                "原因：清理后台或重启后，系统清掉了应用进程，无障碍服务随之解绑，" +
+                "开关就显示为关闭（华为/小米/OPPO 等机型常见）。\n\n" +
+                "建议同时在系统设置里允许本应用「自启动 / 允许后台活动」，减少再次被关闭。"
+            val n = Notification.Builder(this, FocusGuardApp.ALERT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_shield)
+                .setContentTitle("无障碍服务被系统关闭")
+                .setContentText("锁机顶回能力已降级：点这里重新开启")
+                .setStyle(Notification.BigTextStyle().bigText(full))
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .setCategory(Notification.CATEGORY_ERROR)
+                .setPriority(Notification.PRIORITY_HIGH)
+                .setTimeoutAfter(A11Y_LOST_REMIND_INTERVAL_MS)
+                .build()
+            nm.notify(A11Y_LOST_NOTIFICATION_ID, n)
+            Log.w(TAG, "无障碍已被系统关闭，已发送恢复提醒")
+        } catch (e: Exception) {
+            Log.w(TAG, "无障碍掉线提醒发送失败：${e.message}")
+        }
     }
 
     /** 单次守护巡检。 */
