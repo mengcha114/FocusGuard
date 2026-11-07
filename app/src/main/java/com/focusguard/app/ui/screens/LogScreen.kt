@@ -44,8 +44,11 @@ import com.focusguard.app.data.LogStore
 fun LogScreen() {
     val context = LocalContext.current
     val logStore = remember { LogStore(context) }
+    val settings = remember { com.focusguard.app.data.Settings(context) }
     var logs by remember { mutableStateOf(logStore.getAllLogs()) }
     var showDiagnostics by remember { mutableStateOf(false) }
+    // 隐藏耗时明细（耗时 / 取图 / AI 分段用时），用户可选，持久保存
+    var hideCostDetail by remember { mutableStateOf(settings.logHideCostDetail) }
     // 刷新计数：点「刷新」后重新读日志 + 崩溃记录（此前进页面后只能退出去再进来才更新）
     var refreshTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(refreshTick) {
@@ -102,6 +105,27 @@ fun LogScreen() {
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+
+        // ── 展示选项：隐藏耗时/取图/AI 分段用时 ──
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilterChip(
+                selected = hideCostDetail,
+                onClick = {
+                    hideCostDetail = !hideCostDetail
+                    settings.logHideCostDetail = hideCostDetail
+                },
+                label = { Text("隐藏耗时明细", fontSize = 12.sp) }
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "耗时 / 取图 / AI 分段用时",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+            )
+        }
 
         // 诊断文本只算一次并限长：内容过大（带图片 base64）会让渲染直接崩
         val diagText = remember(showDiagnostics) {
@@ -253,6 +277,11 @@ fun LogScreen() {
             Spacer(Modifier.height(12.dp))
         }
 
+        // 只影响展示：耗时明细由 AI 判定时追加在原因末尾，可按需隐藏
+        val displayLogs = if (hideCostDetail) {
+            logs.map { it.copy(reason = stripCostDetail(it.reason)) }
+        } else logs
+
         if (logs.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -275,7 +304,7 @@ fun LogScreen() {
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(logs, key = { it.timestamp }) { log ->
+                items(displayLogs, key = { it.timestamp }) { log ->
                     LogEntryItem(log = log, context = context)
                 }
                 item { Spacer(Modifier.height(24.dp)) }
@@ -487,6 +516,12 @@ private fun DetailRow(label: String, value: String, valueColor: Color = Material
         )
     }
 }
+
+/** AI 判定尾部追加的「〔耗时 1.2 秒：取图 300ms · AI 800ms〕」。 */
+private val COST_DETAIL_REGEX = Regex("""\s*〔耗时[^〕]*〕""")
+
+private fun stripCostDetail(text: String): String =
+    text.replace(COST_DETAIL_REGEX, "").trim()
 
 private fun copyToClipboard(context: Context, text: String) {
     try {

@@ -150,40 +150,68 @@ object AppearanceState {
     }
 
     /**
-     * 导入用户选择的图片：等比缩放到屏幕长边 ≤ 2160px 后存入私有目录
+     * 导入用户选择的图片：等比缩放到长边 ≤ 1440px 后存入私有目录
      * （不保留原图，也不需要存储权限）。返回新文件名，失败返回 null。
      *
      * 注意：解码/缩放/压缩都很重，**调用方必须放到 IO 线程**，
      * 以前在主线程同步调用，大图会把应用卡到被系统杀掉（表现成"选图闪退"）。
+     *
+     * 内存控制：长边 1440 且用 RGB_565，单张图解码后约 3–4 MB；
+     * 早先 2160 + ARGB_8888 在 4GB 内存机型上容易触发 OOM（表现为无日志闪退）。
+     * 任何异常（含 OutOfMemoryError）都在这里兜住并返回 null，由上层提示重试。
      */
-    fun importImage(context: Context, uri: android.net.Uri): String? = runCatching {
+    fun importImage(context: Context, uri: android.net.Uri): String? = try {
         val resolver = context.contentResolver
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         resolver.openInputStream(uri)?.use {
             android.graphics.BitmapFactory.decodeStream(it, null, bounds)
         }
         val longEdge = maxOf(bounds.outWidth, bounds.outHeight)
-        if (longEdge <= 0) return null
-        var sample = 1
-        while (longEdge / sample > 2160) sample *= 2
-        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
-        val bmp = resolver.openInputStream(uri)?.use {
-            android.graphics.BitmapFactory.decodeStream(it, null, opts)
-        } ?: return null
-        val name = "custom_bg_${System.currentTimeMillis()}.jpg"
-        val dest = java.io.File(context.filesDir, name)
-        val ok = java.io.FileOutputStream(dest).use {
-            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, it)
+        if (longEdge <= 0) {
+            null
+        } else {
+            var sample = 1
+            while (longEdge / sample > 1440) sample *= 2
+            val opts = android.graphics.BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+            }
+            var bmp: android.graphics.Bitmap? = null
+            try {
+                bmp = resolver.openInputStream(uri)?.use {
+                    android.graphics.BitmapFactory.decodeStream(it, null, opts)
+                }
+                if (bmp == null) {
+                    null
+                } else {
+                    val name = "custom_bg_${System.currentTimeMillis()}.jpg"
+                    val dest = java.io.File(context.filesDir, name)
+                    val ok = try {
+                        java.io.FileOutputStream(dest).use {
+                            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, it)
+                        }
+                    } catch (e: Throwable) {
+                        false
+                    }
+                    // 先写新图再删旧图：写失败时保留原背景，不会出现"换图失败后背景全空"
+                    if (!ok || dest.length() == 0L) {
+                        dest.delete()
+                        null
+                    } else {
+                        // 文件名带时间戳以让 Compose 重新解码
+                        context.filesDir.listFiles { f ->
+                            f.name.startsWith("custom_bg_") && f.name != name
+                        }?.forEach { it.delete() }
+                        name
+                    }
+                }
+            } finally {
+                bmp?.recycle()
+            }
         }
-        bmp.recycle()
-        // 先写新图再删旧图：写失败时保留原背景，不会出现"换图失败后背景全空"
-        if (!ok || dest.length() == 0L) {
-            dest.delete()
-            return null
-        }
-        // 文件名带时间戳以让 Compose 重新解码
-        context.filesDir.listFiles { f -> f.name.startsWith("custom_bg_") && f.name != name }
-            ?.forEach { it.delete() }
-        name
-    }.getOrNull()
+    } catch (e: Throwable) {
+        // 解码失败 / 图片损坏 / OOM 一律当作导入失败，绝不把异常抛到 UI 线程
+        android.util.Log.w("Appearance", "导入背景图失败：${e.javaClass.simpleName} ${e.message}")
+        null
+    }
 }

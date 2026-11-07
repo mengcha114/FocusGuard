@@ -183,6 +183,7 @@ gacha
         private const val KEY_CONTENT_PRIVACY = "content_privacy_check"
         private const val KEY_TEXT_ONLY_UPLOAD = "text_only_upload"
         private const val KEY_REDACT_LOGS = "redact_logs"
+        private const val KEY_LOG_HIDE_COST = "log_hide_cost_detail"
         private const val KEY_BUILTIN_HINTS = "builtin_privacy_hints"
         private const val KEY_BROWSER_PRIVACY = "browser_privacy_first"
         private const val KEY_AI_PRIVACY = "ai_privacy_learning"
@@ -748,6 +749,14 @@ gacha
     var redactLogs: Boolean
         get() = prefs.getBoolean(KEY_REDACT_LOGS, true)
         set(value) = prefs.edit().putBoolean(KEY_REDACT_LOGS, value).apply()
+
+    /**
+     * 隐藏日志里的耗时明细（耗时 / 取图 / AI 分段用时，默认关）。
+     * 只影响展示，不改变已存日志内容。
+     */
+    var logHideCostDetail: Boolean
+        get() = prefs.getBoolean(KEY_LOG_HIDE_COST, false)
+        set(value) = prefs.edit().putBoolean(KEY_LOG_HIDE_COST, value).apply()
 
     /** 内置敏感应用兜底（默认开；关闭后只用用户自定义列表）。 */
     var builtinPrivacyHints: Boolean

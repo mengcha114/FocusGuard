@@ -170,14 +170,25 @@ private fun ImageBackground(a: Appearance, base: Color) {
     // 原来在 remember 里直接 decodeFile（2160 长边 ≈ 几十 MB），低端机上会把主线程卡住，
     // 表现为「主界面打开就闪退且没有任何日志」——安全模式页不画背景图，所以它能正常打开。
     // 现在：放到 IO 线程解码 + 降采样一档，解码失败就退回纯色/渐变背景（绝不阻塞、绝不崩）。
-    val bitmapState = remember(a.imageFile) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
-    LaunchedEffect(a.imageFile) {
+    val bitmapState = remember(a.imageFile, a.imageBlur) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    LaunchedEffect(a.imageFile, a.imageBlur) {
         bitmapState.value = null
         val f = file ?: return@LaunchedEffect
+        // 模糊不再用 Modifier.blur（RenderEffect）：部分 Mali/Adreno 机型对全屏
+        // RenderEffect 会直接原生崩溃（无 Java 堆栈），表现就是"设完背景图就闪退"。
+        // 改为按模糊强度降采样后放大绘制：视觉接近模糊，且完全走 CPU/常规绘制。
+        val blurOn = a.imageBlur > 0 &&
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+        val sample = when {
+            !blurOn -> 2
+            a.imageBlur <= 8 -> 4
+            a.imageBlur <= 20 -> 8
+            else -> 16
+        }
         bitmapState.value = withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
                 val opts = android.graphics.BitmapFactory.Options().apply {
-                    inSampleSize = 2
+                    inSampleSize = sample
                     inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
                 }
                 android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
@@ -191,12 +202,7 @@ private fun ImageBackground(a: Appearance, base: Color) {
                 bitmap = bitmap,
                 contentDescription = null,
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(
-                        if (a.imageBlur > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                            Modifier.blur(a.imageBlur.dp) else Modifier
-                    )
+                modifier = Modifier.fillMaxSize()
             )
             Box(Modifier.fillMaxSize().background(base.copy(alpha = a.imageDim.coerceIn(0, 90) / 100f)))
         }

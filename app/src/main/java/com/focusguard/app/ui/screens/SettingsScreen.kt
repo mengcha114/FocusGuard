@@ -39,6 +39,30 @@ fun SettingsScreen(
     val settings = remember { Settings(context) }
     val tokenBudget = remember { TokenBudget(context) }
 
+    // ── Shizuku / Dhizuku 授权状态（未授权时隐藏相关设置项） ──────
+    // 这两个增强项对普通用户属于「高风险高阶功能」，没授权时点开只有
+    // 一堆"未就绪/不生效"，既误导又容易被当成假开关，因此整块隐藏，
+    // 授权后（回到本页）自动出现。
+    var enhCheckKey by remember { mutableIntStateOf(0) }
+    val enhLifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(enhLifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) enhCheckKey++
+        }
+        enhLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { enhLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val shizukuReady = remember(enhCheckKey) {
+        com.focusguard.app.enhance.ShizukuEnhancer.isReady()
+    }
+    val dhizukuReady = remember(enhCheckKey) {
+        // 冷启动时内存缓存尚未初始化，用「曾经就绪」的持久标记兜底，
+        // 否则已授权用户每次打开设置都看不到这块。
+        com.focusguard.app.enhance.DhizukuEnhancer.isReady() ||
+            com.focusguard.app.enhance.DhizukuEnhancer.shouldPreferActivity(context)
+    }
+    val shellEnhanced = shizukuReady || dhizukuReady
+
     var apiBaseUrl by remember { mutableStateOf(settings.apiBaseUrl) }
     var apiKey by remember { mutableStateOf(settings.apiKey) }
     var modelName by remember { mutableStateOf(settings.modelName) }
@@ -72,7 +96,7 @@ fun SettingsScreen(
     var apiLocked by remember { mutableStateOf(settings.apiLocked) }
     // 本次进入设置页是否已通过答题解锁（仅内存状态，退出页面即失效）
     var apiEditUnlocked by remember { mutableStateOf(false) }
-    var apiTestRequested by remember { mutableStateOf(false) }
+    var apiTestTick by remember { mutableIntStateOf(0) }
     var apiTesting by remember { mutableStateOf(false) }
     var apiTestMessage by remember { mutableStateOf<String?>(null) }
     var apiTestOk by remember { mutableStateOf(false) }
@@ -155,7 +179,7 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { apiTestRequested = true },
+                    onClick = { apiTestTick++ },
                     enabled = !apiTesting,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp)
@@ -648,61 +672,69 @@ fun SettingsScreen(
             com.focusguard.app.ui.components.LockHardeningCard()
         }
 
-        SettingsSection(
-            title = "Shizuku / Dhizuku 增强",
-            icon = Icons.Default.Security,
-            defaultExpanded = false,
-            summary = "状态 / 一键修复"
-        ) {
-            com.focusguard.app.ui.components.ShizukuStatusCard()
+        // ── 高级增强：Shizuku / Dhizuku（未授权时整块隐藏） ──────────
+        if (shellEnhanced) {
+            Text(
+                text = "以下权限为必需权限，仅供有需要的用户使用，有一定风险，请谨慎授权",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+            )
+
+            SettingsSection(
+                title = "Shizuku / Dhizuku 增强",
+                icon = Icons.Default.Security,
+                defaultExpanded = false,
+                summary = "状态 / 一键修复"
+            ) {
+                com.focusguard.app.ui.components.ShizukuStatusCard()
+            }
+
+            // ── 系统级锁机（Dhizuku Lock Task）状态 ──────────────
+            SettingsSection(
+                title = "系统级锁机（Lock Task）",
+                icon = Icons.Default.Security,
+                defaultExpanded = false,
+                summary = "锁定任务模式"
+            ) {
+                val lockTaskOn = com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = when {
+                                lockTaskOn -> "已生效 · 锁机期间系统级封锁"
+                                dhizukuReady -> "Dhizuku 已连接 · 锁机时自动进入"
+                                else -> "未启用（将使用普通模式）"
+                            },
+                            fontSize = 14.sp,
+                            color = when {
+                                lockTaskOn -> MaterialTheme.colorScheme.tertiary
+                                dhizukuReady -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                            }
+                        )
+                        Text(
+                            text = if (dhizukuReady) {
+                                "Lock Task 生效后，Home / 上滑 / 最近任务全部失效，无法退出"
+                            } else {
+                                "安装并激活 Dhizuku 后，锁机将无法被任何手势退出。\n" +
+                                    "未生效原因：${com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { "未连接" }}"
+                            },
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
+                        )
+                    }
+                }
+            }
         }
 
         // ── 执法模式 ──────────────────────────────────────────────
         SettingsSection(title = "执法模式", icon = Icons.Default.Gavel) {
             EnforcementModeSelector(selected = enforcementMode, onSelect = { enforcementMode = it })
-        }
-
-        // ── AI 检出娱乐后的锁机设置 ────────────────────────────────
-        // ── 系统级锁机（Dhizuku Lock Task）状态 ──────────────
-        SettingsSection(
-            title = "系统级锁机（Lock Task）",
-            icon = Icons.Default.Security,
-            defaultExpanded = false,
-            summary = "锁定任务模式"
-        ) {
-            val dhizukuReady = com.focusguard.app.enhance.DhizukuEnhancer.isReady()
-            val lockTaskOn = com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = when {
-                            lockTaskOn -> "已生效 · 锁机期间系统级封锁"
-                            dhizukuReady -> "Dhizuku 已连接 · 锁机时自动进入"
-                            else -> "未启用（将使用普通模式）"
-                        },
-                        fontSize = 14.sp,
-                        color = when {
-                            lockTaskOn -> MaterialTheme.colorScheme.tertiary
-                            dhizukuReady -> MaterialTheme.colorScheme.primary
-                            else -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                        }
-                    )
-                    Text(
-                        text = if (dhizukuReady) {
-                            "Lock Task 生效后，Home / 上滑 / 最近任务全部失效，无法退出"
-                        } else {
-                            "安装并激活 Dhizuku 后，锁机将无法被任何手势退出。\n" +
-                                "未生效原因：${com.focusguard.app.enhance.DhizukuEnhancer.lastError.ifBlank { "未连接" }}"
-                        },
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
-                    )
-                }
-            }
         }
 
         // 这些配置只在「全局锁机」模式下有意义：选了「仅锁该软件」还让用户配锁机时长、
@@ -1139,15 +1171,33 @@ fun SettingsScreen(
         }
 
         // ── 测试连接（成功后自动锁定当前 API） ────────────────────
-        // 用状态触发而不是在按钮里直接调协程：saveAll 定义在下方，
-        // 这样能保证「先落盘、再按落盘内容生成锁定指纹」。
-        LaunchedEffect(apiTestRequested) {
-            if (!apiTestRequested) return@LaunchedEffect
-            apiTestRequested = false
+        // 用递增计数器触发，且**不在 effect 内回写该 key**。
+        // 之前用布尔开关并在 effect 里置回 false，会导致 key 变化 →
+        // effect 被取消重启 → 网络请求在第一个挂起点被取消，
+        // apiTesting 永远停留在 true，界面一直显示「测试中」。
+        LaunchedEffect(apiTestTick) {
+            if (apiTestTick == 0) return@LaunchedEffect
             apiTesting = true
             apiTestMessage = null
-            val report = com.focusguard.app.ai.AiClient()
-                .testConnection(apiBaseUrl.trim(), apiKey.trim(), modelName.trim(), apiFormat)
+            // 双保险：即便底层 HttpClient 因系统 DNS 卡死，也不会无限「测试中」
+            val report = try {
+                kotlinx.coroutines.withTimeout(45_000L) {
+                    com.focusguard.app.ai.AiClient()
+                        .testConnection(apiBaseUrl.trim(), apiKey.trim(), modelName.trim(), apiFormat)
+                }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                com.focusguard.app.ai.ApiTestReport(
+                    ok = false,
+                    message = "测试超时（45 秒），请检查网络或 API 地址",
+                    latencyMs = 0L
+                )
+            } catch (e: Exception) {
+                com.focusguard.app.ai.ApiTestReport(
+                    ok = false,
+                    message = "测试异常：${e.message ?: e.javaClass.simpleName}",
+                    latencyMs = 0L
+                )
+            }
             apiTesting = false
             apiTestOk = report.ok
             if (report.ok) {

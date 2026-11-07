@@ -44,12 +44,22 @@ fun AppearancePanel() {
         // 系统判定无响应后直接把应用杀掉——用户看到的就是"选图片闪退"，
         // 而且"导入中…"根本来不及显示。
         scope.launch {
-            val name = withContext(Dispatchers.IO) {
-                AppearanceState.importImage(context.applicationContext, uri)
+            // 任何环节失败都只当"导入失败"，绝不让异常冒到主线程（那会直接闪退）
+            val name = try {
+                withContext(Dispatchers.IO) {
+                    AppearanceState.importImage(context.applicationContext, uri)
+                }
+            } catch (e: Throwable) {
+                null
             }
             importing = false
             importError = name == null
-            if (name != null) set { it.copy(background = Appearance.BG_IMAGE, imageFile = name) }
+            if (name != null) {
+                runCatching { set { it.copy(background = Appearance.BG_IMAGE, imageFile = name) } }
+            } else {
+                // 失败时背景仍是原来那张（或纯色），下面的红色提示不会显示，必须弹 Toast
+                Toast.makeText(context, "图片导入失败，请换一张试试", Toast.LENGTH_LONG).show()
+            }
         }
     }
     // 相册选择器的启动也可能失败：部分机型/精简 ROM 既没有系统相册选择器，

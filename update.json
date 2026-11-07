@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.68",
-  "notes": "修复了 选背景图闪退：选图后的大图解码与压缩改到后台线程，选择器缺失时也不再闪退\n修复了 换背景丢原图：改为先写新图、确认成功后再删旧图\n新增了 无障碍掉线自愈：被系统关闭时，有 Shizuku 时自动写回，没有时发通知一键重开\n修复了 无障碍写回误判：兼容系统里两种组件名格式，不再重复追加本应用",
+  "tag": "v3.11.69",
+  "notes": "修复了 连接测试一直显示「测试中」：触发逻辑会自我取消，已改为递增触发并加 45 秒超时兜底\n修复了 选背景图闪退：导入再降一档内存（长边 1440 + RGB_565），解码失败或内存不足都只提示失败、不再崩溃\n新增了 日志可选隐藏耗时明细（耗时 / 取图 / AI 分段用时），只影响展示\n调整了 Shizuku / Dhizuku 相关设置项：未授权时隐藏，授权后自动出现；授权页新增风险提示",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.68/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.68/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.69/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.69/app-general-release.apk"
   }
 }
