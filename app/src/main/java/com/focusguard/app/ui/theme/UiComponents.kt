@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -50,6 +51,14 @@ fun Modifier.inkCard(
     val scheme = MaterialTheme.colorScheme
     val a = AppearanceState.get(LocalContext.current)
     val shape = RoundedCornerShape(corner ?: a.cardCorner.dp)
+    if (a.cardStyle == Appearance.CARD_LIQUID && container == null && borderColor == null) {
+        return this.liquidGlass(
+            shape = shape,
+            scheme = scheme,
+            opacity = a.cardOpacity.coerceIn(40, 100) / 100f,
+            borderStrength = a.cardBorder / 100f
+        )
+    }
     val fill = container ?: when (a.cardStyle) {
         Appearance.CARD_SOLID -> scheme.surfaceVariant
         Appearance.CARD_OUTLINE -> Color.Transparent
@@ -61,6 +70,60 @@ fun Modifier.inkCard(
         else -> scheme.outline.copy(alpha = (a.cardBorder / 100f * 0.9f).coerceIn(0f, 1f))
     }
     return this.clip(shape).background(fill).border(1.dp, stroke, shape)
+}
+
+/**
+ * 液态玻璃卡片：参考 AndroidLiquidGlass 的观感，用纯绘制近似实现。
+ *
+ * 真·折射需要把背景重绘到离屏图层再上着色器，而全屏 RenderEffect 在部分
+ * Mali/Adreno 机型上会原生崩溃（见 [ImageBackground] 的注释），因此这里用
+ * 稳定且零依赖的做法：高光渐变填充 + 双色渐变描边 + 左上/右下两处折射光斑。
+ */
+private fun Modifier.liquidGlass(
+    shape: androidx.compose.ui.graphics.Shape,
+    scheme: androidx.compose.material3.ColorScheme,
+    opacity: Float,
+    borderStrength: Float
+): Modifier {
+    val base = scheme.surfaceVariant
+    val fill = Brush.verticalGradient(
+        listOf(
+            Color.White.copy(alpha = 0.18f),
+            base.copy(alpha = (opacity * 0.62f).coerceIn(0.18f, 0.72f)),
+            Color.White.copy(alpha = 0.04f)
+        )
+    )
+    // 上亮、下暗、再回亮的描边，模拟玻璃边缘的光线弯折
+    val rim = Brush.linearGradient(
+        listOf(
+            Color.White.copy(alpha = 0.55f),
+            scheme.outline.copy(alpha = 0.10f + borderStrength * 0.35f),
+            Color.White.copy(alpha = 0.10f)
+        )
+    )
+    return this
+        .clip(shape)
+        .background(fill)
+        .border(1.dp, rim, shape)
+        .drawWithContent {
+            drawContent()
+            // 左上主高光
+            drawRect(
+                Brush.radialGradient(
+                    colors = listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.16f, 0f),
+                    radius = size.width * 0.8f
+                )
+            )
+            // 右下折射亮带
+            drawRect(
+                Brush.radialGradient(
+                    colors = listOf(Color.White.copy(alpha = 0.06f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width, size.height),
+                    radius = size.width
+                )
+            )
+        }
 }
 
 /**
@@ -189,8 +252,10 @@ fun ImageBackground(a: Appearance, base: Color) {
         // RenderEffect 会直接原生崩溃（无 Java 堆栈），表现就是"设完背景图就闪退"。
         // 改为按模糊强度降采样后放大绘制：视觉接近模糊，且完全走 CPU/常规绘制。
         val blurOn = a.imageBlur > 0
+        // 不模糊时必须 1:1 解码：以前无脑 sample=2，等于把 2560 的图压成 1280
+        // 再铺满 2K 屏，用户看到的就是「传了原图还是糊」。
         val sample = when {
-            !blurOn -> 2
+            !blurOn -> 1
             a.imageBlur <= 8 -> 4
             a.imageBlur <= 20 -> 8
             else -> 16
@@ -199,9 +264,15 @@ fun ImageBackground(a: Appearance, base: Color) {
             runCatching {
                 val opts = android.graphics.BitmapFactory.Options().apply {
                     inSampleSize = sample
-                    inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                    inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
                 }
-                android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
+                try {
+                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
+                } catch (oom: OutOfMemoryError) {
+                    // 低内存机型：退回 RGB_565，宁可少点色深也别白屏
+                    opts.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
+                }
             }.getOrNull()
         }
     }
@@ -212,6 +283,7 @@ fun ImageBackground(a: Appearance, base: Color) {
                 bitmap = bitmap,
                 contentDescription = null,
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
                 modifier = Modifier.fillMaxSize()
             )
             Box(Modifier.fillMaxSize().background(base.copy(alpha = a.imageDim.coerceIn(0, 90) / 100f)))
@@ -264,6 +336,9 @@ fun cardContainer(): Color {
     return when (a.cardStyle) {
         Appearance.CARD_SOLID -> scheme.surfaceVariant
         Appearance.CARD_OUTLINE -> scheme.surface.copy(alpha = 0.35f)
+        Appearance.CARD_LIQUID -> scheme.surfaceVariant.copy(
+            alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.62f
+        )
         else -> scheme.surfaceVariant.copy(alpha = a.cardOpacity.coerceIn(40, 100) / 100f)
     }
 }

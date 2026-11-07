@@ -58,6 +58,8 @@ data class Appearance(
         const val CARD_GLASS = 0
         const val CARD_SOLID = 1
         const val CARD_OUTLINE = 2
+        /** 液态玻璃：高光渐变边框 + 折射亮带，参考 AndroidLiquidGlass 的观感。 */
+        const val CARD_LIQUID = 3
 
         const val CORNER_SMALL = 0
         const val CORNER_MEDIUM = 1
@@ -225,7 +227,7 @@ object AppearanceState {
      * 注意：解码/缩放/压缩都很重，**调用方必须放到 IO 线程**，
      * 以前在主线程同步调用，大图会把应用卡到被系统杀掉（表现成"选图闪退"）。
      *
-     * 画质优先：长边 2560 + JPEG 92，2K 屏上不再糊；解码用 ARGB_8888，
+     * 画质优先：长边 2560 + JPEG 96，2K 屏上不再糊；解码用 ARGB_8888，
      * 内存不足时才退回 RGB_565 重试，异常统一兜底。
      */
     fun importImage(context: Context, uri: android.net.Uri): String? = try {
@@ -264,7 +266,7 @@ object AppearanceState {
                     val dest = java.io.File(context.filesDir, name)
                     val ok = try {
                         java.io.FileOutputStream(dest).use {
-                            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it)
+                            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 96, it)
                         }
                     } catch (e: Throwable) {
                         false

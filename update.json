@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.74",
-  "notes": "新增了 待办全屏提醒：到点直接铺满整屏（锁屏/亮屏都能弹出），样式与锁机提醒一致\n新增了 未完成重复提醒：提醒后不点完成，会按设定的间隔再次提醒，间隔可在提醒设置里自定义（关闭/5/10/15/30 分钟）\n新增了 通知栏「完成」按钮：不用打开应用也能直接标记完成\n优化了 清空完成历史：现在会先弹确认框，确认后才删除\n修复了 从文件导入待办时闪退的问题\n优化了 设置结构：移除「白名单应用」入口，「自定义锁机箴言」归入界面主题\n优化了 自定义背景图清晰度：长边提升到 2560、JPEG 质量 92，不再明显发糊\n优化了 权限授权方式：改为经系统接口直连，避免被部分 ROM 的安全护盾误判拦截\n清理了 设置页多余的风险提示文案",
+  "tag": "v3.11.75",
+  "notes": "新增了 液态玻璃卡片样式：高光渐变填充 + 光线弯折描边 + 折射光斑，在「界面主题 → 卡片」里可选「液态」\n修复了 自定义背景图发糊的根因：不模糊时按 1:1 解码，不再把 2560 的图压成 1280 再铺满屏幕\n优化了 背景图导入画质：JPEG 质量 92 → 96，解码改用 ARGB_8888（低内存机型自动回退）\n优化了 背景图缩放质量：绘制改用高质量过滤，缩小到屏幕尺寸时更锐利\n提示：旧版本导入的背景图已被压缩保存，更新后重新选择一次图片才能获得最佳画质",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.74/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.74/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.75/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.75/app-general-release.apk"
   }
 }

@@ -213,18 +213,27 @@ fun AppearancePanel() {
         // ── 卡片 ──
         SectionTitle(Icons.Default.Layers, "卡片")
         FxOptionRow(
-            options = listOf(Appearance.CARD_GLASS, Appearance.CARD_SOLID, Appearance.CARD_OUTLINE),
+            options = listOf(
+                Appearance.CARD_GLASS,
+                Appearance.CARD_LIQUID,
+                Appearance.CARD_SOLID,
+                Appearance.CARD_OUTLINE
+            ),
             selected = a.cardStyle,
             label = {
                 when (it) {
                     Appearance.CARD_GLASS -> "玻璃"
+                    Appearance.CARD_LIQUID -> "液态"
                     Appearance.CARD_SOLID -> "实色"
                     else -> "描边"
                 }
             },
             onSelect = { v -> set { it.copy(cardStyle = v) } }
         )
-        FxExpand(visible = a.cardStyle == Appearance.CARD_GLASS) {
+        FxExpand(
+            visible = a.cardStyle == Appearance.CARD_GLASS ||
+                a.cardStyle == Appearance.CARD_LIQUID
+        ) {
             SliderRow(title = "卡片不透明度", value = a.cardOpacity, range = 40f..100f, suffix = "%") { v ->
                 set { it.copy(cardOpacity = v) }
             }
