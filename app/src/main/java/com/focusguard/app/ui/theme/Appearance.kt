@@ -225,8 +225,8 @@ object AppearanceState {
      * 注意：解码/缩放/压缩都很重，**调用方必须放到 IO 线程**，
      * 以前在主线程同步调用，大图会把应用卡到被系统杀掉（表现成"选图闪退"）。
      *
-     * 画质优先：长边 2560 + JPEG 92，2K 屏上不再糊；
-     * 仍用 RGB_565 控制内存（2560 长边解码约 6–8 MB），异常统一兜底。
+     * 画质优先：长边 2560 + JPEG 92，2K 屏上不再糊；解码用 ARGB_8888，
+     * 内存不足时才退回 RGB_565 重试，异常统一兜底。
      */
     fun importImage(context: Context, uri: android.net.Uri): String? = try {
         val resolver = context.contentResolver
@@ -242,12 +242,20 @@ object AppearanceState {
             while (longEdge / sample > 2560) sample *= 2
             val opts = android.graphics.BitmapFactory.Options().apply {
                 inSampleSize = sample
-                inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
             }
             var bmp: android.graphics.Bitmap? = null
             try {
-                bmp = resolver.openInputStream(uri)?.use {
-                    android.graphics.BitmapFactory.decodeStream(it, null, opts)
+                bmp = try {
+                    resolver.openInputStream(uri)?.use {
+                        android.graphics.BitmapFactory.decodeStream(it, null, opts)
+                    }
+                } catch (oom: OutOfMemoryError) {
+                    // 低内存设备：退回 RGB_565 再解一次，宁可损失色深也别导入失败
+                    opts.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                    resolver.openInputStream(uri)?.use {
+                        android.graphics.BitmapFactory.decodeStream(it, null, opts)
+                    }
                 }
                 if (bmp == null) {
                     null
