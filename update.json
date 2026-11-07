@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.76",
-  "notes": "修复了 关闭「省 Token」后仍被每日调用次数限制的问题：现在关闭该开关即不做任何次数限制\n说明：调用次数只在「省 Token」开启时按设置的上限生效",
+  "tag": "v3.11.77",
+  "notes": "清理了 设置页的冗余说明文字：「像微信那样弹横幅提示，给你主动收手的机会」「完整词表…避免占用本页空间」「设置自动保存，改动即时生效」等\n精简了 提示词输入框下方的说明，只保留功能描述",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.76/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.76/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.77/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.77/app-general-release.apk"
   }
 }

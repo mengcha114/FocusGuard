@@ -304,7 +304,7 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "附加到 AI 检测提示词末尾，可让提醒更有趣、更有温度",
+                text = "附加到 AI 检测提示词末尾",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
             )
@@ -623,8 +623,7 @@ fun SettingsScreen(
             summary = "学习 / 娱乐特征词"
         ) {
             Text(
-                text = "「屏幕文字预过滤」命中这些词时直接判定（不截图、不调 AI）。\n" +
-                    "完整词表（默认内置，可增删改）在独立页面编辑，避免占用本页空间。",
+                text = "「屏幕文字预过滤」命中这些词时直接判定（不截图、不调 AI）。",
                 fontSize = 11.sp,
                 lineHeight = 17.sp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
@@ -792,11 +791,6 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text("锁机前弹出提醒", fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
-                    Text(
-                        text = "像微信那样弹横幅提示，给你主动收手的机会",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
-                    )
                 }
                 Switch(checked = aiAlertEnabled, onCheckedChange = { aiAlertEnabled = it })
             }
@@ -1408,15 +1402,6 @@ fun SettingsScreen(
             )
         }
 
-        Text(
-            text = "设置自动保存，改动即时生效",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
 
         Spacer(Modifier.height(16.dp))
     }
