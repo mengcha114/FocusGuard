@@ -144,8 +144,17 @@ class MainActivity : ComponentActivity() {
     /** 待办提醒通知 / 第三方分享进来的「打开备忘录」请求。 */
     private var pendingMemoOpen by mutableStateOf(false)
 
+    /** 待办到期通知要定位的备忘录 id；进入备忘录页后消费并清零。 */
+    private var pendingMemoId by mutableLongStateOf(0L)
+
     /** 开机自动恢复守护：待界面完全就绪后再执行（只在 onResume 之后触发一次）。 */
     private var pendingAutoResumeGuard by mutableStateOf(false)
+
+    /** 本次界面启动是否要去补录屏授权（系统回收后由守护服务拉起）。 */
+    private var pendingProjectionRestore = false
+
+    /** 本进程是否已经主动弹过一次录屏授权（防止用户拒绝后无限重弹）。 */
+    private var projectionRestoreRequested = false
 
     /** 自动检测更新：发现的新版本（非空 ⇒ 弹提醒框）。 */
     private var pendingUpdate by mutableStateOf<com.focusguard.app.update.UpdateChecker.UpdateInfo?>(null)
@@ -157,8 +166,17 @@ class MainActivity : ComponentActivity() {
         /** 待办到期通知点击后带上的 extra：主界面直接打开备忘录页。 */
         const val EXTRA_OPEN_MEMO = "open_memo"
 
+        /** 待办到期通知带上的备忘录 id：打开备忘录页后定位到该条。 */
+        const val EXTRA_MEMO_ID = "memo_id"
+
         /** 开机自动恢复守护：由 BootReceiver 带上，界面就绪后再请求录屏授权。 */
         const val EXTRA_AUTO_RESUME_GUARD = "auto_resume_guard"
+
+        /**
+         * 录屏授权被系统回收后由守护服务带上：界面就绪后立即重新弹授权框。
+         * 与 EXTRA_AUTO_RESUME_GUARD 分开，是因为后者还受「开机自动恢复」开关约束。
+         */
+        const val EXTRA_RESTORE_PROJECTION = "restore_projection"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -191,6 +209,9 @@ class MainActivity : ComponentActivity() {
         // 开机自动恢复守护：BootReceiver 带标记把界面拉起来
         if (intent?.getBooleanExtra(EXTRA_AUTO_RESUME_GUARD, false) == true) {
             pendingAutoResumeGuard = true
+        }
+        if (intent?.getBooleanExtra(EXTRA_RESTORE_PROJECTION, false) == true) {
+            pendingProjectionRestore = true
         }
 
         // vc63 一次性迁移：历史版本已经授权 Dhizuku 的用户不会再次触发授权
@@ -694,7 +715,10 @@ class MainActivity : ComponentActivity() {
                             }
                             composable("memo") {
                                 com.focusguard.app.ui.screens.MemoScreen(
-                                    onBack = { navController.popBackStack() }
+                                    onBack = { navController.popBackStack() },
+                                    // 从待办提醒进来时，直接定位到那条待办
+                                    openMemoId = pendingMemoId,
+                                    onOpenHandled = { pendingMemoId = 0L }
                                 )
                             }
                             composable("apps") {
@@ -756,12 +780,15 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra(EXTRA_AUTO_RESUME_GUARD, false)) {
             pendingAutoResumeGuard = true
         }
+        if (intent.getBooleanExtra(EXTRA_RESTORE_PROJECTION, false)) {
+            pendingProjectionRestore = true
+        }
     }
 
     /**
      * 备忘录相关 Intent：
      * - ACTION_SEND（text/plain）：第三方备忘录/便签分享的文本 → 导入桥
-     * - EXTRA_OPEN_MEMO：待办到期通知点击 → 打开备忘录页
+     * - EXTRA_OPEN_MEMO / EXTRA_MEMO_ID：待办到期通知（含全屏提醒）→ 打开备忘录页并定位该条
      */
     private fun handleMemoIntent(intent: Intent?) {
         intent ?: return
@@ -772,8 +799,10 @@ class MainActivity : ComponentActivity() {
                 pendingMemoOpen = true
             }
         }
-        if (intent.getBooleanExtra(EXTRA_OPEN_MEMO, false)) {
+        val memoId = intent.getLongExtra(EXTRA_MEMO_ID, 0L)
+        if (intent.getBooleanExtra(EXTRA_OPEN_MEMO, false) || memoId > 0L) {
             pendingMemoOpen = true
+            if (memoId > 0L) pendingMemoId = memoId
         }
     }
 
@@ -1170,6 +1199,12 @@ class MainActivity : ComponentActivity() {
         ) {
             return
         }
+        // ④ 顶上如果是系统图片选择器/相册，说明用户正在选图，不是要退出应用。
+        //    以前这里会 finishAndRemoveTask()，把任务和选图回调一起销毁，
+        //    选择器返回后无处可回——用户看到的就是"选图时闪退/被强制退出"。
+        if (com.focusguard.app.util.LeaveGuard.isPickerHost(fg)) {
+            return
+        }
         com.focusguard.app.util.StartupTrace.mark(this, "main.hideTask")
         runCatching { finishAndRemoveTask() }
     }
@@ -1225,6 +1260,7 @@ class MainActivity : ComponentActivity() {
         maybeCheckUpdate()
         // 开机自动恢复守护：界面真正就绪后再延迟 800ms 请求授权（窗口已获得焦点），
         // 避免"在 onCreate 里弹授权框"那条曾导致部分 ROM 闪退的路径。
+        val autoResumePending = pendingAutoResumeGuard
         if (pendingAutoResumeGuard) {
             pendingAutoResumeGuard = false
             com.focusguard.app.util.StartupTrace.mark(this, "main.autoResumeIntent")
@@ -1244,6 +1280,29 @@ class MainActivity : ComponentActivity() {
                 com.focusguard.app.util.StartupTrace.mark(this, "main.autoResumeStart")
                 startGuard()
             }, 800L)
+        }
+
+        // ── 录屏授权自动恢复 ───────────────────────────────
+        // 触发场景：① 系统回收录屏授权后，守护服务把本界面拉起来（EXTRA_RESTORE_PROJECTION）；
+        // ② 用户自己打开应用，而守护本应在跑、却因授权丢失停下了（guardEnabled 仍为 true）。
+        // 每个进程最多主动弹一次，避免用户点「拒绝」后一回到界面就又弹 → 死循环。
+        if (!autoResumePending && !projectionRestoreRequested) {
+            val shouldRestore = pendingProjectionRestore || appSettings.guardEnabled
+            pendingProjectionRestore = false
+            if (shouldRestore && !startupSafeMode && !isLockActiveNow() &&
+                !com.focusguard.app.service.MonitorService.isRunning &&
+                appSettings.autoGrantProjection && appSettings.apiKey.isNotBlank()
+            ) {
+                projectionRestoreRequested = true
+                android.os.Handler(mainLooper).postDelayed({
+                    if (!com.focusguard.app.service.MonitorService.isRunning && !isLockActiveNow()) {
+                        com.focusguard.app.util.StartupTrace.mark(this, "main.restoreProjection")
+                        requestPermission("screen_capture")
+                    }
+                }, 900L)
+            }
+        } else {
+            pendingProjectionRestore = false
         }
         // 守护按钮状态按**真实值**校正：延后 800ms（刚点「开始守护」时服务还在启动中，
         // 立刻刷新会把按钮又变回「开始守护」），之后每 3 秒再校一次

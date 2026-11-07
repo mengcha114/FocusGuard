@@ -636,7 +636,15 @@ object LockOverlayManager {
         val layers = mutableListOf(base)
         if (a.background == com.focusguard.app.ui.theme.Appearance.BG_IMAGE) {
             com.focusguard.app.ui.theme.AppearanceState.imageFile(context, a)?.let { f ->
-                runCatching { android.graphics.BitmapFactory.decodeFile(f.absolutePath) }.getOrNull()?.let { bmp ->
+                // 锁机浮现层也要画背景图：这里不能整图 ARGB_8888 解码，
+                // 否则低内存机型在"锁机 + 选图后"容易 OOM（无 Java 栈的闪退）。
+                runCatching {
+                    val opts = android.graphics.BitmapFactory.Options().apply {
+                        inSampleSize = 2
+                        inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                    }
+                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)
+                }.getOrNull()?.let { bmp ->
                     layers += CenterCropDrawable(bmp)
                     layers += GradientDrawable().apply {
                         setColor(android.graphics.Color.parseColor(tint(p.bg, (a.imageDim.coerceIn(0, 90) * 255 / 100))))

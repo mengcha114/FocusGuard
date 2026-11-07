@@ -274,18 +274,78 @@ class MonitorService : Service() {
         override fun onStop() {
             Log.w(TAG, "MediaProjection 已被系统停止")
             stopMonitoring()
+            // 系统回收录音/录屏授权后自动尝试恢复（详见 maybeAutoRestoreProjection）：
+            // 这一步依赖悬浮窗权限，因为 Android 10+ 只有具备该权限的应用
+            // 才能从后台拉起 Activity 去弹系统授权框。
+            maybeAutoRestoreProjection()
             // 提示用户恢复：打开应用会自动重新授权（后台无法自动恢复投影）
             try {
                 com.focusguard.app.service.AlertNotifier.alert(
                     this@MonitorService,
                     "AI 守护已中断",
-                    "屏幕录制授权被系统回收，打开专注卫士将自动恢复检测",
+                    "屏幕录制授权被系统回收，正在尝试自动恢复；若弹窗出现请点「立即开始」",
                     id = 1007
                 )
             } catch (e: Exception) {
                 Log.w(TAG, "发送恢复提醒失败：${e.message}")
             }
         }
+    }
+
+    /**
+     * 录屏授权被系统回收后的自动恢复。
+     *
+     * 为什么不能"静默续期"：Android 14 起每个 MediaProjection 令牌只能授权一次，
+     * 必须由用户（或我们代点）在系统弹窗上确认。所以流程是：
+     * 后台拉起 MainActivity → 它立刻拉起系统授权框 → 已开「自动点允许」时
+     * 由无障碍服务代点「立即开始」。全程不需要用户找入口。
+     *
+     * 三个前提缺一不可，否则退回「发通知让用户手动恢复」：
+     * 1. 悬浮窗权限（后台启动 Activity 的硬性条件）；
+     * 2. 用户本意是要守护的（guardEnabled），不是主动点过停止；
+     * 3. 节流：60 秒内不重复、每小时最多 3 次，避免用户拒绝时死循环弹框。
+     */
+    private fun maybeAutoRestoreProjection() {
+        val s = settings
+        if (!s.guardEnabled) return
+        if (!s.autoGrantProjection) {
+            Log.w(TAG, "录屏授权中断：未开启「自动点允许」，不主动拉起授权界面")
+            return
+        }
+        if (s.apiKey.isBlank()) return
+        if (com.focusguard.app.service.LockGuardService.isRunning && lockState.isLocked) {
+            // 锁机期间弹授权框会浮在锁机页上面，反而给人"可以退出"的错觉
+            Log.w(TAG, "录屏授权中断：锁机期间不自动拉起授权界面")
+            return
+        }
+        if (!com.focusguard.app.util.PermissionChecker.canDrawOverlays(this)) {
+            Log.w(TAG, "录屏授权中断：缺少悬浮窗权限，无法后台拉起授权界面")
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (now - s.projectionRestoreAt < 60_000L) return
+        if (now - s.projectionRestoreWindow > 60 * 60 * 1000L) {
+            s.projectionRestoreWindow = now
+            s.projectionRestoreCount = 0
+        }
+        if (s.projectionRestoreCount >= 3) {
+            Log.w(TAG, "录屏授权中断：一小时内已自动恢复 3 次，改为通知提醒用户")
+            return
+        }
+        s.projectionRestoreAt = now
+        s.projectionRestoreCount += 1
+        Log.w(TAG, "录屏授权被回收，尝试自动恢复（本小时第 ${s.projectionRestoreCount} 次）")
+        runCatching {
+            startActivity(
+                android.content.Intent(this, com.focusguard.app.MainActivity::class.java)
+                    .addFlags(
+                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                            android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                    .putExtra(com.focusguard.app.MainActivity.EXTRA_RESTORE_PROJECTION, true)
+            )
+        }.onFailure { Log.w(TAG, "自动恢复录屏授权失败：${it.message}") }
     }
 
     override fun onCreate() {
@@ -327,7 +387,11 @@ class MonitorService : Service() {
                 }
             }
             ACTION_FOREGROUND -> scheduleForegroundCheck(intent.getStringExtra("pkg").orEmpty())
-            ACTION_STOP -> stopMonitoring()
+            ACTION_STOP -> {
+                // 用户主动停止：清掉"想守护"的意愿，否则系统回收授权后会被自动拉起
+                settings.guardEnabled = false
+                stopMonitoring()
+            }
             ACTION_TEST -> serviceScope.launch { performDetection(isManualTest = true) }
             // 自愈：检测循环意外停止但投影仍有效 → 重启循环
             ACTION_RESURRECT -> {
@@ -494,6 +558,8 @@ class MonitorService : Service() {
         )
 
         settings.serviceRunning = true
+        // 意愿标记：以后即使录屏授权被系统回收，也知道应该自动恢复
+        settings.guardEnabled = true
         isRunning = true
         consecutiveViolations = 0
         scheduler = AdaptiveScheduler(settings.intervalMinutes)

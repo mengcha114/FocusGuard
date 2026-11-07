@@ -24,8 +24,85 @@ class FocusGuardApp : Application() {
          */
         const val ALERT_CHANNEL_ID = "focus_guard_alert"
 
-        /** 待办到期提醒通知渠道。 */
+        /** 待办到期提醒通知渠道（提示音 + 震动，也是升级前的默认渠道）。 */
         const val MEMO_CHANNEL_ID = "focus_guard_memo"
+
+        /** 待办提醒的其余三种固定渠道，按「提示音 / 震动」组合划分。 */
+        const val MEMO_CHANNEL_SILENT_ID = "focus_guard_memo_silent"
+        const val MEMO_CHANNEL_SOUND_ID = "focus_guard_memo_sound"
+        const val MEMO_CHANNEL_VIBRATE_ID = "focus_guard_memo_vibrate"
+
+        /** 四个渠道统一的震动节奏。 */
+        private val MEMO_VIBRATION = longArrayOf(0, 180, 100, 180)
+
+        /**
+         * 按用户勾选的提示音/震动组合挑固定渠道。
+         * 复用旧渠道作为「提示音 + 震动」，老用户在该渠道里做的静音等调整不会丢。
+         */
+        fun memoChannelId(sound: Boolean, vibrate: Boolean): String = when {
+            sound && vibrate -> MEMO_CHANNEL_ID
+            sound -> MEMO_CHANNEL_SOUND_ID
+            vibrate -> MEMO_CHANNEL_VIBRATE_ID
+            else -> MEMO_CHANNEL_SILENT_ID
+        }
+
+        /**
+         * 幂等创建待办提醒的四个固定渠道。
+         * 渠道的声音/震动只能建渠道时定型，所以按组合预先建好，提醒时只选 id。
+         */
+        fun ensureMemoChannels(context: android.content.Context) {
+            val manager = context.getSystemService(NotificationManager::class.java) ?: return
+            runCatching {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        MEMO_CHANNEL_ID, "待办到期提醒", NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "备忘录事项到达截止时间时提醒"
+                        setShowBadge(true)
+                        enableVibration(true)
+                        vibrationPattern = MEMO_VIBRATION
+                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    }
+                )
+                // 静默：仍有高重要性横幅，只是不响不震
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        MEMO_CHANNEL_SILENT_ID, "待办提醒 · 静默", NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "备忘录到期时只显示通知横幅"
+                        setShowBadge(true)
+                        setSound(null, null)
+                        enableVibration(false)
+                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    }
+                )
+                // 仅提示音
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        MEMO_CHANNEL_SOUND_ID, "待办提醒 · 提示音", NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "备忘录到期时响铃并显示通知横幅"
+                        setShowBadge(true)
+                        setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI, null)
+                        enableVibration(false)
+                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    }
+                )
+                // 仅震动
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        MEMO_CHANNEL_VIBRATE_ID, "待办提醒 · 震动", NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "备忘录到期时震动并显示通知横幅"
+                        setShowBadge(true)
+                        setSound(null, null)
+                        enableVibration(true)
+                        vibrationPattern = MEMO_VIBRATION
+                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    }
+                )
+            }.onFailure { Log.w(TAG, "创建待办提醒渠道失败：${it.message}") }
+        }
 
         const val NOTIFICATION_ID = 1001
 
@@ -91,6 +168,9 @@ class FocusGuardApp : Application() {
         // 用户反馈「清掉后台后一打开就闪退，且没有崩溃日志」，轨迹定位到
         // 「app.onCreate 之后、main.onCreate 之前」，所以这一段逐步打点 + 全部兜底。
         runCatching { com.focusguard.app.util.CrashLogger.install(this) }
+        // 读上次进程退出原因（内存不足/ANR/被强停）：这类退出没有 Java 崩溃日志，
+        // 只有系统侧的退出历史能说明真相，写进检测日志供下次打开时查看
+        runCatching { com.focusguard.app.util.ExitDiagnostics.recordPreviousExit(this) }
         runCatching { com.focusguard.app.util.StartupTrace.begin(this) }
         runCatching { installCrashHandler() }
         runCatching { com.focusguard.app.util.StartupTrace.mark(this, "app.crashHandler") }
@@ -181,18 +261,7 @@ class FocusGuardApp : Application() {
         }
         manager.createNotificationChannel(alertChannel)
 
-        // 待办到期提醒：IMPORTANCE_HIGH 横幅 + 提示音，与专注提醒同级
-        val memoChannel = NotificationChannel(
-            MEMO_CHANNEL_ID,
-            "待办到期提醒",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "备忘录事项到达截止时间时提醒"
-            setShowBadge(true)
-            enableVibration(true)
-            vibrationPattern = longArrayOf(0, 180, 100, 180)
-            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
-        }
-        manager.createNotificationChannel(memoChannel)
+        // 待办到期提醒：按提醒形式组合建四个固定渠道（通知/提示音/震动/全屏共用）
+        ensureMemoChannels(this)
     }
 }

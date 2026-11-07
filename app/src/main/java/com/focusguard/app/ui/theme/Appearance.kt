@@ -127,6 +127,35 @@ object AppearanceState {
         private set
     private var loaded = false
 
+    private const val PICKER_PREFS = "focus_guard_picker"
+    private const val KEY_PICKER_AT = "picker_opened_at"
+
+    /**
+     * 记录「刚打开过图片选择器」。
+     *
+     * 用途只有一个：如果进程在选图期间被系统杀掉，下次启动时
+     * [com.focusguard.app.util.ExitDiagnostics] 能判断出"退出时正在选图"，
+     * 而不是把那次退出当成普通崩溃。写入的是时间戳，返回后清除。
+     */
+    fun markPickerOpened(context: Context) {
+        runCatching {
+            context.applicationContext.getSharedPreferences(PICKER_PREFS, Context.MODE_PRIVATE)
+                .edit().putLong(KEY_PICKER_AT, System.currentTimeMillis()).apply()
+        }
+    }
+
+    fun clearPickerOpened(context: Context) {
+        runCatching {
+            context.applicationContext.getSharedPreferences(PICKER_PREFS, Context.MODE_PRIVATE)
+                .edit().remove(KEY_PICKER_AT).apply()
+        }
+    }
+
+    fun pickerOpenedAt(context: Context): Long = runCatching {
+        context.applicationContext.getSharedPreferences(PICKER_PREFS, Context.MODE_PRIVATE)
+            .getLong(KEY_PICKER_AT, 0L)
+    }.getOrDefault(0L)
+
     fun get(context: Context): Appearance {
         if (!loaded) {
             value = Appearance.load(context.applicationContext)
@@ -156,7 +185,7 @@ object AppearanceState {
      * 注意：解码/缩放/压缩都很重，**调用方必须放到 IO 线程**，
      * 以前在主线程同步调用，大图会把应用卡到被系统杀掉（表现成"选图闪退"）。
      *
-     * 内存控制：长边 1440 且用 RGB_565，单张图解码后约 3–4 MB；
+     * 内存控制：长边 1280 且用 RGB_565，单张图解码后约 2–3 MB；
      * 早先 2160 + ARGB_8888 在 4GB 内存机型上容易触发 OOM（表现为无日志闪退）。
      * 任何异常（含 OutOfMemoryError）都在这里兜住并返回 null，由上层提示重试。
      */
@@ -171,7 +200,7 @@ object AppearanceState {
             null
         } else {
             var sample = 1
-            while (longEdge / sample > 1440) sample *= 2
+            while (longEdge / sample > 1280) sample *= 2
             val opts = android.graphics.BitmapFactory.Options().apply {
                 inSampleSize = sample
                 inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
@@ -188,7 +217,7 @@ object AppearanceState {
                     val dest = java.io.File(context.filesDir, name)
                     val ok = try {
                         java.io.FileOutputStream(dest).use {
-                            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, it)
+                            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it)
                         }
                     } catch (e: Throwable) {
                         false

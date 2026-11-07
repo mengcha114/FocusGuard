@@ -324,7 +324,9 @@ class DetectionPipeline(
         val captureMs = System.currentTimeMillis() - captureStartedAt
         if (capture == null) {
             return DetectionOutcome(
-                "NEUTRAL", 0f, "屏幕内容不可用，跳过本轮（取图耗时 ${captureMs}ms）",
+                "NEUTRAL", 0f,
+                if (settings.logHideCostDetail) "屏幕内容不可用，跳过本轮"
+                else "屏幕内容不可用，跳过本轮（取图耗时 ${captureMs}ms）",
                 DetectionSource.ERROR, pkg, label
             )
         }
@@ -479,8 +481,12 @@ class DetectionPipeline(
             )
             // 用户反复反馈「识别太慢」：把耗时直接写进检测日志，手机上一眼能看出
             // 慢在哪一段（取图慢 = 机型/无障碍限流；AI 慢 = 网络或模型）。
-            val costText = "〔耗时 ${String.format(java.util.Locale.US, "%.1f", totalMs / 1000.0)} 秒" +
-                "：取图 ${captureMs}ms · AI ${aiMs}ms〕"
+            // 用户开了「隐藏耗时明细」时直接不写进原因：
+            // 日志页虽然会过滤，但同一条原因还会被执法弹窗/通知原样展示，
+            // 只在展示层过滤会漏掉那些弹窗，所以从源头就不追加。
+            val costText = if (settings.logHideCostDetail) "" else
+                "〔耗时 ${String.format(java.util.Locale.US, "%.1f", totalMs / 1000.0)} 秒" +
+                    "：取图 ${captureMs}ms · AI ${aiMs}ms〕"
 
             return DetectionOutcome(
                 aiResult.classification, aiResult.confidence, "$reason$costText",

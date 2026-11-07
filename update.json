@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.69",
-  "notes": "修复了 连接测试一直显示「测试中」：触发逻辑会自我取消，已改为递增触发并加 45 秒超时兜底\n修复了 选背景图闪退：导入再降一档内存（长边 1440 + RGB_565），解码失败或内存不足都只提示失败、不再崩溃\n新增了 日志可选隐藏耗时明细（耗时 / 取图 / AI 分段用时），只影响展示\n调整了 Shizuku / Dhizuku 相关设置项：未授权时隐藏，授权后自动出现；授权页新增风险提示",
+  "tag": "v3.11.70",
+  "notes": "修复了 选背景图时闪退 / 像被强制退出：打开相册被误判成用户离开，应用主动销毁了任务和选图回调；现在识别图片选择器、相册与文件选择器，不再自杀\n修复了 屏幕录制授权被系统回收后不会自动恢复：现在会尝试重新拉起授权（悬浮窗权限可用时），并做节流防骚扰\n新增了 待办提醒形式可多选组合：通知、提示音、震动、全屏提醒\n修复了 隐藏耗时明细只隐藏了日志，执法弹窗里仍会显示耗时；现在从源头不再写入\n调整了 授权页说明文案为「以下权限为非必须权限」",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.69/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.69/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.70/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.70/app-general-release.apk"
   }
 }

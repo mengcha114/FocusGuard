@@ -66,7 +66,11 @@ sealed interface EditorTarget {
  * 每屏至多一个实底主按钮（FAB）、eyebrow 标签风格。
  */
 @Composable
-fun MemoScreen(onBack: () -> Unit) {
+fun MemoScreen(
+    onBack: () -> Unit,
+    openMemoId: Long = 0L,
+    onOpenHandled: () -> Unit = {}
+) {
     val context = LocalContext.current
     val memoStore = remember { MemoStore(context) }
     val memoPrefs = remember { MemoPrefs(context) }
@@ -104,6 +108,16 @@ fun MemoScreen(onBack: () -> Unit) {
             MemoImportBridge.pendingText = null
             showImport = true
             ImportPreviewHolder.text = text
+        }
+    }
+
+    // 待办提醒点击进来：直接打开对应条目的编辑框，用完即清，避免返回后反复弹出
+    LaunchedEffect(openMemoId) {
+        if (openMemoId > 0L) {
+            memoStore.getAll().firstOrNull { it.id == openMemoId }?.let {
+                editor = EditorTarget.Edit(it)
+            }
+            onOpenHandled()
         }
     }
 
@@ -248,6 +262,7 @@ fun MemoScreen(onBack: () -> Unit) {
             palette = palette,
             prefs = memoPrefs,
             exactAlarm = MemoReminder.canScheduleExact(context),
+            fullScreenAllowed = MemoReminder.canUseFullScreen(context),
             onChanged = {
                 styleTick++
                 refresh()
@@ -259,6 +274,18 @@ fun MemoScreen(onBack: () -> Unit) {
                     context.startActivity(
                         Intent(
                             Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                    )
+                }
+            },
+            onOpenFullScreenSetting = {
+                // Android 14+ 全屏提醒是特殊权限，只能跳系统页让用户手动允许
+                runCatching {
+                    com.focusguard.app.util.LeaveGuard.markLeaving()
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
                             Uri.parse("package:${context.packageName}")
                         )
                     )
@@ -1102,20 +1129,24 @@ private fun StylePanelDialog(
     palette: FocusColors.Palette,
     prefs: MemoPrefs,
     exactAlarm: Boolean,
+    fullScreenAllowed: Boolean,
     onChanged: () -> Unit,
     onDismiss: () -> Unit,
-    onOpenExactAlarmSetting: () -> Unit
+    onOpenExactAlarmSetting: () -> Unit,
+    onOpenFullScreenSetting: () -> Unit
 ) {
     var fontScale by remember { mutableIntStateOf(prefs.fontScale) }
     var textColor by remember { mutableIntStateOf(prefs.textColor) }
     var cardStyle by remember { mutableIntStateOf(prefs.cardStyle) }
     var lead by remember { mutableIntStateOf(prefs.reminderLeadMinutes) }
+    var reminderFlags by remember { mutableIntStateOf(prefs.reminderFlags) }
 
     fun save() {
         prefs.fontScale = fontScale
         prefs.textColor = textColor
         prefs.cardStyle = cardStyle
         prefs.reminderLeadMinutes = lead
+        prefs.reminderFlags = reminderFlags
         onChanged()
     }
 
@@ -1238,6 +1269,42 @@ private fun StylePanelDialog(
                         fontSize = 10.sp,
                         color = palette.error,
                         modifier = Modifier.clickable(onClick = onOpenExactAlarmSetting)
+                    )
+                }
+
+                // 提醒形式：通知为必选基础，其余可任意组合；改动即时保存
+                SectionLabel("提醒形式", palette)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        MemoPrefs.REMINDER_NOTIFY to "通知",
+                        MemoPrefs.REMINDER_SOUND to "提示音",
+                        MemoPrefs.REMINDER_VIBRATE to "震动",
+                        MemoPrefs.REMINDER_FULLSCREEN to "全屏提醒"
+                    ).forEach { (flag, label) ->
+                        val locked = flag == MemoPrefs.REMINDER_NOTIFY
+                        FilterChip(
+                            shape = RoundedCornerShape(10.dp),
+                            selected = (reminderFlags and flag) != 0,
+                            onClick = {
+                                // 通知位锁定：取消勾选会静默无提醒，因此不允许
+                                if (!locked) {
+                                    reminderFlags = MemoPrefs.sanitizeReminderFlags(reminderFlags xor flag)
+                                    prefs.reminderFlags = reminderFlags
+                                    onChanged()
+                                }
+                            },
+                            label = { Text(label, fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                Text("通知为必选形式，其余可任意组合", fontSize = 10.sp, color = palette.faint)
+                if (!fullScreenAllowed && (reminderFlags and MemoPrefs.REMINDER_FULLSCREEN) != 0) {
+                    Text(
+                        text = "全屏提醒权限未开启，点击前往授权（未授权时退化为普通通知）",
+                        fontSize = 10.sp,
+                        color = palette.error,
+                        modifier = Modifier.clickable(onClick = onOpenFullScreenSetting)
                     )
                 }
             }

@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import com.focusguard.app.FocusGuardApp
 import com.focusguard.app.MainActivity
 import com.focusguard.app.R
 import com.focusguard.app.data.MemoPrefs
@@ -71,6 +72,19 @@ object MemoReminder {
         } catch (e: Exception) {
             false
         }
+    }
+
+    /**
+     * 是否可使用全屏提醒。
+     * Android 14+ 该权限默认不授予普通应用，需用户在本应用的通知设置里手动允许；
+     * 未授权时 setFullScreenIntent 会被系统忽略，退化为普通通知。
+     */
+    fun canUseFullScreen(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return true
+        return runCatching {
+            context.getSystemService(NotificationManager::class.java)
+                ?.canUseFullScreenIntent() ?: false
+        }.getOrDefault(false)
     }
 
     private fun schedule(context: Context, id: Long, text: String, triggerAt: Long) {
@@ -141,27 +155,47 @@ class MemoReminderReceiver : BroadcastReceiver() {
                 ?: return
             if (!nm.areNotificationsEnabled()) return
 
-            val contentPi = PendingIntent.getActivity(
+            // 渠道已由 Application 幂等创建；这里再兜一次，防极端情况下进程直接进广播
+            FocusGuardApp.ensureMemoChannels(context)
+
+            val prefs = MemoPrefs(context)
+            val sound = prefs.hasReminderFlag(MemoPrefs.REMINDER_SOUND)
+            val vibrate = prefs.hasReminderFlag(MemoPrefs.REMINDER_VIBRATE)
+            val fullScreen = prefs.hasReminderFlag(MemoPrefs.REMINDER_FULLSCREEN)
+
+            // 全屏与普通通知共用同一个 PendingIntent：点击后都能定位到这条待办
+            val openPi = PendingIntent.getActivity(
                 context,
                 (id % 1_000_000).toInt(),
                 Intent(context, MainActivity::class.java)
                     .putExtra(MainActivity.EXTRA_OPEN_MEMO, true)
+                    .putExtra(MainActivity.EXTRA_MEMO_ID, id)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val notification = android.app.Notification.Builder(
+            val builder = android.app.Notification.Builder(
                 context,
-                com.focusguard.app.FocusGuardApp.MEMO_CHANNEL_ID
+                FocusGuardApp.memoChannelId(sound, vibrate)
             )
                 .setSmallIcon(R.drawable.ic_shield)
                 .setContentTitle("待办到期")
                 .setContentText(text)
                 .setStyle(android.app.Notification.BigTextStyle().bigText(text))
-                .setContentIntent(contentPi)
+                .setContentIntent(openPi)
                 .setAutoCancel(true)
-                .build()
-            nm.notify(NOTIF_BASE + (id % 1000).toInt(), notification)
+                // 高重要性 + 提醒类别：保证横幅能浮出（API 26+ 实际由渠道决定）
+                .setCategory(android.app.Notification.CATEGORY_REMINDER)
+                .setPriority(android.app.Notification.PRIORITY_HIGH)
+                .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
+
+            if (fullScreen) {
+                // 权限缺失/ROM 拒绝时 setFullScreenIntent 会被忽略或抛异常：
+                // 兜住后普通通知照常显示，用户未解锁也能在通知栏看到。
+                runCatching { builder.setFullScreenIntent(openPi, true) }
+            }
+
+            nm.notify(NOTIF_BASE + (id % 1000).toInt(), builder.build())
         } catch (e: Exception) {
             Log.w(TAG, "发送提醒通知失败：${e.message}")
         }

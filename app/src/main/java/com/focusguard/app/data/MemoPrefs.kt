@@ -10,6 +10,7 @@ import android.content.SharedPreferences
  * - 文字颜色：跟随卡片 / 暖纸白 / 琥珀 / 灰绿
  * - 卡片背景：跟随主题 / 墨 / 暖纸 / 琥珀夜光
  * - 提醒提前量：准时 / 提前 5 分钟 / 提前 15 分钟
+ * - 提醒形式：通知 / 提示音 / 震动 / 全屏，可任意组合
  *
  * 全部选项色值取自 DESIGN.md 纸墨时间令牌表，不引入新色相。
  */
@@ -21,6 +22,7 @@ class MemoPrefs(context: Context) {
         private const val KEY_TEXT_COLOR = "text_color"
         private const val KEY_CARD_STYLE = "card_style"
         private const val KEY_REMINDER_LEAD = "reminder_lead_minutes"
+        private const val KEY_REMINDER_FLAGS = "reminder_flags"
 
         /** 字号档位。 */
         const val FONT_SMALL = 0
@@ -38,6 +40,23 @@ class MemoPrefs(context: Context) {
         const val CARD_INK = 1       // 墨 #151B22（暗）
         const val CARD_PAPER = 2     // 暖纸 #F0E9DA（亮）
         const val CARD_AMBER_NIGHT = 3 // 琥珀夜光 #221A10（暗棕）
+
+        /** 提醒形式位标记（可按位组合）。 */
+        const val REMINDER_NOTIFY = 1      // 通知横幅：基础形式，永远开启
+        const val REMINDER_SOUND = 2       // 提示音
+        const val REMINDER_VIBRATE = 4     // 震动
+        const val REMINDER_FULLSCREEN = 8  // 亮屏时全屏弹出
+        private const val REMINDER_ALL =
+            REMINDER_NOTIFY or REMINDER_SOUND or REMINDER_VIBRATE or REMINDER_FULLSCREEN
+
+        /**
+         * 默认值 = 通知 + 提示音 + 震动，与升级前「高重要性渠道默认响铃振动」一致。
+         * 老数据没有这个 key 时也落到这里，保证不会静默无提醒。
+         */
+        const val REMINDER_DEFAULT = REMINDER_NOTIFY or REMINDER_SOUND or REMINDER_VIBRATE
+
+        /** 清洗位标记：只保留已知位，并强制打开通知位（不允许全不选）。 */
+        fun sanitizeReminderFlags(raw: Int): Int = (raw and REMINDER_ALL) or REMINDER_NOTIFY
     }
 
     private val prefs: SharedPreferences =
@@ -69,4 +88,16 @@ class MemoPrefs(context: Context) {
     var reminderLeadMinutes: Int
         get() = prefs.getInt(KEY_REMINDER_LEAD, 0).coerceIn(0, 15)
         set(value) = prefs.edit().putInt(KEY_REMINDER_LEAD, value.coerceIn(0, 15)).apply()
+
+    /**
+     * 提醒形式组合（位标记，见 [REMINDER_NOTIFY] 等）。
+     * 读写都过 [sanitizeReminderFlags]，保证通知位始终存在。
+     */
+    var reminderFlags: Int
+        get() = sanitizeReminderFlags(prefs.getInt(KEY_REMINDER_FLAGS, REMINDER_DEFAULT))
+        set(value) = prefs.edit()
+            .putInt(KEY_REMINDER_FLAGS, sanitizeReminderFlags(value))
+            .apply()
+
+    fun hasReminderFlag(flag: Int): Boolean = (reminderFlags and flag) != 0
 }

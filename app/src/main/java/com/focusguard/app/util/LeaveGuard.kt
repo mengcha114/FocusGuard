@@ -40,4 +40,36 @@ object LeaveGuard {
         )
         true
     }.getOrDefault(false)
+
+    /**
+     * 顶层是不是「系统图片选择器 / 相册 / 文件选择器」。
+     *
+     * 用户反馈「选背景图时闪退或像被强制退出」的根因就在这里：
+     * 部分 ROM（MIUI/鸿蒙等）把相册选择器当成"用户离开了本应用"，
+     * 于是触发 [主界面.onUserLeaveHint] → `finishAndRemoveTask()`
+     * 把我们自己的任务连同 ActivityResult 回调一起销毁。
+     * 选择器返回时已经没有任务可回，看起来就是"应用被强制退出"，
+     * 而且因为是自杀，不会留下任何崩溃日志。
+     *
+     * 兜底判断：只要顶上是这些选择器，就绝不是用户在退出应用。
+     */
+    fun isPickerHost(pkg: String?): Boolean {
+        if (pkg.isNullOrBlank()) return false
+        return pkg == "com.android.providers.media.module" ||
+            pkg == "com.google.android.providers.media.module" ||
+            pkg == "com.android.documentsui" ||
+            pkg == "com.google.android.documentsui" ||
+            pkg == "com.android.intentresolver" ||
+            pkg == "com.google.android.intentresolver" ||
+            pkg == "com.miui.gallery" ||
+            pkg == "com.huawei.photos" ||
+            pkg == "com.huawei.hidisk" ||
+            pkg == "com.coloros.gallery3d" ||
+            pkg == "com.oppo.gallery3d" ||
+            pkg == "com.vivo.gallery" ||
+            pkg == "com.sec.android.gallery3d" ||
+            pkg == "com.android.gallery3d" ||
+            pkg.contains("photopicker") ||
+            pkg.contains("gallery")
+    }
 }

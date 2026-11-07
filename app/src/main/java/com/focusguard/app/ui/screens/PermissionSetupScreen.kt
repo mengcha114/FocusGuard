@@ -209,7 +209,7 @@ fun PermissionSetupScreen(
             permissions.forEachIndexed { index, perm ->
                 if (index == firstAdvancedIndex) {
                     Text(
-                        text = "以下权限为必需权限，仅供有需要的用户使用，有一定风险，请谨慎授权",
+                        text = "以下权限为非必须权限，仅供有需要的用户使用，有一定风险，请谨慎授权",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
                         modifier = Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp)

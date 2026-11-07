@@ -35,8 +35,11 @@ fun AppearancePanel() {
     var importing by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+
+    // 选图结果处理：系统相册选择器与文档选择器共用同一段逻辑
+    fun handlePicked(uri: android.net.Uri?) {
+        com.focusguard.app.ui.theme.AppearanceState.clearPickerOpened(context)
+        if (uri == null) return
         importing = true
         importError = false
         // 关键：解码 + 缩放 + 压缩整张照片必须离开主线程。
@@ -62,16 +65,29 @@ fun AppearancePanel() {
             }
         }
     }
-    // 相册选择器的启动也可能失败：部分机型/精简 ROM 既没有系统相册选择器，
-    // 也没有可用的文档选择器，launch() 会直接抛 ActivityNotFoundException。
-    // 不接住就是"点选图片就闪退"。
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        handlePicked(uri)
+    }
+    // 兜底选择器：部分精简 ROM / 鸿蒙没有系统图片选择器，PickVisualMedia 会抛
+    // ActivityNotFoundException；此时退回 SAF 的 GetContent（同样不需要存储权限）。
+    val fallbackPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        handlePicked(uri)
+    }
     fun launchPicker() {
+        // 标记「主动离开」：主界面的 onUserLeaveHint 会 finishAndRemoveTask()，
+        // 不标记的话部分 ROM 会把"打开相册"当成用户退出，直接销毁任务与回调
+        com.focusguard.app.util.LeaveGuard.markLeaving()
+        com.focusguard.app.ui.theme.AppearanceState.markPickerOpened(context)
         runCatching {
             picker.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
         }.onFailure {
-            Toast.makeText(context, "当前系统没有可用的图片选择器", Toast.LENGTH_LONG).show()
+            runCatching { fallbackPicker.launch("image/*") }.onFailure {
+                com.focusguard.app.ui.theme.AppearanceState.clearPickerOpened(context)
+                Toast.makeText(context, "当前系统没有可用的图片选择器", Toast.LENGTH_LONG).show()
+            }
         }
     }
 

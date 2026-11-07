@@ -184,6 +184,15 @@ gacha
         private const val KEY_TEXT_ONLY_UPLOAD = "text_only_upload"
         private const val KEY_REDACT_LOGS = "redact_logs"
         private const val KEY_LOG_HIDE_COST = "log_hide_cost_detail"
+
+        // 守护「用户意愿」标记：与 serviceRunning（真实运行态）分开存，
+        // 系统回收录屏授权导致服务停止时，仍知道用户本意是要守护的。
+        private const val KEY_GUARD_ENABLED = "guard_enabled"
+
+        // 录屏授权自动恢复的节流：上次尝试时刻 / 窗口起点 / 窗口内次数
+        private const val KEY_PROJECTION_RESTORE_AT = "projection_restore_at"
+        private const val KEY_PROJECTION_RESTORE_WINDOW = "projection_restore_window"
+        private const val KEY_PROJECTION_RESTORE_COUNT = "projection_restore_count"
         private const val KEY_BUILTIN_HINTS = "builtin_privacy_hints"
         private const val KEY_BROWSER_PRIVACY = "browser_privacy_first"
         private const val KEY_AI_PRIVACY = "ai_privacy_learning"
@@ -757,6 +766,31 @@ gacha
     var logHideCostDetail: Boolean
         get() = prefs.getBoolean(KEY_LOG_HIDE_COST, false)
         set(value) = prefs.edit().putBoolean(KEY_LOG_HIDE_COST, value).apply()
+
+    /**
+     * 用户是否**希望**守护在跑（意愿，不代表当前真的在跑）。
+     *
+     * 与 [serviceRunning] 的区别：后者在录屏授权被系统回收时会立刻变 false，
+     * 只靠它无法判断"该不该自动恢复"。用户主动点停止才会把这里置 false。
+     */
+    var guardEnabled: Boolean
+        get() = prefs.getBoolean(KEY_GUARD_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_GUARD_ENABLED, value).apply()
+
+    /** 上次尝试自动恢复录屏授权的时刻（毫秒）。 */
+    var projectionRestoreAt: Long
+        get() = prefs.getLong(KEY_PROJECTION_RESTORE_AT, 0L)
+        set(value) = prefs.edit().putLong(KEY_PROJECTION_RESTORE_AT, value).apply()
+
+    /** 当前自动恢复窗口的起点（毫秒）。 */
+    var projectionRestoreWindow: Long
+        get() = prefs.getLong(KEY_PROJECTION_RESTORE_WINDOW, 0L)
+        set(value) = prefs.edit().putLong(KEY_PROJECTION_RESTORE_WINDOW, value).apply()
+
+    /** 当前窗口内已自动恢复次数。 */
+    var projectionRestoreCount: Int
+        get() = prefs.getInt(KEY_PROJECTION_RESTORE_COUNT, 0)
+        set(value) = prefs.edit().putInt(KEY_PROJECTION_RESTORE_COUNT, value).apply()
 
     /** 内置敏感应用兜底（默认开；关闭后只用用户自定义列表）。 */
     var builtinPrivacyHints: Boolean
