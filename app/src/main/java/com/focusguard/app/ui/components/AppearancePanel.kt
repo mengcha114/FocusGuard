@@ -238,6 +238,44 @@ fun AppearancePanel() {
                 range = 0f..100f,
                 suffix = "%"
             ) { v -> set { it.copy(liquidRefraction = v) } }
+            SliderRow(
+                title = "玻璃模糊",
+                value = a.liquidBlur,
+                range = 0f..16f,
+                suffix = "dp"
+            ) { v -> set { it.copy(liquidBlur = v) } }
+            SliderRow(
+                title = "高光强度",
+                value = a.liquidHighlight,
+                range = 0f..100f,
+                suffix = "%"
+            ) { v -> set { it.copy(liquidHighlight = v) } }
+            SliderRow(
+                title = "立体感",
+                value = a.liquidDepth,
+                range = 0f..100f,
+                suffix = "%"
+            ) { v -> set { it.copy(liquidDepth = v) } }
+            SliderRow(
+                title = "背景饱和度",
+                value = a.liquidSaturation,
+                range = 80f..160f,
+                suffix = "%"
+            ) { v -> set { it.copy(liquidSaturation = v) } }
+            SliderRow(
+                title = "背景亮度",
+                value = a.liquidBrightness,
+                range = -30f..30f,
+                suffix = "%"
+            ) { v -> set { it.copy(liquidBrightness = v) } }
+            SwitchRow(
+                title = "折射景深",
+                checked = a.liquidDepthEffect
+            ) { on -> set { it.copy(liquidDepthEffect = on) } }
+            SwitchRow(
+                title = "边缘色散",
+                checked = a.liquidDispersion
+            ) { on -> set { it.copy(liquidDispersion = on) } }
         }
         SliderRow(
             title = "描边强度",

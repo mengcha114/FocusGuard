@@ -172,12 +172,25 @@ fun FxPrimaryButton(
         com.focusguard.app.ui.liquid.LiquidButton(
             onClick = onClick,
             backdrop = backdrop!!,
-            modifier = modifier.fillMaxWidth()
+            modifier = modifier.fillMaxWidth(),
+            tint = MaterialTheme.colorScheme.primary,
+            surfaceColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.76f),
+            height = 56.dp
         ) {
             if (icon != null) {
-                Icon(icon, null, modifier = Modifier.size(20.dp))
+                Icon(
+                    icon,
+                    null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
             }
-            Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                text,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimary
+            )
         }
         return
     }

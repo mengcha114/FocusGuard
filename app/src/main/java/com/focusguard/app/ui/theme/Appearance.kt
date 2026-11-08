@@ -32,6 +32,20 @@ data class Appearance(
     val liquidRefractionHeight: Int = 24,
     /** 液态玻璃折射强度（0–100，影响边缘弯折幅度）。 */
     val liquidRefraction: Int = 60,
+    /** 液态玻璃模糊半径（0–16dp）。 */
+    val liquidBlur: Int = 6,
+    /** 液态玻璃高光强度（0–100，边缘亮线/顶部反光）。 */
+    val liquidHighlight: Int = 60,
+    /** 立体感：外阴影 + 内阴影 + 顶亮底暗（0–100）。 */
+    val liquidDepth: Int = 35,
+    /** 折射景深效果（边缘厚度感，Android 13+）。 */
+    val liquidDepthEffect: Boolean = true,
+    /** 边缘色散（彩虹边，Android 13+）。 */
+    val liquidDispersion: Boolean = true,
+    /** 采样背景饱和度（80–160%）。 */
+    val liquidSaturation: Int = 110,
+    /** 采样背景亮度（-30–30%）。 */
+    val liquidBrightness: Int = 0,
     /** 光晕强度（10–100）。 */
     val glowIntensity: Int = 60,
     /** 光晕缓慢漂移动画。 */
@@ -123,6 +137,17 @@ data class Appearance(
                     "liquid_refraction_height", d.liquidRefractionHeight
                 ),
                 liquidRefraction = p.getInt("liquid_refraction", d.liquidRefraction),
+                liquidBlur = p.getInt("liquid_blur", d.liquidBlur),
+                liquidHighlight = p.getInt("liquid_highlight", d.liquidHighlight),
+                liquidDepth = p.getInt("liquid_depth", d.liquidDepth),
+                liquidDepthEffect = p.getBoolean(
+                    "liquid_depth_effect", d.liquidDepthEffect
+                ),
+                liquidDispersion = p.getBoolean(
+                    "liquid_dispersion", d.liquidDispersion
+                ),
+                liquidSaturation = p.getInt("liquid_saturation", d.liquidSaturation),
+                liquidBrightness = p.getInt("liquid_brightness", d.liquidBrightness),
                 glowIntensity = p.getInt("glow_intensity", d.glowIntensity),
                 glowMotion = p.getBoolean("glow_motion", d.glowMotion),
                 cardStyle = p.getInt("card_style", d.cardStyle),
@@ -151,6 +176,13 @@ data class Appearance(
                 .putInt("card_border", a.cardBorder)
                 .putInt("liquid_refraction_height", a.liquidRefractionHeight)
                 .putInt("liquid_refraction", a.liquidRefraction)
+                .putInt("liquid_blur", a.liquidBlur)
+                .putInt("liquid_highlight", a.liquidHighlight)
+                .putInt("liquid_depth", a.liquidDepth)
+                .putBoolean("liquid_depth_effect", a.liquidDepthEffect)
+                .putBoolean("liquid_dispersion", a.liquidDispersion)
+                .putInt("liquid_saturation", a.liquidSaturation)
+                .putInt("liquid_brightness", a.liquidBrightness)
                 .putInt("glow_intensity", a.glowIntensity)
                 .putBoolean("glow_motion", a.glowMotion)
                 .putInt("card_style", a.cardStyle)

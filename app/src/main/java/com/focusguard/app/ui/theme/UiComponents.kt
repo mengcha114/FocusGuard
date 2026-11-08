@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -40,8 +41,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.colorControls
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
 
 /**
  * 全局背景抓取器。
@@ -71,52 +75,73 @@ fun Modifier.glassSurface(
     shape: androidx.compose.ui.graphics.Shape = androidx.compose.ui.graphics.RectangleShape,
     tint: Color = MaterialTheme.colorScheme.surface,
     surfaceAlpha: Float = 0.30f,
-    blurRadius: Dp = 6.dp,
+    blurRadius: Dp? = null,
     refractionHeight: Dp? = null,
     refractionAmount: Dp? = null
 ): Modifier {
     val a = AppearanceState.get(LocalContext.current)
     val backdrop = LocalAppBackdrop.current
     if (a.cardStyle != Appearance.CARD_LIQUID || backdrop == null) return this
-    val strength = a.cardBorder.coerceIn(0, 100) / 100f
-    val refHeight = refractionHeight
-        ?: a.liquidRefractionHeight.coerceIn(8, 40).dp
-    val refAmount = refractionAmount
-        ?: (refHeight * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.4f))
+    val t = liquidTuning(a)
+    val blurDp = blurRadius ?: t.blur
+    val refHeight = refractionHeight ?: t.refractionHeight
+    val refAmount = refractionAmount ?: t.refractionAmount
     return this.drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
         effects = {
             vibrancy()
-            blur(blurRadius.toPx())
+            if (blurDp > 0.dp) blur(blurDp.toPx())
+            if (t.saturation != 1f || t.brightness != 0f) {
+                colorControls(brightness = t.brightness, saturation = t.saturation)
+            }
             if (a.liquidRefraction > 0) {
                 lens(
                     refHeight.toPx(),
                     refAmount.toPx(),
-                    depthEffect = true,
-                    chromaticAberration = true
+                    depthEffect = t.depthEffect,
+                    chromaticAberration = t.dispersion
                 )
             }
         },
-        highlight = if (strength <= 0f) {
+        highlight = if (t.highlight <= 0f) {
             { null }
         } else {
             {
                 com.kyant.backdrop.highlight.Highlight(
-                    width = (0.3f + strength * 0.5f).dp,
-                    alpha = (0.30f + strength * 0.5f)
+                    width = (0.35f + t.highlight * 0.6f).dp,
+                    alpha = 0.2f + 0.7f * t.highlight
+                )
+            }
+        },
+        innerShadow = if (t.depth <= 0f) {
+            null
+        } else {
+            {
+                InnerShadow(
+                    radius = (5f * t.depth).dp,
+                    alpha = 0.24f * t.depth
                 )
             }
         },
         onDrawSurface = {
             drawRect(tint.copy(alpha = surfaceAlpha))
+            // 顶部反光 + 底部压暗，让整块区域有厚度
             drawRect(
                 Brush.verticalGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.10f * strength + 0.03f),
-                        Color.Transparent,
-                        Color.White.copy(alpha = 0.03f)
+                        Color.White.copy(alpha = 0.03f + 0.14f * t.depth),
+                        Color.Transparent
                     )
+                )
+            )
+            drawRect(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.02f + 0.05f * t.depth)
+                    ),
+                    startY = size.height * 0.6f
                 )
             )
         }
@@ -191,6 +216,34 @@ private fun Color.compositeOver(background: Color): Color {
     )
 }
 
+/** 液态玻璃一组可调参数（统一从外观设置换算，避免各页面各调一套）。 */
+private data class LiquidTuning(
+    val blur: Dp,
+    val refractionHeight: Dp,
+    val refractionAmount: Dp,
+    val highlight: Float,
+    val depth: Float,
+    val saturation: Float,
+    val brightness: Float,
+    val depthEffect: Boolean,
+    val dispersion: Boolean
+)
+
+private fun liquidTuning(a: Appearance): LiquidTuning {
+    val h = a.liquidRefractionHeight.coerceIn(8, 40).dp
+    return LiquidTuning(
+        blur = a.liquidBlur.coerceIn(0, 16).dp,
+        refractionHeight = h,
+        refractionAmount = h * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.4f),
+        highlight = a.liquidHighlight.coerceIn(0, 100) / 100f,
+        depth = a.liquidDepth.coerceIn(0, 100) / 100f,
+        saturation = a.liquidSaturation.coerceIn(80, 160) / 100f,
+        brightness = a.liquidBrightness.coerceIn(-30, 30) / 100f,
+        depthEffect = a.liquidDepthEffect,
+        dispersion = a.liquidDispersion
+    )
+}
+
 /**
  * 纸墨时间统一卡片样式（DESIGN.md §3.4 + 玻璃材质）：
  * 半透明容器 + 细边框（无 Material 阴影），配合页面背景光斑呈现高级材质感。
@@ -207,13 +260,9 @@ fun Modifier.inkCard(
     if (a.cardStyle == Appearance.CARD_LIQUID) {
         val backdrop = LocalAppBackdrop.current
         if (backdrop != null) {
-            // 真·液态玻璃：采样背景图层，做提饱和 + 低模糊 + 边缘折射/色散。
-            // 折射参数来自「界面主题 → 卡片」里的滑块（折射高度 / 折射强度）。
+            val t = liquidTuning(a)
             val surface = container ?: scheme.surfaceVariant
             val strength = a.cardBorder.coerceIn(0, 100) / 100f
-            val refHeight = a.liquidRefractionHeight.coerceIn(8, 40).dp
-            // 强度 0 → 完全取消折射；100 → 约 3 倍高度的位移
-            val refAmount = refHeight * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.4f)
             val hasRefraction = a.liquidRefraction > 0
             var m = this
                 .clip(shape)
@@ -222,24 +271,52 @@ fun Modifier.inkCard(
                     shape = { shape },
                     effects = {
                         vibrancy()
-                        blur(6f.dp.toPx())
+                        if (t.blur > 0.dp) blur(t.blur.toPx())
+                        if (t.saturation != 1f || t.brightness != 0f) {
+                            colorControls(
+                                brightness = t.brightness,
+                                saturation = t.saturation
+                            )
+                        }
                         if (hasRefraction) {
                             lens(
-                                refHeight.toPx(),
-                                refAmount.toPx(),
-                                depthEffect = true,
-                                chromaticAberration = true
+                                t.refractionHeight.toPx(),
+                                t.refractionAmount.toPx(),
+                                depthEffect = t.depthEffect,
+                                chromaticAberration = t.dispersion
                             )
                         }
                     },
-                    // 描边强度为 0 时彻底不加白边/高光
-                    highlight = if (strength <= 0f) {
+                    // 高光强度独立可调；描边强度为 0 时边框消失，但玻璃高光仍保留
+                    highlight = if (t.highlight <= 0f) {
                         { null }
                     } else {
                         {
                             com.kyant.backdrop.highlight.Highlight(
-                                width = (0.3f + strength * 0.7f).dp,
-                                alpha = (0.35f + strength * 0.65f)
+                                width = (0.4f + t.highlight * 0.9f).dp,
+                                alpha = 0.2f + 0.8f * t.highlight
+                            )
+                        }
+                    },
+                    // 立体感：外阴影 + 内阴影
+                    shadow = if (t.depth <= 0f) {
+                        null
+                    } else {
+                        {
+                            Shadow(
+                                radius = (10f * t.depth).dp,
+                                offset = DpOffset(0.dp, (3f * t.depth).dp),
+                                alpha = 0.20f * t.depth
+                            )
+                        }
+                    },
+                    innerShadow = if (t.depth <= 0f) {
+                        null
+                    } else {
+                        {
+                            InnerShadow(
+                                radius = (6f * t.depth).dp,
+                                alpha = 0.26f * t.depth
                             )
                         }
                     },
@@ -249,13 +326,22 @@ fun Modifier.inkCard(
                                 alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.26f
                             )
                         )
+                        // 顶部反光 + 底部压暗：卡片看起来有厚度
                         drawRect(
                             Brush.verticalGradient(
                                 listOf(
-                                    Color.White.copy(alpha = 0.20f * strength + 0.04f),
-                                    Color.Transparent,
-                                    Color.White.copy(alpha = 0.04f)
+                                    Color.White.copy(alpha = 0.04f + 0.18f * t.depth),
+                                    Color.Transparent
                                 )
+                            )
+                        )
+                        drawRect(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.03f + 0.07f * t.depth)
+                                ),
+                                startY = size.height * 0.55f
                             )
                         )
                     }
