@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.DetectionLog
 import com.focusguard.app.data.LogStore
+import com.focusguard.app.ui.theme.glassSurface
 
 /**
  * 检测日志界面。
@@ -143,9 +144,22 @@ fun LogScreen() {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 300.dp),
+                    .heightIn(max = 300.dp)
+                    .glassSurface(
+                        shape = RoundedCornerShape(12.dp),
+                        tint = MaterialTheme.colorScheme.surfaceVariant,
+                        surfaceAlpha = 0.34f
+                    ),
                 shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                border = if (com.focusguard.app.ui.theme.isGlassActive()) null else BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+                ),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (com.focusguard.app.ui.theme.isGlassActive()) Color.Transparent
+                    else com.focusguard.app.ui.theme.cardContainer()
+                )
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(
@@ -358,9 +372,22 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { expanded = !expanded },
+            .clickable { expanded = !expanded }
+            .glassSurface(
+                shape = RoundedCornerShape(12.dp),
+                tint = MaterialTheme.colorScheme.surfaceVariant,
+                surfaceAlpha = 0.34f
+            ),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = if (com.focusguard.app.ui.theme.isGlassActive()) null else BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (com.focusguard.app.ui.theme.isGlassActive()) Color.Transparent
+            else com.focusguard.app.ui.theme.cardContainer()
+        )
     ) {
         Column(
             modifier = Modifier

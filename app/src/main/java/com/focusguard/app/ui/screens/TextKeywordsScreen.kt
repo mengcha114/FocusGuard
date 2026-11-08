@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.Settings
+import com.focusguard.app.ui.theme.glassSurface
 
 /**
  * 屏幕文字特征词独立设置页。
@@ -79,9 +80,23 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassSurface(
+                        shape = RoundedCornerShape(12.dp),
+                        tint = MaterialTheme.colorScheme.surfaceVariant,
+                        surfaceAlpha = 0.34f
+                    ),
                 shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                border = if (com.focusguard.app.ui.theme.isGlassActive()) null else BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+                ),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (com.focusguard.app.ui.theme.isGlassActive()) Color.Transparent
+                    else com.focusguard.app.ui.theme.cardContainer()
+                )
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
@@ -105,9 +120,23 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
             }
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassSurface(
+                        shape = RoundedCornerShape(12.dp),
+                        tint = MaterialTheme.colorScheme.surfaceVariant,
+                        surfaceAlpha = 0.34f
+                    ),
                 shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                border = if (com.focusguard.app.ui.theme.isGlassActive()) null else BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+                ),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (com.focusguard.app.ui.theme.isGlassActive()) Color.Transparent
+                    else com.focusguard.app.ui.theme.cardContainer()
+                )
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(

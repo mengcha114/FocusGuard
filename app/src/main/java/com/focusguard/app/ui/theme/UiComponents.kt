@@ -53,6 +53,60 @@ import com.kyant.backdrop.effects.vibrancy
  */
 val LocalAppBackdrop = staticCompositionLocalOf<com.kyant.backdrop.Backdrop?> { null }
 
+/** 当前是否处于「液态卡片 + 有背景图层」状态（可直接用 glassSurface）。 */
+@Composable
+fun isGlassActive(): Boolean {
+    val a = AppearanceState.get(LocalContext.current)
+    return a.cardStyle == Appearance.CARD_LIQUID && LocalAppBackdrop.current != null
+}
+
+/**
+ * 液态玻璃表面：给导航栏、顶部栏这类整块区域用。
+ *
+ * 与卡片同一套 backdrop 采样，但参数更偏"厚玻璃"：模糊更大、边缘折射更明显。
+ * 只有在「卡片风格 = 液态」且存在背景图层时才生效，否则原样返回。
+ */
+@Composable
+fun Modifier.glassSurface(
+    shape: androidx.compose.ui.graphics.Shape = androidx.compose.ui.graphics.RectangleShape,
+    tint: Color = MaterialTheme.colorScheme.surface,
+    surfaceAlpha: Float = 0.46f,
+    blurRadius: Dp = 18.dp,
+    refractionHeight: Dp = 26.dp,
+    refractionAmount: Dp = 64.dp
+): Modifier {
+    val a = AppearanceState.get(LocalContext.current)
+    val backdrop = LocalAppBackdrop.current
+    if (a.cardStyle != Appearance.CARD_LIQUID || backdrop == null) return this
+    return this.drawBackdrop(
+        backdrop = backdrop,
+        shape = { shape },
+        effects = {
+            vibrancy()
+            blur(blurRadius.toPx())
+            lens(
+                refractionHeight.toPx(),
+                refractionAmount.toPx(),
+                depthEffect = true,
+                chromaticAberration = true
+            )
+        },
+        highlight = { com.kyant.backdrop.highlight.Highlight(width = 1.2.dp, alpha = 0.95f) },
+        onDrawSurface = {
+            drawRect(tint.copy(alpha = surfaceAlpha))
+            drawRect(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.12f),
+                        Color.Transparent,
+                        Color.White.copy(alpha = 0.03f)
+                    )
+                )
+            )
+        }
+    )
+}
+
 /**
  * 纸墨时间统一卡片样式（DESIGN.md §3.4 + 玻璃材质）：
  * 半透明容器 + 细边框（无 Material 阴影），配合页面背景光斑呈现高级材质感。
@@ -82,10 +136,10 @@ fun Modifier.inkCard(
                     shape = { shape },
                     effects = {
                         vibrancy()
-                        blur(14f.dp.toPx())
+                        blur(18f.dp.toPx())
                         lens(
-                            26f.dp.toPx(),
-                            64f.dp.toPx(),
+                            32f.dp.toPx(),
+                            80f.dp.toPx(),
                             depthEffect = true,
                             chromaticAberration = true
                         )
@@ -99,22 +153,22 @@ fun Modifier.inkCard(
                     onDrawSurface = {
                         drawRect(
                             surface.copy(
-                                alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.22f
+                                alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.16f
                             )
                         )
                         drawRect(
                             Brush.verticalGradient(
                                 listOf(
-                                    Color.White.copy(alpha = 0.18f),
+                                    Color.White.copy(alpha = 0.24f),
                                     Color.Transparent,
-                                    Color.White.copy(alpha = 0.04f)
+                                    Color.White.copy(alpha = 0.05f)
                                 )
                             )
                         )
                         drawRect(
                             Brush.radialGradient(
                                 colors = listOf(
-                                    Color.White.copy(alpha = 0.20f),
+                                    Color.White.copy(alpha = 0.26f),
                                     Color.Transparent
                                 ),
                                 center = androidx.compose.ui.geometry.Offset(

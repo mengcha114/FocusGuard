@@ -29,6 +29,7 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.animateFloat
 import com.focusguard.app.ui.theme.animationsEnabled
+import com.focusguard.app.ui.theme.glassSurface
 import com.focusguard.app.ui.theme.inkCard
 import com.focusguard.app.ui.theme.pressScale
 
@@ -422,11 +423,25 @@ fun LogItem(
         else -> "中性"
     }
 
+    val glassOn = com.focusguard.app.ui.theme.isGlassActive()
+    val cardShape = RoundedCornerShape(12.dp)
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(
-            containerColor = com.focusguard.app.ui.theme.cardContainer()
+        modifier = Modifier
+            .fillMaxWidth()
+            .glassSurface(
+                shape = cardShape,
+                tint = MaterialTheme.colorScheme.surfaceVariant,
+                surfaceAlpha = 0.34f
+            ),
+        shape = cardShape,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = if (glassOn) null else BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (glassOn) Color.Transparent
+            else com.focusguard.app.ui.theme.cardContainer()
         )
     ) {
         Row(
@@ -495,12 +510,27 @@ private fun MemoCard(onOpenMemo: () -> Unit) {
     val pending = items.filter { !it.done }
     val doneCount = items.size - pending.size
 
+    val glassOn = com.focusguard.app.ui.theme.isGlassActive()
+    val cardShape = RoundedCornerShape(12.dp)
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpenMemo),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)), colors = CardDefaults.cardColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
+            .clickable(onClick = onOpenMemo)
+            .glassSurface(
+                shape = cardShape,
+                tint = MaterialTheme.colorScheme.surfaceVariant,
+                surfaceAlpha = 0.34f
+            ),
+        shape = cardShape,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = if (glassOn) null else BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (glassOn) Color.Transparent
+            else com.focusguard.app.ui.theme.cardContainer()
+        )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(

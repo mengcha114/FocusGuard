@@ -39,6 +39,7 @@ import androidx.navigation.compose.rememberNavController
 import com.focusguard.app.data.Settings as AppSettings
 import com.focusguard.app.ui.screens.*
 import com.focusguard.app.ui.theme.FocusGuardTheme
+import com.focusguard.app.ui.theme.glassSurface
 import com.kyant.backdrop.backdrops.layerBackdrop
 
 /** 底栏顶层页面。 */
@@ -596,8 +597,21 @@ class MainActivity : ComponentActivity() {
                                 exit = androidx.compose.animation.slideOutVertically { it } +
                                     androidx.compose.animation.fadeOut()
                             ) {
+                            // 底部导航栏：液态模式下整条栏也是玻璃材质（采样背后的背景图层），
+                            // 不是只在栏里放半透明色块。
+                            val liquidOn = com.focusguard.app.ui.theme.AppearanceState
+                                .get(androidx.compose.ui.platform.LocalContext.current)
+                                .cardStyle == com.focusguard.app.ui.theme.Appearance.CARD_LIQUID
                             NavigationBar(
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                modifier = Modifier.glassSurface(
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(
+                                        topStart = 28.dp,
+                                        topEnd = 28.dp
+                                    ),
+                                    surfaceAlpha = 0.40f
+                                ),
+                                containerColor = if (liquidOn) Color.Transparent
+                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                                 tonalElevation = 0.dp
                             ) {
                                 NavigationBarItem(

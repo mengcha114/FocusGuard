@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.Settings
 import com.focusguard.app.token.TokenBudget
+import com.focusguard.app.ui.theme.glassSurface
 
 @Composable
 fun SettingsScreen(
@@ -1102,6 +1103,77 @@ fun SettingsScreen(
             }
         }
 
+        // ═══════ 开源软件声明 ═══════
+        SettingsSection(
+            title = "开源软件声明",
+            icon = Icons.Default.Code,
+            defaultExpanded = false,
+            summary = "第三方开源组件与许可证"
+        ) {
+            val components = listOf(
+                Triple(
+                    "AndroidLiquidGlass（backdrop）",
+                    "Apache-2.0",
+                    "https://github.com/Kyant0/AndroidLiquidGlass"
+                ),
+                Triple(
+                    "Jetpack Compose / Material3",
+                    "Apache-2.0",
+                    "https://developer.android.com/jetpack/compose"
+                ),
+                Triple("OkHttp", "Apache-2.0", "https://square.github.io/okhttp/"),
+                Triple(
+                    "Shizuku API",
+                    "Apache-2.0",
+                    "https://github.com/RikkaApps/Shizuku-API"
+                ),
+                Triple("Dhizuku API", "GPL-3.0", "https://github.com/iamr0s/Dhizuku"),
+                Triple(
+                    "compose-markdown",
+                    "MIT",
+                    "https://github.com/jeziellago/compose-markdown"
+                ),
+                Triple(
+                    "Kotlin Coroutines",
+                    "Apache-2.0",
+                    "https://github.com/Kotlin/kotlinx.coroutines"
+                )
+            )
+            components.forEachIndexed { index, (name, license, url) ->
+                if (index > 0) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f)
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            com.focusguard.app.util.LeaveGuard.open(
+                                context,
+                                android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse(url)
+                                )
+                            )
+                        }
+                        .padding(vertical = 10.dp)
+                ) {
+                    Text(
+                        name,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        "$license · $url",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
+                    )
+                }
+            }
+        }
+
         // ── 自动保存 ─────────────────────────────────────────────
         // 任一设置变化即持久化，无需手动点保存（onChange 即生效）。
         fun saveAll() {
@@ -1543,13 +1615,25 @@ fun SettingsSection(
         label = "settingsArrow"
     )
 
+    val glassOn = com.focusguard.app.ui.theme.isGlassActive()
+    val cardShape = RoundedCornerShape(12.dp)
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .glassSurface(
+                shape = cardShape,
+                tint = MaterialTheme.colorScheme.surfaceVariant,
+                surfaceAlpha = 0.34f
+            ),
+        shape = cardShape,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+        border = if (glassOn) null else BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+        ),
         colors = CardDefaults.cardColors(
-            containerColor = com.focusguard.app.ui.theme.cardContainer()
+            containerColor = if (glassOn) Color.Transparent
+            else com.focusguard.app.ui.theme.cardContainer()
         )
     ) {
         Column(
