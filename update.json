@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.77",
-  "notes": "清理了 设置页的冗余说明文字：「像微信那样弹横幅提示，给你主动收手的机会」「完整词表…避免占用本页空间」「设置自动保存，改动即时生效」等\n精简了 提示词输入框下方的说明，只保留功能描述",
+  "tag": "v3.11.78",
+  "notes": "修复了已知问题",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.77/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.77/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.78/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.78/app-general-release.apk"
   }
 }
