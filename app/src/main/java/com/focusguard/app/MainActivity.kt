@@ -601,9 +601,11 @@ class MainActivity : ComponentActivity() {
                             ) {
                             // 底部导航栏：液态模式下使用官方 LiquidBottomTabs 的移植
                             // （按住整条玻璃放大、拖动选中玻璃带弹性形变、松手吸附切换）。
-                            val liquidOn = com.focusguard.app.ui.theme.AppearanceState
-                                .get(androidx.compose.ui.platform.LocalContext.current)
-                                .cardStyle == com.focusguard.app.ui.theme.Appearance.CARD_LIQUID
+                            val liquidCtx = androidx.compose.ui.platform.LocalContext.current
+                            val liquidAppearance =
+                                com.focusguard.app.ui.theme.AppearanceState.get(liquidCtx)
+                            val liquidOn = liquidAppearance.cardStyle ==
+                                com.focusguard.app.ui.theme.Appearance.CARD_LIQUID
                             if (liquidOn) {
                                 val liquidTabs = listOf(
                                     LiquidTab(
@@ -637,7 +639,16 @@ class MainActivity : ComponentActivity() {
                                     selectedIndex = liquidTabs
                                         .indexOfFirst { it.route == (currentRoute ?: "home") }
                                         .coerceAtLeast(0),
-                                    onTabSelected = { index -> go(liquidTabs[index].route) }
+                                    onTabSelected = { index -> go(liquidTabs[index].route) },
+                                    refractionHeight = liquidAppearance
+                                        .liquidRefractionHeight.coerceIn(8, 40).dp,
+                                    refractionAmount = (
+                                        liquidAppearance.liquidRefractionHeight.coerceIn(8, 40) *
+                                            (liquidAppearance.liquidRefraction.coerceIn(0, 100) /
+                                                100f * 2.4f)
+                                        ).dp,
+                                    blurRadius = 8.dp,
+                                    surfaceAlpha = 0.34f
                                 ) {
                                     liquidTabs.forEach { tab ->
                                         LiquidBottomTab(

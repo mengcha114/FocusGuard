@@ -126,17 +126,23 @@ fun LiquidBottomTabs(
     refractionHeight: Dp = 24.dp,
     refractionAmount: Dp = 24.dp,
     blurRadius: Dp = 8.dp,
+    surfaceAlpha: Float = 0.40f,
     content: @Composable RowScope.() -> Unit
 ) {
     if (tabs.isEmpty()) return
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val accentColor = MaterialTheme.colorScheme.primary
     val containerColor = if (isLightTheme) {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.40f)
+        MaterialTheme.colorScheme.surface.copy(alpha = surfaceAlpha)
     } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.40f)
+        MaterialTheme.colorScheme.surface.copy(alpha = (surfaceAlpha - 0.06f).coerceAtLeast(0.2f))
     }
     val barShape = RoundedCornerShape(percent = 50)
+
+    // 官方三层结构中的「图标层」：镜像一份内容、完全透明，仅通过 layerBackdrop
+    // 把图标/文字录进 backdrop，供选中玻璃采样。少了这层，选中玻璃只能采到背景，
+    // 会把它覆盖的那一格图标整块盖住（设置页图标消失、右侧出现空白圆）。
+    val tabsBackdrop = rememberLayerBackdrop()
 
     BoxWithConstraints(
         modifier
@@ -218,7 +224,36 @@ fun LiquidBottomTabs(
             )
         }
 
-        // 底层：整条玻璃条，按住放大（layerBlock 只放大内容，不放大背景采样）
+        // 第 1 层：整条玻璃条 + 真实内容（按住放大时 layerBlock 只放大内容）
+        Row(
+            Modifier
+                .graphicsLayer { translationX = panelOffset }
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { barShape },
+                    effects = {
+                        vibrancy()
+                        blur(blurRadius.toPx())
+                        lens(refractionHeight.toPx(), refractionAmount.toPx())
+                    },
+                    layerBlock = {
+                        val progress = dampedDragAnimation.pressProgress
+                        val scale = lerp(1f, 1f + 16.dp.toPx() / size.width, progress)
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                    onDrawSurface = { drawRect(containerColor) }
+                )
+                .then(interactiveHighlight.modifier)
+                .height(64.dp)
+                .fillMaxWidth()
+                .padding(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content
+        )
+
+        // 第 2 层：镜像内容，alpha = 0 看不见，只把图标录进 tabsBackdrop。
+        // 选中玻璃采样「背景 + 这层图标」，玻璃里才会出现放大的选中图标。
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
                 lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
@@ -226,33 +261,38 @@ fun LiquidBottomTabs(
         ) {
             Row(
                 Modifier
+                    .clearAndSetSemantics {}
+                    .alpha(0f)
+                    .layerBackdrop(tabsBackdrop)
                     .graphicsLayer { translationX = panelOffset }
                     .drawBackdrop(
                         backdrop = backdrop,
                         shape = { barShape },
                         effects = {
+                            val progress = dampedDragAnimation.pressProgress
                             vibrancy()
                             blur(blurRadius.toPx())
-                            lens(refractionHeight.toPx(), refractionAmount.toPx())
+                            lens(
+                                refractionHeight.toPx() * progress,
+                                refractionAmount.toPx() * progress
+                            )
                         },
-                        layerBlock = {
-                            val progress = dampedDragAnimation.pressProgress
-                            val scale = lerp(1f, 1f + 16.dp.toPx() / size.width, progress)
-                            scaleX = scale
-                            scaleY = scale
+                        highlight = {
+                            Highlight.Default.copy(alpha = dampedDragAnimation.pressProgress)
                         },
                         onDrawSurface = { drawRect(containerColor) }
                     )
                     .then(interactiveHighlight.modifier)
-                    .height(64.dp)
+                    .height(56.dp)
                     .fillMaxWidth()
-                    .padding(4.dp),
+                    .padding(horizontal = 4.dp)
+                    .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
                 verticalAlignment = Alignment.CenterVertically,
                 content = content
             )
         }
 
-        // 顶层：可拖动的选中玻璃，弹性形变全部来自 DampedDragAnimation
+        // 第 3 层：可拖动的选中玻璃，弹性形变全部来自 DampedDragAnimation
         Box(
             Modifier
                 .padding(horizontal = 4.dp)
@@ -264,7 +304,7 @@ fun LiquidBottomTabs(
                 .then(interactiveHighlight.gestureModifier)
                 .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
-                    backdrop = backdrop,
+                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                     shape = { barShape },
                     effects = {
                         val progress = dampedDragAnimation.pressProgress
@@ -292,8 +332,8 @@ fun LiquidBottomTabs(
                         scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                     },
                     onDrawSurface = {
+                        // 官方 scrim：几乎透明，只是让选中格轻微压暗/提亮
                         val progress = dampedDragAnimation.pressProgress
-                        drawRect(accentColor.copy(alpha = 0.22f))
                         drawRect(
                             if (isLightTheme) Color.Black.copy(alpha = 0.10f)
                             else Color.White.copy(alpha = 0.10f),
