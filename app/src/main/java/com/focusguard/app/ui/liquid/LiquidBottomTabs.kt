@@ -75,13 +75,19 @@ data class LiquidTab(
 
 internal val LocalLiquidBottomTabScale = staticCompositionLocalOf { { 1f } }
 
+/** 选中格的常驻放大倍数（只作用于图标镜像层，让玻璃里出现放大的选中图标）。 */
+internal val LocalLiquidBottomTabSelectedScale =
+    staticCompositionLocalOf { { _: Int -> 1f } }
+
 @Composable
 fun RowScope.LiquidBottomTab(
+    index: Int = -1,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val scale = LocalLiquidBottomTabScale.current
+    val selectedScale = LocalLiquidBottomTabSelectedScale.current
     Column(
         modifier
             .clip(RoundedCornerShape(percent = 50))
@@ -94,7 +100,7 @@ fun RowScope.LiquidBottomTab(
             .fillMaxHeight()
             .weight(1f)
             .graphicsLayer {
-                val s = scale()
+                val s = scale() * selectedScale(index)
                 scaleX = s
                 scaleY = s
             },
@@ -257,6 +263,11 @@ fun LiquidBottomTabs(
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
                 lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
+            },
+            // 选中格常驻放大：玻璃里看到的图标/文字比外面大一圈，
+            // 这就是截图里“透镜选中效果”的来源。
+            LocalLiquidBottomTabSelectedScale provides { index ->
+                if (index == selectedIndex) 1.26f else 1f
             }
         ) {
             Row(
@@ -307,21 +318,30 @@ fun LiquidBottomTabs(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                     shape = { barShape },
                     effects = {
-                        val progress = dampedDragAnimation.pressProgress
+                        val press = dampedDragAnimation.pressProgress
+                        // 常驻折射 + 色散：静止时就是一块液态透镜，按压时再增强。
+                        // 之前只有 pressProgress > 0 才有 lens，静止自然是一块素胶囊。
+                        val h = (10.dp + refractionHeight * 0.18f) * (0.85f + 0.15f * press)
+                        val a = (18.dp + refractionAmount * 0.22f) * (0.85f + 0.15f * press)
                         lens(
-                            refractionHeight.toPx() * 0.42f * progress,
-                            refractionAmount.toPx() * 0.58f * progress,
+                            h.toPx(),
+                            a.toPx(),
+                            depthEffect = true,
                             chromaticAberration = true
                         )
                     },
                     highlight = {
-                        Highlight.Default.copy(alpha = dampedDragAnimation.pressProgress)
+                        Highlight.Default.copy(
+                            alpha = 0.65f + 0.35f * dampedDragAnimation.pressProgress
+                        )
                     },
-                    shadow = { Shadow(alpha = dampedDragAnimation.pressProgress) },
+                    shadow = {
+                        Shadow(alpha = 0.28f + 0.72f * dampedDragAnimation.pressProgress)
+                    },
                     innerShadow = {
                         InnerShadow(
-                            radius = 8.dp * dampedDragAnimation.pressProgress,
-                            alpha = dampedDragAnimation.pressProgress
+                            radius = 6.dp + 4.dp * dampedDragAnimation.pressProgress,
+                            alpha = 0.35f + 0.65f * dampedDragAnimation.pressProgress
                         )
                     },
                     layerBlock = {
@@ -332,14 +352,12 @@ fun LiquidBottomTabs(
                         scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                     },
                     onDrawSurface = {
-                        // 官方 scrim：几乎透明，只是让选中格轻微压暗/提亮
-                        val progress = dampedDragAnimation.pressProgress
+                        // 常驻只加一点点白，让玻璃更透亮；按压时再压暗一点
+                        val press = dampedDragAnimation.pressProgress
                         drawRect(
-                            if (isLightTheme) Color.Black.copy(alpha = 0.10f)
-                            else Color.White.copy(alpha = 0.10f),
-                            alpha = 1f - progress
+                            Color.White.copy(alpha = if (isLightTheme) 0.05f else 0.07f)
                         )
-                        drawRect(Color.Black.copy(alpha = 0.03f * progress))
+                        drawRect(Color.Black.copy(alpha = 0.02f * press))
                     }
                 )
                 .height(56.dp)

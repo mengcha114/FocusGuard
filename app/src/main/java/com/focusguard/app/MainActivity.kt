@@ -650,8 +650,9 @@ class MainActivity : ComponentActivity() {
                                     blurRadius = 8.dp,
                                     surfaceAlpha = 0.34f
                                 ) {
-                                    liquidTabs.forEach { tab ->
+                                    liquidTabs.forEachIndexed { index, tab ->
                                         LiquidBottomTab(
+                                            index = index,
                                             onClick = { go(tab.route) }
                                         ) {
                                             Icon(
