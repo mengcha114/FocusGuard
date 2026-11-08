@@ -254,11 +254,12 @@ fun ImageBackground(a: Appearance, base: Color) {
         val blurOn = a.imageBlur > 0
         // 不模糊时必须 1:1 解码：以前无脑 sample=2，等于把 2560 的图压成 1280
         // 再铺满 2K 屏，用户看到的就是「传了原图还是糊」。
+        // 模糊档位也要克制：默认 12dp 以前用 sample=8（2560→320），糊得离谱；
+        // 现在最多降到 1/2（1280），强模糊才到 1/4。
         val sample = when {
             !blurOn -> 1
-            a.imageBlur <= 8 -> 4
-            a.imageBlur <= 20 -> 8
-            else -> 16
+            a.imageBlur <= 24 -> 2
+            else -> 4
         }
         bitmapState.value = withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
