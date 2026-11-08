@@ -252,28 +252,34 @@ fun ImageBackground(a: Appearance, base: Color) {
         // RenderEffect 会直接原生崩溃（无 Java 堆栈），表现就是"设完背景图就闪退"。
         // 改为按模糊强度降采样后放大绘制：视觉接近模糊，且完全走 CPU/常规绘制。
         val blurOn = a.imageBlur > 0
-        // 不模糊时必须 1:1 解码：以前无脑 sample=2，等于把 2560 的图压成 1280
-        // 再铺满 2K 屏，用户看到的就是「传了原图还是糊」。
-        // 模糊档位也要克制：默认 12dp 以前用 sample=8（2560→320），糊得离谱；
-        // 现在最多降到 1/2（1280），强模糊才到 1/4。
-        val sample = when {
-            !blurOn -> 1
-            a.imageBlur <= 24 -> 2
-            else -> 4
-        }
+        // 模糊不再靠 inSampleSize 粗粒度降采样（1/2、1/4 跳档），
+        // 而是整图解码后按模糊值连续缩小再放大，滑动调节也不会跳变。
+        if (blurOn) kotlinx.coroutines.delay(120)
         bitmapState.value = withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
                 val opts = android.graphics.BitmapFactory.Options().apply {
-                    inSampleSize = sample
+                    inSampleSize = 1
                     inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
                 }
-                try {
-                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
+                var bmp = try {
+                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)
                 } catch (oom: OutOfMemoryError) {
                     // 低内存机型：退回 RGB_565，宁可少点色深也别白屏
                     opts.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
-                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
+                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)
                 }
+                if (bmp != null && blurOn) {
+                    // 模糊 0–40dp 映射到 1–14 倍缩小，连续变化
+                    val factor = 1f + a.imageBlur / 3f
+                    val targetW = (bmp.width / factor).toInt().coerceAtLeast(1)
+                    val targetH = (bmp.height / factor).toInt().coerceAtLeast(1)
+                    val small = android.graphics.Bitmap.createScaledBitmap(
+                        bmp, targetW, targetH, true
+                    )
+                    if (small !== bmp) bmp.recycle()
+                    bmp = small
+                }
+                bmp?.asImageBitmap()
             }.getOrNull()
         }
     }

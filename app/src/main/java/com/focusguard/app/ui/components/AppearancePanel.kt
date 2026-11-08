@@ -175,25 +175,12 @@ fun AppearancePanel() {
                 range = 0f..90f,
                 suffix = "%"
             ) { v -> set { it.copy(imageDim = v) } }
-            Label("模糊")
-            FxOptionRow(
-                options = listOf(0, 10, 20, 40),
-                selected = when {
-                    a.imageBlur <= 0 -> 0
-                    a.imageBlur <= 10 -> 10
-                    a.imageBlur <= 20 -> 20
-                    else -> 40
-                },
-                label = {
-                    when (it) {
-                        0 -> "关"
-                        10 -> "弱"
-                        20 -> "中"
-                        else -> "强"
-                    }
-                },
-                onSelect = { v -> set { it.copy(imageBlur = v) } }
-            )
+            SliderRow(
+                title = "模糊",
+                value = a.imageBlur,
+                range = 0f..40f,
+                suffix = "dp"
+            ) { v -> set { it.copy(imageBlur = v) } }
         }
 
         // ── 流光光晕 ──
