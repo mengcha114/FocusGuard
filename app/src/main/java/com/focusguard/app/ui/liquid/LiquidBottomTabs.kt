@@ -217,19 +217,6 @@ fun LiquidBottomTabs(
             }
         }
 
-        val interactiveHighlight = remember(animationScope) {
-            InteractiveHighlight(
-                animationScope = animationScope,
-                position = { size, _ ->
-                    Offset(
-                        if (isLtr) (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset
-                        else size.width - (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset,
-                        size.height / 2f
-                    )
-                }
-            )
-        }
-
         // 第 1 层：整条玻璃条 + 真实内容（按住放大时 layerBlock 只放大内容）
         Row(
             Modifier
@@ -250,7 +237,6 @@ fun LiquidBottomTabs(
                     },
                     onDrawSurface = { drawRect(containerColor) }
                 )
-                .then(interactiveHighlight.modifier)
                 .height(64.dp)
                 .fillMaxWidth()
                 .padding(4.dp),
@@ -295,7 +281,6 @@ fun LiquidBottomTabs(
                         },
                         onDrawSurface = { drawRect(containerColor) }
                     )
-                    .then(interactiveHighlight.modifier)
                     .height(56.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp)
@@ -318,7 +303,6 @@ fun LiquidBottomTabs(
                         else size.width - (dampedDragAnimation.value + 1f) * tabWidth +
                             overshoot / 2f + panelOffset
                 }
-                .then(interactiveHighlight.gestureModifier)
                 .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),

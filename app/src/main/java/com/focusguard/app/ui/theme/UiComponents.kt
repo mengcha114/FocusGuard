@@ -109,8 +109,8 @@ fun Modifier.glassSurface(
         } else {
             {
                 com.kyant.backdrop.highlight.Highlight(
-                    width = (0.35f + t.highlight * 0.6f).dp,
-                    alpha = 0.2f + 0.7f * t.highlight
+                    width = (0.4f + t.highlight * 1.3f).dp,
+                    alpha = (0.2f + 0.75f * t.highlight).coerceAtMost(1f)
                 )
             }
         },
@@ -119,18 +119,27 @@ fun Modifier.glassSurface(
         } else {
             {
                 InnerShadow(
-                    radius = (5f * t.depth).dp,
-                    alpha = 0.24f * t.depth
+                    radius = (7f * t.depth).dp,
+                    alpha = 0.32f * t.depth
                 )
             }
         },
         onDrawSurface = {
             drawRect(tint.copy(alpha = surfaceAlpha))
-            // 顶部反光 + 底部压暗，让整块区域有厚度
+            // 斜向反光 + 顶亮底暗，让整块区域有厚度
+            drawRect(
+                Brush.linearGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.05f + 0.12f * t.depth),
+                        Color.Transparent,
+                        Color.White.copy(alpha = 0.02f)
+                    )
+                )
+            )
             drawRect(
                 Brush.verticalGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.03f + 0.14f * t.depth),
+                        Color.White.copy(alpha = 0.03f + 0.16f * t.depth),
                         Color.Transparent
                     )
                 )
@@ -139,7 +148,7 @@ fun Modifier.glassSurface(
                 Brush.verticalGradient(
                     listOf(
                         Color.Transparent,
-                        Color.Black.copy(alpha = 0.02f + 0.05f * t.depth)
+                        Color.Black.copy(alpha = 0.03f + 0.07f * t.depth)
                     ),
                     startY = size.height * 0.6f
                 )
@@ -293,8 +302,8 @@ fun Modifier.inkCard(
                     } else {
                         {
                             com.kyant.backdrop.highlight.Highlight(
-                                width = (0.4f + t.highlight * 0.9f).dp,
-                                alpha = 0.2f + 0.8f * t.highlight
+                                width = (0.5f + t.highlight * 1.6f).dp,
+                                alpha = (0.25f + 0.75f * t.highlight).coerceAtMost(1f)
                             )
                         }
                     },
@@ -304,9 +313,9 @@ fun Modifier.inkCard(
                     } else {
                         {
                             Shadow(
-                                radius = (10f * t.depth).dp,
-                                offset = DpOffset(0.dp, (3f * t.depth).dp),
-                                alpha = 0.20f * t.depth
+                                radius = (14f * t.depth).dp,
+                                offset = DpOffset(0.dp, (4f * t.depth).dp),
+                                alpha = 0.30f * t.depth
                             )
                         }
                     },
@@ -315,8 +324,8 @@ fun Modifier.inkCard(
                     } else {
                         {
                             InnerShadow(
-                                radius = (6f * t.depth).dp,
-                                alpha = 0.26f * t.depth
+                                radius = (8f * t.depth).dp,
+                                alpha = 0.36f * t.depth
                             )
                         }
                     },
@@ -326,11 +335,21 @@ fun Modifier.inkCard(
                                 alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.26f
                             )
                         )
+                        // 斜向反光：即使背景是模糊的纯色，也能看出玻璃
+                        drawRect(
+                            Brush.linearGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.06f + 0.14f * t.depth),
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = 0.02f)
+                                )
+                            )
+                        )
                         // 顶部反光 + 底部压暗：卡片看起来有厚度
                         drawRect(
                             Brush.verticalGradient(
                                 listOf(
-                                    Color.White.copy(alpha = 0.04f + 0.18f * t.depth),
+                                    Color.White.copy(alpha = 0.04f + 0.20f * t.depth),
                                     Color.Transparent
                                 )
                             )
@@ -339,7 +358,7 @@ fun Modifier.inkCard(
                             Brush.verticalGradient(
                                 listOf(
                                     Color.Transparent,
-                                    Color.Black.copy(alpha = 0.03f + 0.07f * t.depth)
+                                    Color.Black.copy(alpha = 0.04f + 0.09f * t.depth)
                                 ),
                                 startY = size.height * 0.55f
                             )
