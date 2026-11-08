@@ -71,9 +71,9 @@ fun Modifier.glassSurface(
     shape: androidx.compose.ui.graphics.Shape = androidx.compose.ui.graphics.RectangleShape,
     tint: Color = MaterialTheme.colorScheme.surface,
     surfaceAlpha: Float = 0.46f,
-    blurRadius: Dp = 18.dp,
-    refractionHeight: Dp = 26.dp,
-    refractionAmount: Dp = 64.dp
+    blurRadius: Dp = 6.dp,
+    refractionHeight: Dp = 16.dp,
+    refractionAmount: Dp = 36.dp
 ): Modifier {
     val a = AppearanceState.get(LocalContext.current)
     val backdrop = LocalAppBackdrop.current
@@ -136,10 +136,11 @@ fun Modifier.inkCard(
                     shape = { shape },
                     effects = {
                         vibrancy()
-                        blur(18f.dp.toPx())
+                        // 小半径模糊 + 强边缘折射才是液态玻璃；模糊一大就成毛玻璃了
+                        blur(6f.dp.toPx())
                         lens(
-                            32f.dp.toPx(),
-                            80f.dp.toPx(),
+                            18f.dp.toPx(),
+                            44f.dp.toPx(),
                             depthEffect = true,
                             chromaticAberration = true
                         )

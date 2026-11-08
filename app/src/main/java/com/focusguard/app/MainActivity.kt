@@ -39,7 +39,6 @@ import androidx.navigation.compose.rememberNavController
 import com.focusguard.app.data.Settings as AppSettings
 import com.focusguard.app.ui.screens.*
 import com.focusguard.app.ui.theme.FocusGuardTheme
-import com.focusguard.app.ui.theme.glassSurface
 import com.kyant.backdrop.backdrops.layerBackdrop
 
 /** 底栏顶层页面。 */
@@ -597,21 +596,45 @@ class MainActivity : ComponentActivity() {
                                 exit = androidx.compose.animation.slideOutVertically { it } +
                                     androidx.compose.animation.fadeOut()
                             ) {
-                            // 底部导航栏：液态模式下整条栏也是玻璃材质（采样背后的背景图层），
-                            // 不是只在栏里放半透明色块。
+                            // 底部导航栏：液态模式下使用可拖动的玻璃底栏
+                            // （指示器跟手，松手吸附到对应功能）；其他风格保持原样。
                             val liquidOn = com.focusguard.app.ui.theme.AppearanceState
                                 .get(androidx.compose.ui.platform.LocalContext.current)
                                 .cardStyle == com.focusguard.app.ui.theme.Appearance.CARD_LIQUID
-                            NavigationBar(
-                                modifier = Modifier.glassSurface(
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(
-                                        topStart = 28.dp,
-                                        topEnd = 28.dp
+                            if (liquidOn) {
+                                com.focusguard.app.ui.components.LiquidBottomBar(
+                                    backdrop = bgBackdrop,
+                                    tabs = listOf(
+                                        com.focusguard.app.ui.components.LiquidTab(
+                                            "home", "主页", Icons.Default.Home
+                                        ),
+                                        com.focusguard.app.ui.components.LiquidTab(
+                                            "apps", "应用管控", Icons.Default.Apps
+                                        ),
+                                        com.focusguard.app.ui.components.LiquidTab(
+                                            "timer_lock", "锁机", Icons.Default.Lock
+                                        ),
+                                        com.focusguard.app.ui.components.LiquidTab(
+                                            "ai_chat", "AI 对话", Icons.Default.Chat
+                                        ),
+                                        com.focusguard.app.ui.components.LiquidTab(
+                                            "settings", "设置", Icons.Default.Settings
+                                        )
                                     ),
-                                    surfaceAlpha = 0.40f
-                                ),
-                                containerColor = if (liquidOn) Color.Transparent
-                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                    selectedRoute = currentRoute ?: "home",
+                                    onSelect = { route ->
+                                        navController.navigate(route) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
+                                )
+                            } else {
+                            NavigationBar(
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                                 tonalElevation = 0.dp
                             ) {
                                 NavigationBarItem(
@@ -684,6 +707,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 )
+                            }
                             }
                             }
                         },
