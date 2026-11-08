@@ -182,7 +182,8 @@ fun LiquidBottomTabs(
                 valueRange = 0f..(tabs.size - 1).toFloat(),
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
-                pressedScale = 78f / 56f,
+                // 按压时只轻微放大，避免选中玻璃鼓出底栏、盖住相邻图标
+                pressedScale = 1.12f,
                 onDragStarted = {},
                 onDragStopped = {
                     val target = targetValue.fastRoundToInt().fastCoerceIn(0, tabs.lastIndex)

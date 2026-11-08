@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,9 +26,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +42,16 @@ import com.focusguard.app.ui.theme.Appearance
 import com.focusguard.app.ui.theme.AppearanceState
 import com.focusguard.app.ui.theme.ImageBackground
 import com.focusguard.app.ui.theme.inkCard
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.colorControls
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -226,6 +241,15 @@ fun AppearancePanel() {
             }
         }
         FxExpand(visible = a.cardStyle == Appearance.CARD_LIQUID) {
+            // 棋盘实时预览：折射/模糊/色散/高光/立体感的变化在这里最直观
+            Text(
+                "参数预览（棋盘背景更容易看出折射）",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(6.dp))
+            LiquidParamPreview(a)
+            Spacer(Modifier.height(8.dp))
             SliderRow(
                 title = "折射高度",
                 value = a.liquidRefractionHeight,
@@ -507,5 +531,118 @@ private fun SliderRow(
             steps = steps
         )
         if (hint != null) Text(hint, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * 液态玻璃参数实时预览。
+ *
+ * 棋盘背景是关键：真实页面背景通常是大面积平滑渐变或模糊图，折射/色散
+ * 几乎没有可弯折的细节，滑块拉满也看不出来。棋盘有高对比边界，能直接
+ * 反映折射高度、强度、模糊、色散、高光和立体感的变化。
+ */
+@Composable
+private fun LiquidParamPreview(a: Appearance) {
+    val backdrop = rememberLayerBackdrop {
+        drawRect(Color.Transparent)
+        drawContent()
+    }
+    val shape = RoundedCornerShape(18.dp)
+    val h = a.liquidRefractionHeight.coerceIn(8, 40).dp
+    val amount = h * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.4f)
+    val blurDp = a.liquidBlur.coerceIn(0, 16).dp
+    val hi = a.liquidHighlight.coerceIn(0, 100) / 100f
+    val depth = a.liquidDepth.coerceIn(0, 100) / 100f
+    val sat = a.liquidSaturation.coerceIn(80, 160) / 100f
+    val bright = a.liquidBrightness.coerceIn(-30, 30) / 100f
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(104.dp)
+            .clip(RoundedCornerShape(18.dp))
+    ) {
+        // 背景层：高对比棋盘，只被采样、不直接显示给玻璃以外的逻辑
+        Box(
+            Modifier
+                .matchParentSize()
+                .layerBackdrop(backdrop)
+        ) {
+            Canvas(Modifier.matchParentSize()) {
+                val cell = 14.dp.toPx()
+                val cols = (size.width / cell).toInt() + 1
+                val rows = (size.height / cell).toInt() + 1
+                for (r in 0 until rows) {
+                    for (c in 0 until cols) {
+                        drawRect(
+                            color = if ((r + c) % 2 == 0) {
+                                Color(0xFF13202E)
+                            } else {
+                                Color(0xFFF2F6FA)
+                            },
+                            topLeft = Offset(c * cell, r * cell),
+                            size = Size(cell, cell)
+                        )
+                    }
+                }
+            }
+        }
+        // 玻璃层：与卡片使用同一组参数
+        Box(
+            Modifier
+                .matchParentSize()
+                .padding(14.dp)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { shape },
+                    effects = {
+                        vibrancy()
+                        if (blurDp > 0.dp) blur(blurDp.toPx())
+                        if (sat != 1f || bright != 0f) {
+                            colorControls(brightness = bright, saturation = sat)
+                        }
+                        if (a.liquidRefraction > 0) {
+                            lens(
+                                h.toPx(),
+                                amount.toPx(),
+                                depthEffect = a.liquidDepthEffect,
+                                chromaticAberration = a.liquidDispersion
+                            )
+                        }
+                    },
+                    highlight = if (hi <= 0f) {
+                        { null }
+                    } else {
+                        {
+                            Highlight(
+                                width = (0.5f + hi * 1.6f).dp,
+                                alpha = (0.25f + 0.75f * hi).coerceAtMost(1f)
+                            )
+                        }
+                    },
+                    shadow = if (depth <= 0f) {
+                        null
+                    } else {
+                        {
+                            Shadow(
+                                radius = (14f * depth).dp,
+                                offset = DpOffset(0.dp, (4f * depth).dp),
+                                alpha = 0.30f * depth
+                            )
+                        }
+                    },
+                    innerShadow = if (depth <= 0f) {
+                        null
+                    } else {
+                        {
+                            InnerShadow(
+                                radius = (8f * depth).dp,
+                                alpha = 0.36f * depth
+                            )
+                        }
+                    },
+                    onDrawSurface = { drawRect(Color.White.copy(alpha = 0.06f)) }
+                )
+        )
     }
 }
