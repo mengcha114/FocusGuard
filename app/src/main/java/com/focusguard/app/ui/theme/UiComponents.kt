@@ -269,15 +269,19 @@ fun ImageBackground(a: Appearance, base: Color) {
                     android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)
                 }
                 if (bmp != null && blurOn) {
-                    // 模糊 0–40dp 映射到 1–14 倍缩小，连续变化
-                    val factor = 1f + a.imageBlur / 3f
-                    val targetW = (bmp.width / factor).toInt().coerceAtLeast(1)
-                    val targetH = (bmp.height / factor).toInt().coerceAtLeast(1)
+                    // 缩到约 720 宽后做三次盒式模糊，再交给 Compose 平滑放大：
+                    // 这样是连续的朦胧感，不是把原图降采样后放大的马赛克方块。
+                    val targetW = 720.coerceAtMost(bmp.width)
+                    val targetH = (bmp.height * (targetW.toFloat() / bmp.width))
+                        .toInt().coerceAtLeast(1)
                     val small = android.graphics.Bitmap.createScaledBitmap(
                         bmp, targetW, targetH, true
                     )
                     if (small !== bmp) bmp.recycle()
-                    bmp = small
+                    bmp = com.focusguard.app.util.FastBlur.blur(
+                        small,
+                        (a.imageBlur * 0.55f).toInt().coerceIn(1, 24)
+                    )
                 }
                 bmp?.asImageBitmap()
             }.getOrNull()

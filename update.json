@@ -1,8 +1,8 @@
 {
-  "tag": "v3.11.80",
+  "tag": "v3.11.81",
   "notes": "修复了已知问题",
   "assets": {
-    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.80/app-edu-release.apk",
-    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.80/app-general-release.apk"
+    "edu": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.81/app-edu-release.apk",
+    "general": "https://gitee.com/autumiao/FocusGuard/releases/download/v3.11.81/app-general-release.apk"
   }
 }
