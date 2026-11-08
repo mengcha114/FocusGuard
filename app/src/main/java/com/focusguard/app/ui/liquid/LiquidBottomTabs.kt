@@ -264,10 +264,12 @@ fun LiquidBottomTabs(
             LocalLiquidBottomTabScale provides {
                 lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
             },
-            // 选中格常驻放大：玻璃里看到的图标/文字比外面大一圈，
-            // 这就是截图里“透镜选中效果”的来源。
+            // 选中格常驻放大：玻璃里看到的图标/文字比外面大一圈。
+            // 跟随拖动位置取最近的 tab，玻璃滑到哪一格，哪一格就被放大。
             LocalLiquidBottomTabSelectedScale provides { index ->
-                if (index == selectedIndex) 1.26f else 1f
+                val active = dampedDragAnimation.value.fastRoundToInt()
+                    .fastCoerceIn(0, tabs.lastIndex)
+                if (index == active) 1.34f else 1f
             }
         ) {
             Row(
@@ -308,9 +310,13 @@ fun LiquidBottomTabs(
             Modifier
                 .padding(horizontal = 4.dp)
                 .graphicsLayer {
+                    // 玻璃块比 tab 略宽 12%，把放大后的图标/文字完整包住；
+                    // 同时补偿多出来的宽度，保证中心仍然对准 tab 中心。
+                    val overshoot = tabWidth * 0.12f
                     translationX =
-                        if (isLtr) dampedDragAnimation.value * tabWidth + panelOffset
-                        else size.width - (dampedDragAnimation.value + 1f) * tabWidth + panelOffset
+                        if (isLtr) dampedDragAnimation.value * tabWidth - overshoot / 2f + panelOffset
+                        else size.width - (dampedDragAnimation.value + 1f) * tabWidth +
+                            overshoot / 2f + panelOffset
                 }
                 .then(interactiveHighlight.gestureModifier)
                 .then(dampedDragAnimation.modifier)
@@ -320,9 +326,11 @@ fun LiquidBottomTabs(
                     effects = {
                         val press = dampedDragAnimation.pressProgress
                         // 常驻折射 + 色散：静止时就是一块液态透镜，按压时再增强。
-                        // 之前只有 pressProgress > 0 才有 lens，静止自然是一块素胶囊。
-                        val h = (10.dp + refractionHeight * 0.18f) * (0.85f + 0.15f * press)
-                        val a = (18.dp + refractionAmount * 0.22f) * (0.85f + 0.15f * press)
+                        // 折射高度接近玻璃块自身高度，内部才会整体弯折，而不是只有一圈边。
+                        val h = (16.dp + refractionHeight * 0.45f)
+                            .coerceAtMost(38.dp) * (0.88f + 0.12f * press)
+                        val a = (28.dp + refractionAmount * 0.55f)
+                            .coerceAtMost(96.dp) * (0.88f + 0.12f * press)
                         lens(
                             h.toPx(),
                             a.toPx(),
@@ -331,8 +339,10 @@ fun LiquidBottomTabs(
                         )
                     },
                     highlight = {
-                        Highlight.Default.copy(
-                            alpha = 0.65f + 0.35f * dampedDragAnimation.pressProgress
+                        // 更粗更亮的边缘高光，做出玻璃凸起的感觉
+                        Highlight(
+                            width = 1.6.dp,
+                            alpha = 0.80f + 0.20f * dampedDragAnimation.pressProgress
                         )
                     },
                     shadow = {
@@ -361,7 +371,7 @@ fun LiquidBottomTabs(
                     }
                 )
                 .height(56.dp)
-                .fillMaxWidth(1f / tabs.size)
+                .fillMaxWidth(1.12f / tabs.size)
         )
     }
 }
