@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import com.focusguard.app.ai.AiClient
 import com.focusguard.app.ai.ChatMessage
 import com.focusguard.app.data.LogStore
+import com.focusguard.app.ui.theme.glassSurface
+import com.focusguard.app.ui.theme.isGlassActive
 import com.focusguard.app.data.Settings
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.launch
@@ -702,16 +704,35 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
             modifier = Modifier.fillMaxWidth(if (isUser) 0.82f else 0.92f),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
+            val bubbleShape = RoundedCornerShape(
+                topStart = 18.dp,
+                topEnd = 18.dp,
+                bottomStart = if (isUser) 18.dp else 4.dp,
+                bottomEnd = if (isUser) 4.dp else 18.dp
+            )
+            val glass = isGlassActive() && !isUser
             Surface(
-                shape = RoundedCornerShape(
-                    topStart = 18.dp,
-                    topEnd = 18.dp,
-                    bottomStart = if (isUser) 18.dp else 4.dp,
-                    bottomEnd = if (isUser) 4.dp else 18.dp
-                ),
-                color = if (isUser) scheme.primary else scheme.surfaceVariant,
+                modifier = if (glass) {
+                    Modifier.glassSurface(
+                        shape = bubbleShape,
+                        tint = scheme.surfaceVariant,
+                        surfaceAlpha = 0.22f
+                    )
+                } else {
+                    Modifier
+                },
+                shape = bubbleShape,
+                color = when {
+                    isUser -> scheme.primary
+                    glass -> Color.Transparent
+                    else -> scheme.surfaceVariant
+                },
                 contentColor = if (isUser) scheme.onPrimary else scheme.onSurface,
-                border = if (isUser) null else androidx.compose.foundation.BorderStroke(1.dp, scheme.outline.copy(alpha = 0.35f))
+                border = if (isUser || glass) null
+                else androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    scheme.outline.copy(alpha = 0.35f)
+                )
             ) {
                 Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     if (isUser) {

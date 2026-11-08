@@ -28,6 +28,10 @@ data class Appearance(
     val gradientStyle: Int = 0,
     /** 卡片描边强度（0–100，0 为无描边）。 */
     val cardBorder: Int = 45,
+    /** 液态玻璃折射高度（dp，8–40）。 */
+    val liquidRefractionHeight: Int = 24,
+    /** 液态玻璃折射强度（0–100，影响边缘弯折幅度）。 */
+    val liquidRefraction: Int = 60,
     /** 光晕强度（10–100）。 */
     val glowIntensity: Int = 60,
     /** 光晕缓慢漂移动画。 */
@@ -115,6 +119,10 @@ data class Appearance(
                 glow = p.getBoolean("glow", legacy.getBoolean("bg_blur_enabled", true)),
                 gradientStyle = p.getInt("gradient_style", d.gradientStyle),
                 cardBorder = p.getInt("card_border", d.cardBorder),
+                liquidRefractionHeight = p.getInt(
+                    "liquid_refraction_height", d.liquidRefractionHeight
+                ),
+                liquidRefraction = p.getInt("liquid_refraction", d.liquidRefraction),
                 glowIntensity = p.getInt("glow_intensity", d.glowIntensity),
                 glowMotion = p.getBoolean("glow_motion", d.glowMotion),
                 cardStyle = p.getInt("card_style", d.cardStyle),
@@ -141,6 +149,8 @@ data class Appearance(
                 .putBoolean("glow", a.glow)
                 .putInt("gradient_style", a.gradientStyle)
                 .putInt("card_border", a.cardBorder)
+                .putInt("liquid_refraction_height", a.liquidRefractionHeight)
+                .putInt("liquid_refraction", a.liquidRefraction)
                 .putInt("glow_intensity", a.glowIntensity)
                 .putBoolean("glow_motion", a.glowMotion)
                 .putInt("card_style", a.cardStyle)

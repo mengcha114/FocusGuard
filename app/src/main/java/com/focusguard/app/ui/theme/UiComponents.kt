@@ -70,34 +70,50 @@ fun isGlassActive(): Boolean {
 fun Modifier.glassSurface(
     shape: androidx.compose.ui.graphics.Shape = androidx.compose.ui.graphics.RectangleShape,
     tint: Color = MaterialTheme.colorScheme.surface,
-    surfaceAlpha: Float = 0.46f,
+    surfaceAlpha: Float = 0.30f,
     blurRadius: Dp = 6.dp,
-    refractionHeight: Dp = 16.dp,
-    refractionAmount: Dp = 36.dp
+    refractionHeight: Dp? = null,
+    refractionAmount: Dp? = null
 ): Modifier {
     val a = AppearanceState.get(LocalContext.current)
     val backdrop = LocalAppBackdrop.current
     if (a.cardStyle != Appearance.CARD_LIQUID || backdrop == null) return this
+    val strength = a.cardBorder.coerceIn(0, 100) / 100f
+    val refHeight = refractionHeight
+        ?: a.liquidRefractionHeight.coerceIn(8, 40).dp
+    val refAmount = refractionAmount
+        ?: (refHeight * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.4f))
     return this.drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
         effects = {
             vibrancy()
             blur(blurRadius.toPx())
-            lens(
-                refractionHeight.toPx(),
-                refractionAmount.toPx(),
-                depthEffect = true,
-                chromaticAberration = true
-            )
+            if (a.liquidRefraction > 0) {
+                lens(
+                    refHeight.toPx(),
+                    refAmount.toPx(),
+                    depthEffect = true,
+                    chromaticAberration = true
+                )
+            }
         },
-        highlight = { com.kyant.backdrop.highlight.Highlight(width = 1.2.dp, alpha = 0.95f) },
+        highlight = if (strength <= 0f) {
+            { null }
+        } else {
+            {
+                com.kyant.backdrop.highlight.Highlight(
+                    width = (0.3f + strength * 0.5f).dp,
+                    alpha = (0.30f + strength * 0.5f)
+                )
+            }
+        },
         onDrawSurface = {
             drawRect(tint.copy(alpha = surfaceAlpha))
             drawRect(
                 Brush.verticalGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.12f),
+                        Color.White.copy(alpha = 0.10f * strength + 0.03f),
                         Color.Transparent,
                         Color.White.copy(alpha = 0.03f)
                     )
@@ -105,6 +121,49 @@ fun Modifier.glassSurface(
             )
         }
     )
+}
+
+/** 弹窗容器色：液态模式下透明，由 [liquidPanel] 画玻璃背景。 */
+@Composable
+fun dialogGlassColor(fallback: Color): Color =
+    if (isGlassActive()) Color.Transparent else fallback
+
+/**
+ * 弹窗用的液态玻璃面板。
+ *
+ * 弹窗是独立 Window，拿不到主界面的背景图层，无法做真实背景采样，
+ * 因此这里用高光渐变 + 光线弯折描边做同款观感；只有在液态模式下才生效。
+ */
+@Composable
+fun Modifier.liquidPanel(
+    shape: androidx.compose.ui.graphics.Shape,
+    tint: Color = MaterialTheme.colorScheme.surface
+): Modifier {
+    val a = AppearanceState.get(LocalContext.current)
+    if (a.cardStyle != Appearance.CARD_LIQUID) return this
+    val strength = (a.cardBorder.coerceIn(0, 100) / 100f).coerceAtLeast(0.12f)
+    return this
+        .clip(shape)
+        .background(
+            Brush.verticalGradient(
+                listOf(
+                    Color.White.copy(alpha = 0.16f),
+                    tint.copy(alpha = 0.88f),
+                    Color.White.copy(alpha = 0.04f)
+                )
+            )
+        )
+        .border(
+            0.6.dp,
+            Brush.linearGradient(
+                listOf(
+                    Color.White.copy(alpha = 0.45f * strength),
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.20f * strength),
+                    Color.White.copy(alpha = 0.08f * strength)
+                )
+            ),
+            shape
+        )
 }
 
 /**
@@ -123,12 +182,14 @@ fun Modifier.inkCard(
     if (a.cardStyle == Appearance.CARD_LIQUID) {
         val backdrop = LocalAppBackdrop.current
         if (backdrop != null) {
-            // 真·液态玻璃：采样背景图层，做提饱和 + 模糊 + 边缘折射/色散。
-            // 背景大面积是渐变时，单靠模糊几乎看不出变化，所以：
-            // 1) 折射量给足（26dp 高度 / 64dp 位移）并开启色散，边缘会明显弯折；
-            // 2) 表面色压到 0.22，让背景透出来；
-            // 3) 额外叠一层顶部高光 + 左上光斑，任何背景上都有玻璃质感。
+            // 真·液态玻璃：采样背景图层，做提饱和 + 低模糊 + 边缘折射/色散。
+            // 折射参数来自「界面主题 → 卡片」里的滑块（折射高度 / 折射强度）。
             val surface = container ?: scheme.surfaceVariant
+            val strength = a.cardBorder.coerceIn(0, 100) / 100f
+            val refHeight = a.liquidRefractionHeight.coerceIn(8, 40).dp
+            // 强度 0 → 完全取消折射；100 → 约 3 倍高度的位移
+            val refAmount = refHeight * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.4f)
+            val hasRefraction = a.liquidRefraction > 0
             var m = this
                 .clip(shape)
                 .drawBackdrop(
@@ -136,20 +197,26 @@ fun Modifier.inkCard(
                     shape = { shape },
                     effects = {
                         vibrancy()
-                        // 小半径模糊 + 强边缘折射才是液态玻璃；模糊一大就成毛玻璃了
                         blur(6f.dp.toPx())
-                        lens(
-                            18f.dp.toPx(),
-                            44f.dp.toPx(),
-                            depthEffect = true,
-                            chromaticAberration = true
-                        )
+                        if (hasRefraction) {
+                            lens(
+                                refHeight.toPx(),
+                                refAmount.toPx(),
+                                depthEffect = true,
+                                chromaticAberration = true
+                            )
+                        }
                     },
-                    highlight = {
-                        com.kyant.backdrop.highlight.Highlight(
-                            width = 1.2.dp,
-                            alpha = 0.95f
-                        )
+                    // 描边强度为 0 时彻底不加白边/高光
+                    highlight = if (strength <= 0f) {
+                        { null }
+                    } else {
+                        {
+                            com.kyant.backdrop.highlight.Highlight(
+                                width = (0.3f + strength * 0.7f).dp,
+                                alpha = (0.35f + strength * 0.65f)
+                            )
+                        }
                     },
                     onDrawSurface = {
                         drawRect(
@@ -160,37 +227,26 @@ fun Modifier.inkCard(
                         drawRect(
                             Brush.verticalGradient(
                                 listOf(
-                                    Color.White.copy(alpha = 0.24f),
+                                    Color.White.copy(alpha = 0.20f * strength + 0.04f),
                                     Color.Transparent,
-                                    Color.White.copy(alpha = 0.05f)
+                                    Color.White.copy(alpha = 0.04f)
                                 )
-                            )
-                        )
-                        drawRect(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.26f),
-                                    Color.Transparent
-                                ),
-                                center = androidx.compose.ui.geometry.Offset(
-                                    size.width * 0.2f,
-                                    0f
-                                ),
-                                radius = size.width * 0.75f
                             )
                         )
                     }
                 )
-            m = if (borderColor != null) {
-                m.border(1.dp, borderColor, shape)
+            m = if (strength <= 0f) {
+                m
+            } else if (borderColor != null) {
+                m.border(0.6.dp, borderColor.copy(alpha = borderColor.alpha * strength), shape)
             } else {
                 m.border(
-                    1.dp,
+                    0.6.dp,
                     Brush.linearGradient(
                         listOf(
-                            Color.White.copy(alpha = 0.55f),
-                            scheme.outline.copy(alpha = 0.25f),
-                            Color.White.copy(alpha = 0.10f)
+                            Color.White.copy(alpha = 0.45f * strength),
+                            scheme.outline.copy(alpha = 0.20f * strength),
+                            Color.White.copy(alpha = 0.08f * strength)
                         )
                     ),
                     shape

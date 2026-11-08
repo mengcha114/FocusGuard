@@ -39,6 +39,9 @@ import androidx.navigation.compose.rememberNavController
 import com.focusguard.app.data.Settings as AppSettings
 import com.focusguard.app.ui.screens.*
 import com.focusguard.app.ui.theme.FocusGuardTheme
+import com.focusguard.app.ui.liquid.LiquidBottomTab
+import com.focusguard.app.ui.liquid.LiquidBottomTabs
+import com.focusguard.app.ui.liquid.LiquidTab
 import com.kyant.backdrop.backdrops.layerBackdrop
 
 /** 底栏顶层页面。 */
@@ -596,42 +599,59 @@ class MainActivity : ComponentActivity() {
                                 exit = androidx.compose.animation.slideOutVertically { it } +
                                     androidx.compose.animation.fadeOut()
                             ) {
-                            // 底部导航栏：液态模式下使用可拖动的玻璃底栏
-                            // （指示器跟手，松手吸附到对应功能）；其他风格保持原样。
+                            // 底部导航栏：液态模式下使用官方 LiquidBottomTabs 的移植
+                            // （按住整条玻璃放大、拖动选中玻璃带弹性形变、松手吸附切换）。
                             val liquidOn = com.focusguard.app.ui.theme.AppearanceState
                                 .get(androidx.compose.ui.platform.LocalContext.current)
                                 .cardStyle == com.focusguard.app.ui.theme.Appearance.CARD_LIQUID
                             if (liquidOn) {
-                                com.focusguard.app.ui.components.LiquidBottomBar(
-                                    backdrop = bgBackdrop,
-                                    tabs = listOf(
-                                        com.focusguard.app.ui.components.LiquidTab(
-                                            "home", "主页", Icons.Default.Home
-                                        ),
-                                        com.focusguard.app.ui.components.LiquidTab(
-                                            "apps", "应用管控", Icons.Default.Apps
-                                        ),
-                                        com.focusguard.app.ui.components.LiquidTab(
-                                            "timer_lock", "锁机", Icons.Default.Lock
-                                        ),
-                                        com.focusguard.app.ui.components.LiquidTab(
-                                            "ai_chat", "AI 对话", Icons.Default.Chat
-                                        ),
-                                        com.focusguard.app.ui.components.LiquidTab(
-                                            "settings", "设置", Icons.Default.Settings
-                                        )
+                                val liquidTabs = listOf(
+                                    LiquidTab(
+                                        "home", "主页", Icons.Default.Home
                                     ),
-                                    selectedRoute = currentRoute ?: "home",
-                                    onSelect = { route ->
-                                        navController.navigate(route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
+                                    LiquidTab(
+                                        "apps", "应用管控", Icons.Default.Apps
+                                    ),
+                                    LiquidTab(
+                                        "timer_lock", "锁机", Icons.Default.Lock
+                                    ),
+                                    LiquidTab(
+                                        "ai_chat", "AI 对话", Icons.Default.Chat
+                                    ),
+                                    LiquidTab(
+                                        "settings", "设置", Icons.Default.Settings
+                                    )
+                                )
+                                fun go(route: String) {
+                                    navController.navigate(route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                                LiquidBottomTabs(
+                                    backdrop = bgBackdrop,
+                                    tabs = liquidTabs,
+                                    selectedIndex = liquidTabs
+                                        .indexOfFirst { it.route == (currentRoute ?: "home") }
+                                        .coerceAtLeast(0),
+                                    onTabSelected = { index -> go(liquidTabs[index].route) }
+                                ) {
+                                    liquidTabs.forEach { tab ->
+                                        LiquidBottomTab(
+                                            onClick = { go(tab.route) }
+                                        ) {
+                                            Icon(
+                                                tab.icon,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                            Text(tab.label, fontSize = 10.sp)
                                         }
                                     }
-                                )
+                                }
                             } else {
                             NavigationBar(
                                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),

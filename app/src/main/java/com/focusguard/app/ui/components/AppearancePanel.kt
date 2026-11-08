@@ -238,6 +238,20 @@ fun AppearancePanel() {
                 set { it.copy(cardOpacity = v) }
             }
         }
+        FxExpand(visible = a.cardStyle == Appearance.CARD_LIQUID) {
+            SliderRow(
+                title = "折射高度",
+                value = a.liquidRefractionHeight,
+                range = 8f..40f,
+                suffix = "dp"
+            ) { v -> set { it.copy(liquidRefractionHeight = v) } }
+            SliderRow(
+                title = "折射强度",
+                value = a.liquidRefraction,
+                range = 0f..100f,
+                suffix = "%"
+            ) { v -> set { it.copy(liquidRefraction = v) } }
+        }
         SliderRow(
             title = "描边强度",
             value = a.cardBorder,

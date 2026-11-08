@@ -41,6 +41,9 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.focusguard.app.data.*
 import com.focusguard.app.service.MemoReminder
 import com.focusguard.app.ui.theme.FocusColors
+import com.focusguard.app.ui.theme.glassSurface
+import com.focusguard.app.ui.theme.liquidPanel
+import com.focusguard.app.ui.theme.isGlassActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -470,9 +473,7 @@ private fun TodoTab(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(style.corner.dp))
-                    .background(style.cardBg)
-                    .border(1.dp, style.cardLine.copy(alpha = 0.7f), RoundedCornerShape(style.corner.dp))
+                    .memoGlassCard(style)
                     .padding(vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
@@ -598,9 +599,7 @@ private fun MemoItemRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(style.corner.dp))
-            .background(style.cardBg)
-            .border(1.dp, style.cardLine.copy(alpha = 0.7f), RoundedCornerShape(style.corner.dp))
+            .memoGlassCard(style)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = style.vPad.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -871,7 +870,8 @@ private fun StatsTab(palette: FocusColors.Palette, memoStore: MemoStore) {
                     Text("取消", color = palette.haze)
                 }
             },
-            containerColor = palette.surface,
+            modifier = Modifier.liquidPanel(RoundedCornerShape(14.dp), palette.surface),
+            containerColor = com.focusguard.app.ui.theme.dialogGlassColor(palette.surface),
             shape = RoundedCornerShape(14.dp)
         )
     }
@@ -1138,7 +1138,8 @@ private fun MemoEditorDialog(
                 Text("取消", color = palette.haze)
             }
         },
-        containerColor = palette.surface,
+        modifier = Modifier.liquidPanel(RoundedCornerShape(14.dp), palette.surface),
+            containerColor = com.focusguard.app.ui.theme.dialogGlassColor(palette.surface),
         shape = RoundedCornerShape(14.dp)
     )
 
@@ -1192,7 +1193,8 @@ private fun MemoEditorDialog(
             dismissButton = {
                 TextButton(onClick = { showTimePicker = false }) { Text("取消") }
             },
-            containerColor = palette.surface,
+            modifier = Modifier.liquidPanel(RoundedCornerShape(14.dp), palette.surface),
+            containerColor = com.focusguard.app.ui.theme.dialogGlassColor(palette.surface),
             shape = RoundedCornerShape(14.dp)
         )
     }
@@ -1383,7 +1385,8 @@ private fun StylePanelDialog(
                 shape = RoundedCornerShape(10.dp)
             ) { Text("完成") }
         },
-        containerColor = palette.surface,
+        modifier = Modifier.liquidPanel(RoundedCornerShape(14.dp), palette.surface),
+            containerColor = com.focusguard.app.ui.theme.dialogGlassColor(palette.surface),
         shape = RoundedCornerShape(14.dp)
     )
 }
@@ -1710,7 +1713,8 @@ private fun ReminderSettingsDialog(
                 shape = RoundedCornerShape(10.dp)
             ) { Text("完成") }
         },
-        containerColor = palette.surface,
+        modifier = Modifier.liquidPanel(RoundedCornerShape(14.dp), palette.surface),
+            containerColor = com.focusguard.app.ui.theme.dialogGlassColor(palette.surface),
         shape = RoundedCornerShape(14.dp)
     )
 }
@@ -1879,7 +1883,8 @@ private fun ImportDialog(
                 Text("关闭", color = palette.haze)
             }
         },
-        containerColor = palette.surface,
+        modifier = Modifier.liquidPanel(RoundedCornerShape(14.dp), palette.surface),
+            containerColor = com.focusguard.app.ui.theme.dialogGlassColor(palette.surface),
         shape = RoundedCornerShape(14.dp)
     )
 
@@ -1926,8 +1931,28 @@ private fun ImportDialog(
                     Text("取消", color = palette.haze)
                 }
             },
-            containerColor = palette.surface,
+            modifier = Modifier.liquidPanel(RoundedCornerShape(14.dp), palette.surface),
+            containerColor = com.focusguard.app.ui.theme.dialogGlassColor(palette.surface),
             shape = RoundedCornerShape(14.dp)
         )
+    }
+}
+
+/**
+ * 备忘录卡片表面：液态模式下走真实背景采样，否则保持用户自定义的卡片色。
+ */
+@Composable
+private fun Modifier.memoGlassCard(style: MemoStyle): Modifier {
+    val shape = RoundedCornerShape(style.corner.dp)
+    return if (isGlassActive()) {
+        this.clip(shape).glassSurface(
+            shape = shape,
+            tint = style.cardBg,
+            surfaceAlpha = 0.26f
+        )
+    } else {
+        this.clip(shape)
+            .background(style.cardBg)
+            .border(1.dp, style.cardLine.copy(alpha = 0.7f), shape)
     }
 }

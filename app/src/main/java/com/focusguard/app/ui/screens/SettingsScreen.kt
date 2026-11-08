@@ -1112,7 +1112,7 @@ fun SettingsScreen(
         ) {
             val components = listOf(
                 Triple(
-                    "AndroidLiquidGlass（backdrop）",
+                    "AndroidLiquidGlass（backdrop，含底栏交互移植）",
                     "Apache-2.0",
                     "https://github.com/Kyant0/AndroidLiquidGlass"
                 ),

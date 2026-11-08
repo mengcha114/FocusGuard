@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.sp
 import com.focusguard.app.data.AttemptGuard
 import com.focusguard.app.challenge.ChallengeGenerator
 import com.focusguard.app.challenge.ChallengeQuestion
+import com.focusguard.app.ui.theme.dialogGlassColor
+import com.focusguard.app.ui.theme.liquidPanel
 import kotlinx.coroutines.delay
 
 /**
@@ -212,6 +214,11 @@ fun VerifyDialog(
                 Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
+        modifier = Modifier.liquidPanel(
+            RoundedCornerShape(20.dp),
+            MaterialTheme.colorScheme.surface
+        ),
+        containerColor = dialogGlassColor(MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp)
     )
 }
