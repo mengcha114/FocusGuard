@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -139,7 +140,10 @@ fun LiquidBottomTabs(
     val barShape = RoundedCornerShape(percent = 50)
 
     BoxWithConstraints(
-        modifier.fillMaxWidth(),
+        modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         contentAlignment = Alignment.CenterStart
     ) {
         val density = LocalDensity.current
