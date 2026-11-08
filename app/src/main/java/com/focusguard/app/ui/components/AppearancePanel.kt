@@ -610,13 +610,13 @@ private fun LiquidParamPreview(a: Appearance) {
                             )
                         }
                     },
-                    highlight = if (hi <= 0f) {
+                    highlight = if (hi <= 0f || a.cardBorder <= 0) {
                         { null }
                     } else {
                         {
                             Highlight(
-                                width = (0.5f + hi * 1.6f).dp,
-                                alpha = (0.25f + 0.75f * hi).coerceAtMost(1f)
+                                width = (0.3f + 0.9f * hi).dp,
+                                alpha = (0.15f + 0.65f * hi).coerceAtMost(1f)
                             )
                         }
                     },

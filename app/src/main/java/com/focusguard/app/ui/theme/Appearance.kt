@@ -269,7 +269,7 @@ object AppearanceState {
      * 注意：解码/缩放/压缩都很重，**调用方必须放到 IO 线程**，
      * 以前在主线程同步调用，大图会把应用卡到被系统杀掉（表现成"选图闪退"）。
      *
-     * 画质优先：长边 2560 + JPEG 96，2K 屏上不再糊；解码用 ARGB_8888，
+     * 画质优先：长边 2560 + PNG 无损保存（超大图才退回 JPEG 100），解码用 ARGB_8888，
      * 内存不足时才退回 RGB_565 重试，异常统一兜底。
      */
     fun importImage(context: Context, uri: android.net.Uri): String? = try {
@@ -304,17 +304,39 @@ object AppearanceState {
                 if (bmp == null) {
                     null
                 } else {
-                    val name = "custom_bg_${System.currentTimeMillis()}.jpg"
-                    val dest = java.io.File(context.filesDir, name)
-                    val ok = try {
-                        java.io.FileOutputStream(dest).use {
-                            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 96, it)
+                    // 优先 PNG 无损保存：JPEG 即使 96 也会在渐变/文字边缘留下压缩痕迹，
+                    // 用户反复反馈「传原图还是糊」多半来自这里。
+                    // 超过 20MB（极少数高噪点大图）才退回 JPEG 100。
+                    val stamp = System.currentTimeMillis()
+                    val pngFile = java.io.File(context.filesDir, "custom_bg_$stamp.png")
+                    val okPng = try {
+                        java.io.FileOutputStream(pngFile).use {
+                            bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
                         }
                     } catch (e: Throwable) {
                         false
                     }
+                    var name = "custom_bg_$stamp.png"
+                    var dest = pngFile
+                    if (!okPng || pngFile.length() == 0L ||
+                        pngFile.length() > 20L * 1024 * 1024
+                    ) {
+                        pngFile.delete()
+                        name = "custom_bg_$stamp.jpg"
+                        dest = java.io.File(context.filesDir, name)
+                        val okJpg = try {
+                            java.io.FileOutputStream(dest).use {
+                                bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 100, it)
+                            }
+                        } catch (e: Throwable) {
+                            false
+                        }
+                        if (!okJpg) {
+                            dest.delete()
+                        }
+                    }
                     // 先写新图再删旧图：写失败时保留原背景，不会出现"换图失败后背景全空"
-                    if (!ok || dest.length() == 0L) {
+                    if (dest.length() == 0L) {
                         dest.delete()
                         null
                     } else {

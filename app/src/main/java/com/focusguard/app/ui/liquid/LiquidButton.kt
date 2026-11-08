@@ -53,6 +53,12 @@ fun LiquidButton(
     content: @Composable RowScope.() -> Unit
 ) {
     val animationScope = rememberCoroutineScope()
+    val appearance = com.focusguard.app.ui.theme.AppearanceState.get(
+        androidx.compose.ui.platform.LocalContext.current
+    )
+    // 跟随设置：描边强度 0 或高光 0 时不再画边缘白线（默认 Highlight 是纯白，很扎眼）
+    val highlightStrength = appearance.liquidHighlight.coerceIn(0, 100) / 100f
+    val showHighlight = appearance.cardBorder > 0 && highlightStrength > 0f
     val interactiveHighlight = remember(animationScope) {
         InteractiveHighlight(animationScope = animationScope)
     }
@@ -64,12 +70,30 @@ fun LiquidButton(
                 effects = {
                     vibrancy()
                     blur(2.dp.toPx())
-                    lens(12.dp.toPx(), 24.dp.toPx(), chromaticAberration = true)
+                    // 折射同样跟随设置，避免"按钮调了参数没反应"
+                    if (appearance.liquidRefraction > 0) {
+                        val refHeight = appearance.liquidRefractionHeight
+                            .coerceIn(8, 40).dp
+                        val refAmount = refHeight *
+                            (appearance.liquidRefraction.coerceIn(0, 100) / 100f * 1.6f)
+                        lens(
+                            refHeight.toPx(),
+                            refAmount.toPx(),
+                            depthEffect = appearance.liquidDepthEffect,
+                            chromaticAberration = appearance.liquidDispersion
+                        )
+                    }
                 },
-                highlight = {
-                    Highlight.Default.copy(
-                        alpha = 0.45f + 0.55f * interactiveHighlight.pressProgress
-                    )
+                highlight = if (!showHighlight) {
+                    null
+                } else {
+                    {
+                        Highlight(
+                            width = (0.3f + 0.9f * highlightStrength).dp,
+                            alpha = (0.15f + 0.55f * highlightStrength +
+                                0.2f * interactiveHighlight.pressProgress).coerceAtMost(1f)
+                        )
+                    }
                 },
                 shadow = {
                     Shadow(alpha = 0.20f + 0.45f * interactiveHighlight.pressProgress)

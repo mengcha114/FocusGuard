@@ -109,8 +109,8 @@ fun Modifier.glassSurface(
         } else {
             {
                 com.kyant.backdrop.highlight.Highlight(
-                    width = (0.4f + t.highlight * 1.3f).dp,
-                    alpha = (0.2f + 0.75f * t.highlight).coerceAtMost(1f)
+                    width = (0.3f + 0.9f * t.highlight).dp,
+                    alpha = (0.15f + 0.65f * t.highlight).coerceAtMost(1f)
                 )
             }
         },
@@ -244,7 +244,13 @@ private fun liquidTuning(a: Appearance): LiquidTuning {
         blur = a.liquidBlur.coerceIn(0, 16).dp,
         refractionHeight = h,
         refractionAmount = h * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.4f),
-        highlight = a.liquidHighlight.coerceIn(0, 100) / 100f,
+        // 描边强度为 0 时连玻璃高光边一起关掉：设置里把描边拉到 0 的用户
+        // 期望的是「完全没有白边」，而高光边以前不受描边控制，看起来像没生效。
+        highlight = if (a.cardBorder <= 0 || a.liquidHighlight <= 0) {
+            0f
+        } else {
+            a.liquidHighlight.coerceIn(0, 100) / 100f
+        },
         depth = a.liquidDepth.coerceIn(0, 100) / 100f,
         saturation = a.liquidSaturation.coerceIn(80, 160) / 100f,
         brightness = a.liquidBrightness.coerceIn(-30, 30) / 100f,
@@ -302,8 +308,8 @@ fun Modifier.inkCard(
                     } else {
                         {
                             com.kyant.backdrop.highlight.Highlight(
-                                width = (0.5f + t.highlight * 1.6f).dp,
-                                alpha = (0.25f + 0.75f * t.highlight).coerceAtMost(1f)
+                                width = (0.3f + 0.9f * t.highlight).dp,
+                                alpha = (0.15f + 0.65f * t.highlight).coerceAtMost(1f)
                             )
                         }
                     },

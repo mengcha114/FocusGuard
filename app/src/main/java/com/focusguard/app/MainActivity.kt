@@ -647,8 +647,21 @@ class MainActivity : ComponentActivity() {
                                             (liquidAppearance.liquidRefraction.coerceIn(0, 100) /
                                                 100f * 2.4f)
                                         ).dp,
-                                    blurRadius = 8.dp,
-                                    surfaceAlpha = 0.34f
+                                    blurRadius = liquidAppearance.liquidBlur
+                                        .coerceIn(0, 16).dp,
+                                    surfaceAlpha = 0.34f,
+                                    // 底栏与卡片共用同一套液态参数，设置里调什么这里就变什么
+                                    highlightStrength = liquidAppearance.liquidHighlight
+                                        .coerceIn(0, 100) / 100f,
+                                    depth = liquidAppearance.liquidDepth
+                                        .coerceIn(0, 100) / 100f,
+                                    saturation = liquidAppearance.liquidSaturation
+                                        .coerceIn(80, 160) / 100f,
+                                    brightness = liquidAppearance.liquidBrightness
+                                        .coerceIn(-30, 30) / 100f,
+                                    depthEffect = liquidAppearance.liquidDepthEffect,
+                                    dispersion = liquidAppearance.liquidDispersion,
+                                    borderVisible = liquidAppearance.cardBorder > 0
                                 ) {
                                     liquidTabs.forEachIndexed { index, tab ->
                                         LiquidBottomTab(

@@ -57,6 +57,7 @@ import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.colorControls
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
@@ -133,6 +134,15 @@ fun LiquidBottomTabs(
     refractionAmount: Dp = 24.dp,
     blurRadius: Dp = 8.dp,
     surfaceAlpha: Float = 0.40f,
+    // 以下参数直接对应设置页的「高光强度 / 立体感 / 背景饱和度 / 背景亮度 / 折射景深 / 边缘色散」，
+    // 底栏必须和卡片用同一套，否则调了参数底栏没反应。
+    highlightStrength: Float = 0.6f,
+    depth: Float = 0.35f,
+    saturation: Float = 1.1f,
+    brightness: Float = 0f,
+    depthEffect: Boolean = true,
+    dispersion: Boolean = true,
+    borderVisible: Boolean = true,
     content: @Composable RowScope.() -> Unit
 ) {
     if (tabs.isEmpty()) return
@@ -218,6 +228,16 @@ fun LiquidBottomTabs(
             }
         }
 
+        // 手势层：整条底栏都能按住/拖动，而不是只能拖选中的那一小格。
+        // pointerInput 放在父级 Box 上，子级的 clickable 仍能正常收到点击
+        // （inspectDragGestures 不消费事件，拖动超过阈值时 clickable 自己会取消）。
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .then(dampedDragAnimation.modifier),
+            contentAlignment = Alignment.CenterStart
+        ) {
+
         // 第 1 层：整条玻璃条 + 真实内容（按住放大时 layerBlock 只放大内容）
         Row(
             Modifier
@@ -227,8 +247,31 @@ fun LiquidBottomTabs(
                     shape = { barShape },
                     effects = {
                         vibrancy()
-                        blur(blurRadius.toPx())
-                        lens(refractionHeight.toPx(), refractionAmount.toPx())
+                        if (blurRadius > 0.dp) blur(blurRadius.toPx())
+                        if (saturation != 1f || brightness != 0f) {
+                            colorControls(brightness = brightness, saturation = saturation)
+                        }
+                        if (refractionHeight > 0.dp && refractionAmount > 0.dp) {
+                            lens(
+                                refractionHeight.toPx(),
+                                refractionAmount.toPx(),
+                                depthEffect = depthEffect,
+                                chromaticAberration = dispersion
+                            )
+                        }
+                    },
+                    // 关键：不传 highlight 时库会默认画一圈 1dp、alpha=1 的白边，
+                    // 这就是「描边强度调到 0 仍有一条粗白边」的来源。改为跟随设置，
+                    // 描边强度为 0 时彻底不画高光边。
+                    highlight = if (!borderVisible || highlightStrength <= 0f) {
+                        null
+                    } else {
+                        {
+                            Highlight(
+                                width = (0.3f + 0.8f * highlightStrength).dp,
+                                alpha = (0.15f + 0.6f * highlightStrength).coerceAtMost(1f)
+                            )
+                        }
                     },
                     layerBlock = {
                         val progress = dampedDragAnimation.pressProgress
@@ -265,23 +308,9 @@ fun LiquidBottomTabs(
                     .alpha(0f)
                     .layerBackdrop(tabsBackdrop)
                     .graphicsLayer { translationX = panelOffset }
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { barShape },
-                        effects = {
-                            val progress = dampedDragAnimation.pressProgress
-                            vibrancy()
-                            blur(blurRadius.toPx())
-                            lens(
-                                refractionHeight.toPx() * progress,
-                                refractionAmount.toPx() * progress
-                            )
-                        },
-                        highlight = {
-                            Highlight.Default.copy(alpha = dampedDragAnimation.pressProgress)
-                        },
-                        onDrawSurface = { drawRect(containerColor) }
-                    )
+                    // 这里只录「染色后的图标/文字」，绝不能再画一遍玻璃表面：
+                    // 选中玻璃采样的是这一层，如果这层里有一整条带底色的玻璃，
+                    // 透镜放大后就会变成一大块白色圆角块（用户截图里的“巨大白圆”）。
                     .height(56.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp)
@@ -304,40 +333,67 @@ fun LiquidBottomTabs(
                         else size.width - (dampedDragAnimation.value + 1f) * tabWidth +
                             overshoot / 2f + panelOffset
                 }
-                .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                     shape = { barShape },
                     effects = {
                         val press = dampedDragAnimation.pressProgress
+                        vibrancy()
+                        // 采样源只有背景 + 镜像图标，必须自己再模糊一次，
+                        // 否则选中玻璃会像一块「透明窟窿」，比周围底栏还清晰。
+                        if (blurRadius > 0.dp) blur(blurRadius.toPx())
+                        if (saturation != 1f || brightness != 0f) {
+                            colorControls(brightness = brightness, saturation = saturation)
+                        }
                         // 常驻折射 + 色散：静止时就是一块液态透镜，按压时再增强。
                         // 折射高度接近玻璃块自身高度，内部才会整体弯折，而不是只有一圈边。
                         val h = (16.dp + refractionHeight * 0.45f)
                             .coerceAtMost(38.dp) * (0.88f + 0.12f * press)
                         val a = (28.dp + refractionAmount * 0.55f)
                             .coerceAtMost(96.dp) * (0.88f + 0.12f * press)
-                        lens(
-                            h.toPx(),
-                            a.toPx(),
-                            depthEffect = true,
-                            chromaticAberration = true
-                        )
+                        if (h > 0.dp && a > 0.dp) {
+                            lens(
+                                h.toPx(),
+                                a.toPx(),
+                                depthEffect = depthEffect,
+                                chromaticAberration = dispersion
+                            )
+                        }
                     },
-                    highlight = {
-                        // 更粗更亮的边缘高光，做出玻璃凸起的感觉
-                        Highlight(
-                            width = 1.6.dp,
-                            alpha = 0.80f + 0.20f * dampedDragAnimation.pressProgress
-                        )
+                    highlight = if (!borderVisible || highlightStrength <= 0f) {
+                        null
+                    } else {
+                        {
+                            // 玻璃块边缘比卡片略亮一点，但不能再用 0.8~1.0 的纯白，
+                            // 那是之前「白圆」观感的另一半来源。
+                            Highlight(
+                                width = (0.6f + 0.9f * highlightStrength).dp,
+                                alpha = (0.30f + 0.5f * highlightStrength) *
+                                    (0.9f + 0.1f * dampedDragAnimation.pressProgress)
+                            )
+                        }
                     },
-                    shadow = {
-                        Shadow(alpha = 0.28f + 0.72f * dampedDragAnimation.pressProgress)
+                    shadow = if (depth <= 0f) {
+                        null
+                    } else {
+                        {
+                            Shadow(
+                                radius = (6f + 10f * depth).dp,
+                                alpha = (0.15f + 0.55f * depth) *
+                                    (0.6f + 0.4f * dampedDragAnimation.pressProgress)
+                            )
+                        }
                     },
-                    innerShadow = {
-                        InnerShadow(
-                            radius = 6.dp + 4.dp * dampedDragAnimation.pressProgress,
-                            alpha = 0.35f + 0.65f * dampedDragAnimation.pressProgress
-                        )
+                    innerShadow = if (depth <= 0f) {
+                        null
+                    } else {
+                        {
+                            InnerShadow(
+                                radius = (4f + 6f * depth).dp,
+                                alpha = (0.20f + 0.45f * depth) *
+                                    (0.7f + 0.3f * dampedDragAnimation.pressProgress)
+                            )
+                        }
                     },
                     layerBlock = {
                         scaleX = dampedDragAnimation.scaleX
@@ -358,5 +414,6 @@ fun LiquidBottomTabs(
                 .height(56.dp)
                 .fillMaxWidth(1.12f / tabs.size)
         )
+        }
     }
 }
