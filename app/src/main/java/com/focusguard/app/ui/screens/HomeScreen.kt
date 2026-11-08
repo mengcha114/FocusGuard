@@ -431,7 +431,7 @@ fun LogItem(
             .glassSurface(
                 shape = cardShape,
                 tint = MaterialTheme.colorScheme.surfaceVariant,
-                surfaceAlpha = 0.34f
+                surfaceAlpha = 0.24f
             ),
         shape = cardShape,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -512,14 +512,20 @@ private fun MemoCard(onOpenMemo: () -> Unit) {
 
     val glassOn = com.focusguard.app.ui.theme.isGlassActive()
     val cardShape = RoundedCornerShape(12.dp)
+    val memoInteraction = androidx.compose.foundation.interaction.MutableInteractionSource()
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpenMemo)
+            .clickable(
+                interactionSource = memoInteraction,
+                indication = null,
+                onClick = onOpenMemo
+            )
+            .pressScale(memoInteraction, 0.98f)
             .glassSurface(
                 shape = cardShape,
                 tint = MaterialTheme.colorScheme.surfaceVariant,
-                surfaceAlpha = 0.34f
+                surfaceAlpha = 0.24f
             ),
         shape = cardShape,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),

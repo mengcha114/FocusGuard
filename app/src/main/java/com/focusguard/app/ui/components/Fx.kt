@@ -163,6 +163,24 @@ fun FxPrimaryButton(
     icon: ImageVector? = null
 ) {
     val interaction = remember { MutableInteractionSource() }
+    val backdrop = com.focusguard.app.ui.theme.LocalAppBackdrop.current
+    val liquid = backdrop != null &&
+        com.focusguard.app.ui.theme.AppearanceState.get(
+            androidx.compose.ui.platform.LocalContext.current
+        ).cardStyle == com.focusguard.app.ui.theme.Appearance.CARD_LIQUID
+    if (liquid && enabled) {
+        com.focusguard.app.ui.liquid.LiquidButton(
+            onClick = onClick,
+            backdrop = backdrop!!,
+            modifier = modifier.fillMaxWidth()
+        ) {
+            if (icon != null) {
+                Icon(icon, null, modifier = Modifier.size(20.dp))
+            }
+            Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        }
+        return
+    }
     Button(
         onClick = onClick,
         enabled = enabled,

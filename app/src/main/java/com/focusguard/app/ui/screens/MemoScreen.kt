@@ -43,6 +43,7 @@ import com.focusguard.app.service.MemoReminder
 import com.focusguard.app.ui.theme.FocusColors
 import com.focusguard.app.ui.theme.glassSurface
 import com.focusguard.app.ui.theme.liquidPanel
+import com.focusguard.app.ui.theme.pressScale
 import com.focusguard.app.ui.theme.isGlassActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -596,11 +597,17 @@ private fun MemoItemRow(
         1 -> palette.accent
         else -> palette.faint
     }
+    val interaction = androidx.compose.foundation.interaction.MutableInteractionSource()
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .memoGlassCard(style)
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            )
+            .pressScale(interaction, 0.985f)
             .padding(horizontal = 12.dp, vertical = style.vPad.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1948,7 +1955,7 @@ private fun Modifier.memoGlassCard(style: MemoStyle): Modifier {
         this.clip(shape).glassSurface(
             shape = shape,
             tint = style.cardBg,
-            surfaceAlpha = 0.26f
+            surfaceAlpha = 0.22f
         )
     } else {
         this.clip(shape)

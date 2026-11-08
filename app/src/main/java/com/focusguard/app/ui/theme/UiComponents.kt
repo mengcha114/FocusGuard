@@ -131,8 +131,9 @@ fun dialogGlassColor(fallback: Color): Color =
 /**
  * 弹窗用的液态玻璃面板。
  *
- * 弹窗是独立 Window，拿不到主界面的背景图层，无法做真实背景采样，
- * 因此这里用高光渐变 + 光线弯折描边做同款观感；只有在液态模式下才生效。
+ * 弹窗是独立 Window，采样不到主界面背景图层；如果做成半透明，
+ * 会把后面的正文文字一起透出来，直接影响阅读。所以这里只保留玻璃的
+ * 「高光 + 弯折描边」质感，底色提高到接近不透明，保证文字清晰。
  */
 @Composable
 fun Modifier.liquidPanel(
@@ -141,29 +142,43 @@ fun Modifier.liquidPanel(
 ): Modifier {
     val a = AppearanceState.get(LocalContext.current)
     if (a.cardStyle != Appearance.CARD_LIQUID) return this
-    val strength = (a.cardBorder.coerceIn(0, 100) / 100f).coerceAtLeast(0.12f)
+    val strength = a.cardBorder.coerceIn(0, 100) / 100f
     return this
         .clip(shape)
         .background(
             Brush.verticalGradient(
                 listOf(
-                    Color.White.copy(alpha = 0.16f),
-                    tint.copy(alpha = 0.88f),
-                    Color.White.copy(alpha = 0.04f)
+                    Color.White.copy(alpha = 0.05f).compositeOver(tint.copy(alpha = 0.985f)),
+                    tint.copy(alpha = 0.985f),
+                    Color.White.copy(alpha = 0.02f).compositeOver(tint.copy(alpha = 0.985f))
                 )
             )
         )
         .border(
-            0.6.dp,
+            if (strength <= 0f) 0.dp else 0.5.dp,
             Brush.linearGradient(
                 listOf(
-                    Color.White.copy(alpha = 0.45f * strength),
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.20f * strength),
-                    Color.White.copy(alpha = 0.08f * strength)
+                    Color.White.copy(alpha = 0.30f * strength),
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.12f * strength),
+                    Color.White.copy(alpha = 0.05f * strength)
                 )
             ),
             shape
         )
+}
+
+/** 颜色叠加（把半透明白叠到底色上，避免弹窗透出后方文字）。 */
+private fun Color.compositeOver(background: Color): Color {
+    val a = alpha
+    if (a >= 1f) return this
+    val outA = a + background.alpha * (1f - a)
+    if (outA <= 0f) return Color.Transparent
+    return Color(
+        red = (red * a + background.red * background.alpha * (1f - a)) / outA,
+        green = (green * a + background.green * background.alpha * (1f - a)) / outA,
+        blue = (blue * a + background.blue * background.alpha * (1f - a)) / outA,
+        alpha = outA
+    )
 }
 
 /**
@@ -221,7 +236,7 @@ fun Modifier.inkCard(
                     onDrawSurface = {
                         drawRect(
                             surface.copy(
-                                alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.16f
+                                alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.22f
                             )
                         )
                         drawRect(
@@ -454,27 +469,36 @@ fun ImageBackground(a: Appearance, base: Color) {
         // RenderEffect 会直接原生崩溃（无 Java 堆栈），表现就是"设完背景图就闪退"。
         // 改为按模糊强度降采样后放大绘制：视觉接近模糊，且完全走 CPU/常规绘制。
         val blurOn = a.imageBlur > 0
-        // 不模糊时必须 1:1 解码：以前无脑 sample=2，等于把 2560 的图压成 1280
-        // 再铺满 2K 屏，用户看到的就是「传了原图还是糊」。
-        val sample = when {
-            !blurOn -> 1
-            a.imageBlur <= 8 -> 4
-            a.imageBlur <= 20 -> 8
-            else -> 16
-        }
+        // 模糊不再靠 inSampleSize 粗粒度降采样（1/2、1/4 跳档），
+        // 而是整图解码后按模糊值连续缩小再放大：
+        // 模糊值只影响观感，不会把原图固定压成某个低分辨率。
+        // 滑动调节时先 debounce，避免每移动 1dp 就重解码一次大图。
+        if (blurOn) kotlinx.coroutines.delay(120)
         bitmapState.value = withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
                 val opts = android.graphics.BitmapFactory.Options().apply {
-                    inSampleSize = sample
+                    inSampleSize = 1
                     inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
                 }
-                try {
-                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
+                var bmp = try {
+                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)
                 } catch (oom: OutOfMemoryError) {
                     // 低内存机型：退回 RGB_565，宁可少点色深也别白屏
                     opts.inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
-                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
+                    android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)
                 }
+                if (bmp != null && blurOn) {
+                    // 模糊 0–40dp 映射到 1–14 倍缩小，连续变化
+                    val factor = 1f + a.imageBlur / 3f
+                    val targetW = (bmp.width / factor).toInt().coerceAtLeast(1)
+                    val targetH = (bmp.height / factor).toInt().coerceAtLeast(1)
+                    val small = android.graphics.Bitmap.createScaledBitmap(
+                        bmp, targetW, targetH, true
+                    )
+                    if (small !== bmp) bmp.recycle()
+                    bmp = small
+                }
+                bmp?.asImageBitmap()
             }.getOrNull()
         }
     }

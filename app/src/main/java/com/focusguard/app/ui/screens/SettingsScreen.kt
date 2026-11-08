@@ -1623,7 +1623,7 @@ fun SettingsSection(
             .glassSurface(
                 shape = cardShape,
                 tint = MaterialTheme.colorScheme.surfaceVariant,
-                surfaceAlpha = 0.34f
+                surfaceAlpha = 0.24f
             ),
         shape = cardShape,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),

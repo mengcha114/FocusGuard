@@ -37,6 +37,8 @@ class InteractiveHighlight(
     )
     private var startPosition = Offset.Zero
     val pressProgress: Float get() = pressProgressAnimation.value
+    /** 手指相对按下点的位移（用于按钮弹性拉伸/偏移）。 */
+    val offset: Offset get() = positionAnimation.value - startPosition
 
     private val shader = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         RuntimeShader(

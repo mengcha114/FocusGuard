@@ -85,7 +85,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
                     .glassSurface(
                         shape = RoundedCornerShape(12.dp),
                         tint = MaterialTheme.colorScheme.surfaceVariant,
-                        surfaceAlpha = 0.34f
+                        surfaceAlpha = 0.24f
                     ),
                 shape = RoundedCornerShape(12.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -125,7 +125,7 @@ fun TextKeywordsScreen(onBack: () -> Unit) {
                     .glassSurface(
                         shape = RoundedCornerShape(12.dp),
                         tint = MaterialTheme.colorScheme.surfaceVariant,
-                        surfaceAlpha = 0.34f
+                        surfaceAlpha = 0.24f
                     ),
                 shape = RoundedCornerShape(12.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
