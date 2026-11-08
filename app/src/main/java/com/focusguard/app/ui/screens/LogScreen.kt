@@ -148,7 +148,7 @@ fun LogScreen() {
                     .glassSurface(
                         shape = RoundedCornerShape(12.dp),
                         tint = MaterialTheme.colorScheme.surfaceVariant,
-                        surfaceAlpha = 0.24f
+                        surfaceAlpha = 0.30f
                     ),
                 shape = RoundedCornerShape(12.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -376,7 +376,7 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
             .glassSurface(
                 shape = RoundedCornerShape(12.dp),
                 tint = MaterialTheme.colorScheme.surfaceVariant,
-                surfaceAlpha = 0.24f
+                surfaceAlpha = 0.30f
             ),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),

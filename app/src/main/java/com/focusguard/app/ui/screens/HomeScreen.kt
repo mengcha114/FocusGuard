@@ -431,7 +431,7 @@ fun LogItem(
             .glassSurface(
                 shape = cardShape,
                 tint = MaterialTheme.colorScheme.surfaceVariant,
-                surfaceAlpha = 0.24f
+                surfaceAlpha = 0.30f
             ),
         shape = cardShape,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -525,7 +525,7 @@ private fun MemoCard(onOpenMemo: () -> Unit) {
             .glassSurface(
                 shape = cardShape,
                 tint = MaterialTheme.colorScheme.surfaceVariant,
-                surfaceAlpha = 0.24f
+                surfaceAlpha = 0.30f
             ),
         shape = cardShape,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),

@@ -136,7 +136,6 @@ fun LiquidBottomTabs(
     } else {
         MaterialTheme.colorScheme.surface.copy(alpha = 0.40f)
     }
-    val tabsBackdrop = rememberLayerBackdrop()
     val barShape = RoundedCornerShape(percent = 50)
 
     BoxWithConstraints(
@@ -220,34 +219,6 @@ fun LiquidBottomTabs(
         }
 
         // 底层：整条玻璃条，按住放大（layerBlock 只放大内容，不放大背景采样）
-        Row(
-            Modifier
-                .graphicsLayer { translationX = panelOffset }
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { barShape },
-                    effects = {
-                        vibrancy()
-                        blur(blurRadius.toPx())
-                        lens(refractionHeight.toPx(), refractionAmount.toPx())
-                    },
-                    layerBlock = {
-                        val progress = dampedDragAnimation.pressProgress
-                        val scale = lerp(1f, 1f + 16.dp.toPx() / size.width, progress)
-                        scaleX = scale
-                        scaleY = scale
-                    },
-                    onDrawSurface = { drawRect(containerColor) }
-                )
-                .then(interactiveHighlight.modifier)
-                .height(64.dp)
-                .fillMaxWidth()
-                .padding(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content
-        )
-
-        // 中间层：把整条按主题色染色，供选中玻璃混合出强调色
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
                 lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
@@ -255,32 +226,27 @@ fun LiquidBottomTabs(
         ) {
             Row(
                 Modifier
-                    .clearAndSetSemantics {}
-                    .alpha(0f)
-                    .layerBackdrop(tabsBackdrop)
                     .graphicsLayer { translationX = panelOffset }
                     .drawBackdrop(
                         backdrop = backdrop,
                         shape = { barShape },
                         effects = {
-                            val progress = dampedDragAnimation.pressProgress
                             vibrancy()
                             blur(blurRadius.toPx())
-                            lens(
-                                refractionHeight.toPx() * progress,
-                                refractionAmount.toPx() * progress
-                            )
+                            lens(refractionHeight.toPx(), refractionAmount.toPx())
                         },
-                        highlight = {
-                            Highlight.Default.copy(alpha = dampedDragAnimation.pressProgress)
+                        layerBlock = {
+                            val progress = dampedDragAnimation.pressProgress
+                            val scale = lerp(1f, 1f + 16.dp.toPx() / size.width, progress)
+                            scaleX = scale
+                            scaleY = scale
                         },
                         onDrawSurface = { drawRect(containerColor) }
                     )
                     .then(interactiveHighlight.modifier)
-                    .height(56.dp)
+                    .height(64.dp)
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp)
-                    .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
+                    .padding(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 content = content
             )
@@ -298,7 +264,7 @@ fun LiquidBottomTabs(
                 .then(interactiveHighlight.gestureModifier)
                 .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
-                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
+                    backdrop = backdrop,
                     shape = { barShape },
                     effects = {
                         val progress = dampedDragAnimation.pressProgress
@@ -327,6 +293,7 @@ fun LiquidBottomTabs(
                     },
                     onDrawSurface = {
                         val progress = dampedDragAnimation.pressProgress
+                        drawRect(accentColor.copy(alpha = 0.22f))
                         drawRect(
                             if (isLightTheme) Color.Black.copy(alpha = 0.10f)
                             else Color.White.copy(alpha = 0.10f),

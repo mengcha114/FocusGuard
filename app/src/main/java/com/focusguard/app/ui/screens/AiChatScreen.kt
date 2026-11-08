@@ -716,7 +716,7 @@ private fun ChatBubble(msg: ChatMsg, onCopy: () -> Unit) {
                     Modifier.glassSurface(
                         shape = bubbleShape,
                         tint = scheme.surfaceVariant,
-                        surfaceAlpha = 0.22f
+                        surfaceAlpha = 0.26f
                     )
                 } else {
                     Modifier

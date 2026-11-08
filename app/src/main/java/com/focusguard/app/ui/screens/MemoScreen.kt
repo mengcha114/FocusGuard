@@ -1955,7 +1955,7 @@ private fun Modifier.memoGlassCard(style: MemoStyle): Modifier {
         this.clip(shape).glassSurface(
             shape = shape,
             tint = style.cardBg,
-            surfaceAlpha = 0.22f
+            surfaceAlpha = 0.26f
         )
     } else {
         this.clip(shape)
