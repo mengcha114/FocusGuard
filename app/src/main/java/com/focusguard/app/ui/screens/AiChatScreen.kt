@@ -152,7 +152,7 @@ fun AiChatScreen() {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = if (tab == 0) "AI 对话" else "检测日志",
                     fontSize = 28.sp,
@@ -175,9 +175,10 @@ fun AiChatScreen() {
                     Text("清空", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 }
             }
-            // Tab 切换（TabRow：空间充足，图标与文字互不遮挡）
+            // Tab 切换：固定宽度，避免标题挤占空间后中文标签被压成竖排
             TabRow(
                 selectedTabIndex = tab,
+                modifier = Modifier.width(150.dp),
                 containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.primary
             ) {
@@ -192,7 +193,7 @@ fun AiChatScreen() {
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(Modifier.width(5.dp))
-                            Text("对话", fontSize = 13.sp)
+                            Text("对话", fontSize = 13.sp, maxLines = 1, softWrap = false)
                         }
                     }
                 )
@@ -207,7 +208,7 @@ fun AiChatScreen() {
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(Modifier.width(5.dp))
-                            Text("日志", fontSize = 13.sp)
+                            Text("日志", fontSize = 13.sp, maxLines = 1, softWrap = false)
                         }
                     }
                 )
