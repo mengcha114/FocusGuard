@@ -109,8 +109,8 @@ fun Modifier.glassSurface(
         } else {
             {
                 com.kyant.backdrop.highlight.Highlight(
-                    width = (0.3f + 0.9f * t.highlight).dp,
-                    alpha = (0.15f + 0.65f * t.highlight).coerceAtMost(1f)
+                    width = (0.2f + 0.5f * t.highlight).dp,
+                    alpha = (0.10f + 0.45f * t.highlight).coerceAtMost(1f)
                 )
             }
         },
@@ -126,31 +126,32 @@ fun Modifier.glassSurface(
         },
         onDrawSurface = {
             drawRect(tint.copy(alpha = surfaceAlpha))
-            // 斜向反光 + 顶亮底暗，让整块区域有厚度
+            // 左上斜向反光 + 顶部薄高光 + 底部轻微压暗：薄而透，避免塑料感
             drawRect(
                 Brush.linearGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.05f + 0.12f * t.depth),
+                        Color.White.copy(alpha = 0.03f + 0.08f * t.depth),
                         Color.Transparent,
-                        Color.White.copy(alpha = 0.02f)
+                        Color.White.copy(alpha = 0.015f)
                     )
                 )
             )
             drawRect(
                 Brush.verticalGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.03f + 0.16f * t.depth),
+                        Color.White.copy(alpha = 0.02f + 0.10f * t.depth),
                         Color.Transparent
-                    )
+                    ),
+                    endY = size.height * 0.45f
                 )
             )
             drawRect(
                 Brush.verticalGradient(
                     listOf(
                         Color.Transparent,
-                        Color.Black.copy(alpha = 0.03f + 0.07f * t.depth)
+                        Color.Black.copy(alpha = 0.02f + 0.05f * t.depth)
                     ),
-                    startY = size.height * 0.6f
+                    startY = size.height * 0.62f
                 )
             )
         }
@@ -277,7 +278,6 @@ fun Modifier.inkCard(
         if (backdrop != null) {
             val t = liquidTuning(a)
             val surface = container ?: scheme.surfaceVariant
-            val strength = a.cardBorder.coerceIn(0, 100) / 100f
             val hasRefraction = a.liquidRefraction > 0
             var m = this
                 .clip(shape)
@@ -308,8 +308,10 @@ fun Modifier.inkCard(
                     } else {
                         {
                             com.kyant.backdrop.highlight.Highlight(
-                                width = (0.3f + 0.9f * t.highlight).dp,
-                                alpha = (0.15f + 0.65f * t.highlight).coerceAtMost(1f)
+                                // 库内部把描边宽度再乘 2，这里必须给得很细，
+                                // 否则卡片会是一圈厚白边（就是「老气」的来源）。
+                                width = (0.2f + 0.5f * t.highlight).dp,
+                                alpha = (0.10f + 0.45f * t.highlight).coerceAtMost(1f)
                             )
                         }
                     },
@@ -336,58 +338,45 @@ fun Modifier.inkCard(
                         }
                     },
                     onDrawSurface = {
+                        // 底色更薄一点，让背景透上来；厚涂才是「塑料感」的来源。
                         drawRect(
                             surface.copy(
-                                alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.26f
+                                alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.18f
                             )
                         )
-                        // 斜向反光：即使背景是模糊的纯色，也能看出玻璃
+                        // 左上到右下的斜向反光
                         drawRect(
                             Brush.linearGradient(
                                 listOf(
-                                    Color.White.copy(alpha = 0.06f + 0.14f * t.depth),
+                                    Color.White.copy(alpha = 0.04f + 0.10f * t.depth),
                                     Color.Transparent,
-                                    Color.White.copy(alpha = 0.02f)
+                                    Color.White.copy(alpha = 0.015f)
                                 )
                             )
                         )
-                        // 顶部反光 + 底部压暗：卡片看起来有厚度
+                        // 顶部薄高光 + 底部轻微压暗，做出玻璃厚度
                         drawRect(
                             Brush.verticalGradient(
                                 listOf(
-                                    Color.White.copy(alpha = 0.04f + 0.20f * t.depth),
+                                    Color.White.copy(alpha = 0.03f + 0.12f * t.depth),
                                     Color.Transparent
-                                )
+                                ),
+                                endY = size.height * 0.42f
                             )
                         )
                         drawRect(
                             Brush.verticalGradient(
                                 listOf(
                                     Color.Transparent,
-                                    Color.Black.copy(alpha = 0.04f + 0.09f * t.depth)
+                                    Color.Black.copy(alpha = 0.03f + 0.06f * t.depth)
                                 ),
-                                startY = size.height * 0.55f
+                                startY = size.height * 0.62f
                             )
                         )
                     }
                 )
-            m = if (strength <= 0f) {
-                m
-            } else if (borderColor != null) {
-                m.border(0.6.dp, borderColor.copy(alpha = borderColor.alpha * strength), shape)
-            } else {
-                m.border(
-                    0.6.dp,
-                    Brush.linearGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.45f * strength),
-                            scheme.outline.copy(alpha = 0.20f * strength),
-                            Color.White.copy(alpha = 0.08f * strength)
-                        )
-                    ),
-                    shape
-                )
-            }
+            // 边框交给库里的 Highlight 画（更细、带方向性）；
+            // 以前这里还额外叠了一层 0.6dp 白边，两条边加在一起就是又粗又旧的白框。
             return m
         }
         return this.liquidGlass(

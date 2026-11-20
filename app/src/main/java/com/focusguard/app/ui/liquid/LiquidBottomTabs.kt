@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -35,9 +36,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -105,8 +106,11 @@ fun RowScope.LiquidBottomTab(
                 val s = scale() * selectedScale(index)
                 scaleX = s
                 scaleY = s
+                // 以「图标中心」为缩放原点：放大时图标留在原位，
+                // 文字只会被推下去一点，不会挤进上方那颗玻璃里。
+                transformOrigin = TransformOrigin(0.5f, 0.30f)
             },
-        verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
         content = content
     )
@@ -263,8 +267,10 @@ fun LiquidBottomTabs(
                     } else {
                         {
                             Highlight(
-                                width = (0.3f + 0.8f * highlightStrength).dp,
-                                alpha = (0.15f + 0.6f * highlightStrength).coerceAtMost(1f)
+                                // 库内部会把描边宽度 ×2，所以这里给细一点，
+                                // 避免整条底栏出现一圈很粗的白边。
+                                width = (0.2f + 0.4f * highlightStrength).dp,
+                                alpha = (0.12f + 0.4f * highlightStrength).coerceAtMost(1f)
                             )
                         }
                     },
@@ -287,14 +293,14 @@ fun LiquidBottomTabs(
         // 选中玻璃采样「背景 + 这层图标」，玻璃里才会出现放大的选中图标。
         CompositionLocalProvider(
             LocalLiquidBottomTabScale provides {
-                lerp(1f, 1.12f, dampedDragAnimation.pressProgress)
+                lerp(1f, 1.08f, dampedDragAnimation.pressProgress)
             },
-            // 选中格常驻放大：玻璃里看到的图标/文字比外面大一圈。
+            // 选中格常驻放大：玻璃里看到的图标比外面大一圈。
             // 跟随拖动位置取最近的 tab，玻璃滑到哪一格，哪一格就被放大。
             LocalLiquidBottomTabSelectedScale provides { index ->
                 val active = dampedDragAnimation.value.fastRoundToInt()
                     .fastCoerceIn(0, tabs.lastIndex)
-                if (index == active) 1.22f else 1f
+                if (index == active) 1.18f else 1f
             }
         ) {
             Row(
@@ -315,21 +321,25 @@ fun LiquidBottomTabs(
             )
         }
 
-        // 第 3 层：可拖动的选中玻璃，弹性形变全部来自 DampedDragAnimation
-        // 玻璃块宽度 = tabWidth * 1.18；graphicsLayer 里的 size 是玻璃块自己的宽度，
-        // 不能拿来做 RTL 的整条宽度计算，所以单独记一个内容宽度。
+        // 第 3 层：可拖动的选中玻璃。
+        // 做成「图标大小」的圆形透镜（而不是盖住整个格子的胶囊）：
+        // 透镜半径和图标差不多大，图标的边缘正好落在折射区里，
+        // RuntimeShader 才会在图标轮廓上产生真实的弯折和彩色色散；
+        // 同时不会盖住下面的文字标签，也就不再出现「放大后重影的文字」。
         val contentWidth = with(density) { constraints.maxWidth.toFloat() - 8.dp.toPx() }
+        val bubblePx = with(density) { 38.dp.toPx() }
         Box(
             Modifier
                 .padding(horizontal = 4.dp)
                 .graphicsLayer {
-                    // 玻璃块比 tab 略宽 18%，把放大后的图标/文字完整包住；
-                    // 同时补偿多出来的宽度，保证中心仍然对准 tab 中心。
-                    val overshoot = tabWidth * 0.18f
+                    // 水平：居中在所在格子；垂直：对齐图标中心（图标中心约在内容区 16dp 处），
+                    // 让透镜正好罩住图标、不压到文字。
+                    val gap = (tabWidth - bubblePx) / 2f
                     translationX =
-                        if (isLtr) dampedDragAnimation.value * tabWidth - overshoot / 2f + panelOffset
-                        else contentWidth - (dampedDragAnimation.value + 1f) * tabWidth +
-                            overshoot / 2f + panelOffset
+                        if (isLtr) dampedDragAnimation.value * tabWidth + gap + panelOffset
+                        else contentWidth - dampedDragAnimation.value * tabWidth - gap -
+                            bubblePx + panelOffset
+                    translationY = -11.8.dp.toPx()
                 }
                 .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
@@ -338,20 +348,16 @@ fun LiquidBottomTabs(
                     effects = {
                         val press = dampedDragAnimation.pressProgress
                         vibrancy()
-                        // 轻微模糊（按压时更弱），让玻璃比周围底栏更「厚」，
-                        // 不是一块比底栏还清晰的透明窟窿；图标仍保持可辨认。
-                        if (blurRadius > 0.dp) blur(blurRadius.toPx() * 0.30f)
                         if (saturation != 1f || brightness != 0f) {
                             colorControls(brightness = brightness, saturation = saturation)
                         }
-                        // 常驻折射 + 色散：静止时就是一块液态透镜，按压时再增强。
-                        // 折射高度接近玻璃块自身高度，内部才会整体弯折，而不是只有一圈边。
-                        // 注意要同时判断 refractionAmount：设置里把「折射强度」拉到 0 时
-                        // 上面的 h 仍会算出 16dp，不加这个判断透镜关不掉。
-                        val h = (16.dp + refractionHeight * 0.45f)
-                            .coerceAtMost(38.dp) * (0.88f + 0.12f * press)
-                        val a = (28.dp + refractionAmount * 0.55f)
-                            .coerceAtMost(96.dp) * (0.88f + 0.12f * press)
+                        // 折射区覆盖整个透镜（半径 19dp）：图标不再落在「不变形」的
+                        // 中心区，边缘会被弯折并分离出彩色，才是参考图里的色散效果。
+                        // 这里也不加 blur，模糊会把色散边缘直接抹掉。
+                        val h = (14.dp + refractionHeight * 0.40f)
+                            .coerceAtMost(36.dp) * (0.90f + 0.10f * press)
+                        val a = (6.dp + refractionAmount * 0.20f)
+                            .coerceAtMost(28.dp) * (0.90f + 0.10f * press)
                         if (refractionHeight > 0.dp && refractionAmount > 0.dp) {
                             lens(
                                 h.toPx(),
@@ -365,13 +371,12 @@ fun LiquidBottomTabs(
                         null
                     } else {
                         {
-                            // 静止时几乎不画描边：之前那圈不透明的白边正好横穿标签，
-                            // 看起来就是一个「白色圆环」。只在按压时浮现玻璃棱边。
+                            // 静止只有一圈很淡的棱边，按压时才亮起来（不再有白圈）
                             val press = dampedDragAnimation.pressProgress
                             Highlight(
-                                width = (0.4f + 0.5f * highlightStrength).dp,
-                                alpha = (0.10f * highlightStrength + 0.55f * press *
-                                    highlightStrength).coerceIn(0f, 0.65f)
+                                width = (0.2f + 0.35f * highlightStrength).dp,
+                                alpha = (0.08f * highlightStrength + 0.45f * press *
+                                    highlightStrength).coerceIn(0f, 0.6f)
                             )
                         }
                     },
@@ -380,8 +385,8 @@ fun LiquidBottomTabs(
                     } else {
                         {
                             Shadow(
-                                radius = (6f + 10f * depth).dp,
-                                alpha = (0.15f + 0.55f * depth) *
+                                radius = (4f + 8f * depth).dp,
+                                alpha = (0.10f + 0.30f * depth) *
                                     (0.6f + 0.4f * dampedDragAnimation.pressProgress)
                             )
                         }
@@ -391,8 +396,8 @@ fun LiquidBottomTabs(
                     } else {
                         {
                             InnerShadow(
-                                radius = (4f + 6f * depth).dp,
-                                alpha = (0.20f + 0.45f * depth) *
+                                radius = (3f + 4f * depth).dp,
+                                alpha = (0.08f + 0.22f * depth) *
                                     (0.7f + 0.3f * dampedDragAnimation.pressProgress)
                             )
                         }
@@ -405,25 +410,13 @@ fun LiquidBottomTabs(
                         scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                     },
                     onDrawSurface = {
-                        // 用上下渐变的玻璃光泽代替平铺白色：
-                        // 平铺白色 + 白描边叠在一起就是之前那个「白圆」。
-                        val press = dampedDragAnimation.pressProgress
+                        // 只补一点点玻璃亮度，避免把里面的图标染白
                         drawRect(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.White.copy(alpha = if (isLightTheme) 0.10f else 0.12f),
-                                    Color.White.copy(alpha = 0.015f),
-                                    Color.White.copy(alpha = if (isLightTheme) 0.05f else 0.06f)
-                                )
-                            )
+                            Color.White.copy(alpha = if (isLightTheme) 0.05f else 0.06f)
                         )
-                        if (press > 0f) {
-                            drawRect(Color.White.copy(alpha = 0.06f * press))
-                        }
                     }
                 )
-                .height(56.dp)
-                .fillMaxWidth(1.18f / tabs.size)
+                .size(38.dp)
         )
     }
 }
