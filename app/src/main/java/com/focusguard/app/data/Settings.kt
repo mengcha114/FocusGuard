@@ -158,6 +158,8 @@ gacha
 
         // Token 节约系统开关
         private const val KEY_TOKEN_SAVING_ENABLED = "token_saving_enabled"
+        // 一次性迁移标记：保证「省 Token 默认关闭」对老用户也生效一次
+        private const val KEY_TOKEN_SAVING_RESET_DONE = "token_saving_reset_done"
         private const val KEY_SCREEN_HASH_DEDUP = "screen_hash_dedup"
         private const val KEY_SCREEN_TEXT_PREFILTER = "screen_text_prefilter"
         private const val KEY_DECISION_CACHE_ENABLED = "decision_cache_enabled"
@@ -223,6 +225,18 @@ gacha
     
     private val appContext: Context = context.applicationContext
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    init {
+        // 「省 Token」默认关闭：早期版本默认开启，值写进 prefs 后老用户升级
+        // 看上去仍像"默认开着"。这里一次性重置为关闭（只执行一次，
+        // 之后用户在设置里的选择照常保留）。
+        if (!prefs.getBoolean(KEY_TOKEN_SAVING_RESET_DONE, false)) {
+            prefs.edit()
+                .putBoolean(KEY_TOKEN_SAVING_ENABLED, false)
+                .putBoolean(KEY_TOKEN_SAVING_RESET_DONE, true)
+                .apply()
+        }
+    }
     
     // API settings
     var apiBaseUrl: String

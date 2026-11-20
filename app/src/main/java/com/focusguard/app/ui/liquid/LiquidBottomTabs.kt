@@ -115,8 +115,8 @@ fun RowScope.LiquidBottomTab(
  * 官方 LiquidBottomTabs 的完整移植（AndroidLiquidGlass catalog，Apache-2.0）。
  *
  * 交互：
- * - 按住：整条玻璃按 pressedScale（78/56 ≈ 1.39）放大，按压处出现跟手高光；
- * - 拖动：选中玻璃跟着手指走，按拖动速度做横向拉伸 / 纵向压扁的弹性形变；
+ * - 按住选中玻璃：整条玻璃轻微放大（pressedScale），选中玻璃跟手；
+ * - 拖动选中玻璃：跟着手指走，按拖动速度做横向拉伸 / 纵向压扁的弹性形变；
  * - 松手：弹簧吸附到最近的标签并切换页面；
  * - 点击：同样支持，且不经过拖动阈值，响应即时。
  *
@@ -228,16 +228,10 @@ fun LiquidBottomTabs(
             }
         }
 
-        // 手势层：整条底栏都能按住/拖动，而不是只能拖选中的那一小格。
-        // pointerInput 放在父级 Box 上，子级的 clickable 仍能正常收到点击
-        // （inspectDragGestures 不消费事件，拖动超过阈值时 clickable 自己会取消）。
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .then(dampedDragAnimation.modifier),
-            contentAlignment = Alignment.CenterStart
-        ) {
-
+        // 注意：手势必须挂在「选中玻璃」上（官方做法）。如果挂到整条底栏的父级，
+        // 子级 tab 的 clickable 会在 Main 阶段先消费掉 down 事件，
+        // 父级的 awaitFirstDown(requireUnconsumed = true) 永远等不到按下，
+        // 结果是按压缩放和拖动都失效。
         // 第 1 层：整条玻璃条 + 真实内容（按住放大时 layerBlock 只放大内容）
         Row(
             Modifier
@@ -321,6 +315,9 @@ fun LiquidBottomTabs(
         }
 
         // 第 3 层：可拖动的选中玻璃，弹性形变全部来自 DampedDragAnimation
+        // 玻璃块宽度 = tabWidth * 1.12；graphicsLayer 里的 size 是玻璃块自己的宽度，
+        // 不能拿来做 RTL 的整条宽度计算，所以单独记一个内容宽度。
+        val contentWidth = with(density) { constraints.maxWidth.toFloat() - 8.dp.toPx() }
         Box(
             Modifier
                 .padding(horizontal = 4.dp)
@@ -330,28 +327,31 @@ fun LiquidBottomTabs(
                     val overshoot = tabWidth * 0.12f
                     translationX =
                         if (isLtr) dampedDragAnimation.value * tabWidth - overshoot / 2f + panelOffset
-                        else size.width - (dampedDragAnimation.value + 1f) * tabWidth +
+                        else contentWidth - (dampedDragAnimation.value + 1f) * tabWidth +
                             overshoot / 2f + panelOffset
                 }
+                .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                     shape = { barShape },
                     effects = {
                         val press = dampedDragAnimation.pressProgress
                         vibrancy()
-                        // 采样源只有背景 + 镜像图标，必须自己再模糊一次，
-                        // 否则选中玻璃会像一块「透明窟窿」，比周围底栏还清晰。
-                        if (blurRadius > 0.dp) blur(blurRadius.toPx())
+                        // 这里不加 blur：采样源里的图标是「放大后的选中图标」，
+                        // 模糊会把图标边缘抹掉，色散也就看不出来了。
+                        // 背景层本身只有渐变/图片，没有文字，不存在映射到正文的问题。
                         if (saturation != 1f || brightness != 0f) {
                             colorControls(brightness = brightness, saturation = saturation)
                         }
                         // 常驻折射 + 色散：静止时就是一块液态透镜，按压时再增强。
                         // 折射高度接近玻璃块自身高度，内部才会整体弯折，而不是只有一圈边。
+                        // 注意要同时判断 refractionAmount：设置里把「折射强度」拉到 0 时
+                        // 上面的 h 仍会算出 16dp，不加这个判断透镜关不掉。
                         val h = (16.dp + refractionHeight * 0.45f)
                             .coerceAtMost(38.dp) * (0.88f + 0.12f * press)
                         val a = (28.dp + refractionAmount * 0.55f)
                             .coerceAtMost(96.dp) * (0.88f + 0.12f * press)
-                        if (h > 0.dp && a > 0.dp) {
+                        if (refractionHeight > 0.dp && refractionAmount > 0.dp) {
                             lens(
                                 h.toPx(),
                                 a.toPx(),
@@ -414,6 +414,5 @@ fun LiquidBottomTabs(
                 .height(56.dp)
                 .fillMaxWidth(1.12f / tabs.size)
         )
-        }
     }
 }
