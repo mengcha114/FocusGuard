@@ -153,51 +153,43 @@ object UpdateChecker {
     }
 
     /** 测试版：固定 tag `ci-latest` 的发布页（预发布不进 atom 源）。 */
-    private fun probeBeta(installedAt: Long): Probe {
-        val rawPage = httpGet(CI_PAGE) ?: return Probe(true, null)
-        // 只在 markdown-body 之后 200KB 里分析，避免整页正则回溯（大页面会卡死/闪退）
+    private fun probeBeta(): Probe {
+        val rawPage = httpGet(CI_PAGE) ?: return Probe(false, null)
+        // 版本号在 <head><title> 里，必须在**整页**找。
+        // 之前只在 markdown-body 之后的片段里找 <title>，那里根本没有 title 标签，
+        // 版本号永远解析不到，只能退回发布时间比较；而 GitHub 覆盖资产不会更新
+        // published_at，于是测试版通道永远显示「已是最新」。
+        val title = Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)
+            .find(rawPage)?.groupValues?.get(1).orEmpty()
+        val titleVer = Regex("v\\d+(?:\\.\\d+)+").find(title)?.value
+            ?: return Probe(false, null) // 解析不到就交给 API 兜底，不能谎报"已是最新"
+        // 注意方向：本地 >= 远端 ⇒ 已是最新；本地 < 远端 ⇒ 有更新。
+        if (compareVersions(currentVersion(), titleVer) >= 0) return Probe(true, null)
+
+        // 说明文字仍只在 markdown-body 之后的 200KB 里正则匹配，
+        // 避免大页面回溯导致卡顿。
         val bodyAt = rawPage.indexOf("markdown-body")
-        val page = if (bodyAt >= 0) rawPage.substring(bodyAt, minOf(rawPage.length, bodyAt + 200_000)) else rawPage
+        val page = if (bodyAt >= 0) {
+            rawPage.substring(bodyAt, minOf(rawPage.length, bodyAt + 200_000))
+        } else {
+            rawPage
+        }
         val notes = plain(
             Regex("markdown-body[^>]*>(.*?)</div>", RegexOption.DOT_MATCHES_ALL)
                 .find(page)?.groupValues?.get(1)
         ).take(1200)
-        // 优先按**版本号**比较：标题形如「CI 测试版 v3.11.27（自动覆盖）」。
-        // 不能用发布时间——GitHub 替换资产时 published_at 不变（用户实测会永远显示"已是最新"）。
-        val title = Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)
-            .find(page)?.groupValues?.get(1).orEmpty()
-        val titleVer = Regex("v\\d+(?:\\.\\d+)+").find(title)?.value
-        if (titleVer != null) {
-            // 注意方向：本地 >= 远端 ⇒ 已是最新；本地 < 远端 ⇒ 有更新。
-            // （此前这里写成了 <= 0 就返回"已是最新"，导致测试版通道永远提示"已是最新"）
-            if (compareVersions(currentVersion(), titleVer) >= 0) return Probe(true, null)
-            return Probe(true, UpdateInfo(
-                tag = titleVer + " 测试版",
-                notes = notes.ifBlank { "这是每次构建自动覆盖的测试版，点「去下载」安装。" },
-                downloadUrl = "$DL/ci-latest/${assetName()}",
-                pageUrl = CI_PAGE
-            ))
-        }
-        // 标题里没有版本号（老发布）才退回时间比较
-        val published = parseTime(
-            Regex("datetime=\"([0-9T:\\-]+Z)\"").find(page)?.groupValues?.get(1)
-        )
-        if (published == 0L || published <= installedAt) return Probe(true, null)
-        return Probe(
-            ok = true,
-            info = UpdateInfo(
-                tag = "测试版（" + niceTime(published) + "）",
-                notes = notes.ifBlank { "这是每次构建自动覆盖的测试版，点「去下载」安装。" },
-                downloadUrl = "$DL/ci-latest/${assetName()}",
-                pageUrl = CI_PAGE
-            )
-        )
+        return Probe(true, UpdateInfo(
+            tag = titleVer + " 测试版",
+            notes = notes.ifBlank { "这是每次构建自动覆盖的测试版，点「去下载」安装。" },
+            downloadUrl = "$DL/ci-latest/${assetName()}",
+            pageUrl = CI_PAGE
+        ))
     }
 
     /** 兜底：GitHub API（可能被限流 ⇒ 403）。 */
     private fun probeApi(beta: Boolean, installedAt: Long): Probe {
         val json = httpGet(if (beta) API_BETA else API_LATEST)
-            ?: return Probe(true, null)
+            ?: return Probe(false, null)
         val obj = JSONObject(json)
         val tag = obj.optString("tag_name").trim().ifBlank { return Probe(true, null) }
         val notes = obj.optString("body").trim().take(1200)
@@ -229,7 +221,7 @@ object UpdateChecker {
             val gitee = runCatching { probeGitee() }.getOrNull()
             if (gitee != null && gitee.ok) return gitee.info
         }
-        val primary = runCatching { if (beta) probeBeta(installedAt) else probeStable() }.getOrNull()
+        val primary = runCatching { if (beta) probeBeta() else probeStable() }.getOrNull()
         if (primary != null && primary.ok) return primary.info
         // 首选通路失败 ⇒ 用 API 兜底；再失败就如实报错（一般是限流 403）
         val fallback = runCatching { probeApi(beta, installedAt) }.getOrNull()

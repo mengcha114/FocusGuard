@@ -1031,8 +1031,19 @@ fun SettingsScreen(
                     updateMsg = "正在检查…"
                     updateUrl = null
                     Thread {
+                        // 手动检测同样要遵守「测试版通道」开关：
+                        // 之前这里固定调用 check()，等于永远只查正式版，
+                        // 所以打开测试版通道后仍然提示「已是最新」。
+                        val beta = settings.updateBetaChannel
+                        val installedAt = runCatching {
+                            context.packageManager
+                                .getPackageInfo(context.packageName, 0).lastUpdateTime
+                        }.getOrDefault(0L)
                         val result = runCatching {
-                            com.focusguard.app.update.UpdateChecker.check()
+                            com.focusguard.app.update.UpdateChecker.check(
+                                beta = beta,
+                                installedAt = installedAt
+                            )
                         }
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             checking = false
