@@ -251,7 +251,6 @@ class ScratchpadState {
     }
 }
 
-@Composable
 /**
  * 草稿纸状态的进程级持有者。
  *
@@ -263,6 +262,7 @@ object ScratchpadHolder {
     var state: ScratchpadState? = null
 }
 
+@Composable
 fun rememberScratchpadState(): ScratchpadState = remember {
     ScratchpadHolder.state ?: ScratchpadState().also { ScratchpadHolder.state = it }
 }
