@@ -693,70 +693,37 @@ fun Modifier.liquidPress(
  * 传入与 clickable / Button 共用的 [interactionSource] 才能感知按压。
  */
 /**
- * 液态弹性按压（含长按拖动）。
+ * 液态弹性按压：按住轻微压扁、松手清脆回弹。
  *
- * 按下轻微压扁 → 按住拖动时按钮像黏在手指上的液体一样跟手偏移，
- * 并按拖动速度做横向拉伸 / 纵向压扁 → 松手低阻尼弹簧回弹并轻微过冲。
+ * 刻意**不做位移与各向异性拉伸**：
+ * 位移跟随（translation + 横向拉伸/纵向压扁）只适合「按钮本身就是那块玻璃」的
+ * [com.focusguard.app.ui.liquid.LiquidButton]；套在普通 Material 按钮上会看到
+ * 按钮整体挪位、文字重影，手感像橡皮糖。这里只做等比缩放，位置纹丝不动。
  *
- * 全程**不消费**触摸事件，因此不会影响原 Button / clickable 的点击判定，
- * 可安全叠加在任意可点击组件上。
+ * 全程不消费触摸事件，可安全叠加在任意 Button / clickable 上。
  */
 fun Modifier.liquidElastic(
     enabled: Boolean = true,
-    pressedScale: Float = 0.96f
+    pressedScale: Float = 0.97f
 ): Modifier = composed {
     val scope = rememberCoroutineScope()
     val anim = remember { Animatable(1f) }
-    val offX = remember { Animatable(0f) }
-    val offY = remember { Animatable(0f) }
-    val stretchX = remember { Animatable(1f) }
-    val stretchY = remember { Animatable(1f) }
     val on = animationsEnabled()
-    // 官方液态按钮的回弹是"轻微回正"，不是橡皮糖：阻尼 0.55 基本不过冲
-    val back = spring<Float>(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow)
     this
         .graphicsLayer {
-            scaleX = anim.value * stretchX.value
-            scaleY = anim.value * stretchY.value
-            translationX = offX.value
-            translationY = offY.value
+            scaleX = anim.value
+            scaleY = anim.value
         }
         .pointerInput(enabled, on) {
             if (!enabled) return@pointerInput
             awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false)
+                awaitFirstDown(requireUnconsumed = false)
                 if (!on) return@awaitEachGesture
-                val start = down.position
-                val h = size.height.toFloat().coerceAtLeast(1f)
-                val w = size.width.toFloat().coerceAtLeast(1f)
-                // 位移上限 3dp，避免按钮在长按时"滑走"
-                // PointerInputScope 本身是 Density，可直接换算
-                val maxShift = 3.dp.toPx()
-                scope.launch {
-                    anim.animateTo(pressedScale, spring(0.95f, 1600f))
-                }
-                while (true) {
-                    val ev = awaitPointerEvent()
-                    val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
-                    if (!ch.pressed) break
-                    val d = ch.position - start
-                    val k = (d.getDistance() / h).coerceIn(0f, 0.8f)
-                    val angle = atan2(d.y, d.x)
-                    scope.launch {
-                        // 幅度控制在 2~4dp 量级：只是"有生命感"，不是软体果冻
-                        offX.snapTo((d.x * 0.07f).coerceIn(-maxShift, maxShift))
-                        offY.snapTo((d.y * 0.07f).coerceIn(-maxShift, maxShift))
-                        stretchX.snapTo(1f + k * 0.06f * abs(cos(angle)) * (w / h).coerceAtMost(1f))
-                        stretchY.snapTo(1f - k * 0.04f * abs(sin(angle)))
-                    }
-                }
-                scope.launch {
-                    launch { anim.animateTo(1f, back) }
-                    launch { offX.animateTo(0f, back) }
-                    launch { offY.animateTo(0f, back) }
-                    launch { stretchX.animateTo(1f, back) }
-                    launch { stretchY.animateTo(1f, back) }
-                }
+                // 压下要快而稳（高刚度、近临界阻尼），不能"软下去"
+                scope.launch { anim.animateTo(pressedScale, spring(0.92f, 2000f)) }
+                waitForUpOrCancellation()
+                // 回弹允许一点点过冲（0.62），有"回正"的弹性但不摇晃
+                scope.launch { anim.animateTo(1f, spring(0.62f, 900f)) }
             }
         }
 }
