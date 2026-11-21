@@ -317,7 +317,12 @@ fun LogScreen() {
                 }
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(
+                contentPadding = PaddingValues(
+                    bottom = 12.dp + com.focusguard.app.ui.theme.LocalLiquidBottomBarPadding.current
+                ),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 items(displayLogs, key = { it.timestamp }) { log ->
                     LogEntryItem(log = log, context = context)
                 }

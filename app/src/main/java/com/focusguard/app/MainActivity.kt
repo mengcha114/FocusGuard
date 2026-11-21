@@ -571,6 +571,21 @@ class MainActivity : ComponentActivity() {
                         drawRect(bgColor)
                         drawContent()
                     }
+                    // 前景页面内容图层：仅由底栏采样，实现「滚动内容穿过液态底栏折射」，
+                    // 卡片仍只采样 bgBackdrop，绝不产生自采样递归。
+                    val contentBackdrop = com.kyant.backdrop.backdrops.rememberLayerBackdrop {
+                        drawRect(Color.Transparent)
+                        drawContent()
+                    }
+                    val barBackdrop = com.kyant.backdrop.backdrops.rememberCombinedBackdrop(
+                        bgBackdrop,
+                        contentBackdrop
+                    )
+                    val rootAppearance = com.focusguard.app.ui.theme.AppearanceState.get(
+                        androidx.compose.ui.platform.LocalContext.current
+                    )
+                    val isLiquidMode = rootAppearance.cardStyle ==
+                        com.focusguard.app.ui.theme.Appearance.CARD_LIQUID
                     CompositionLocalProvider(
                         com.focusguard.app.ui.theme.LocalAppBackdrop provides bgBackdrop
                     ) {
@@ -633,35 +648,28 @@ class MainActivity : ComponentActivity() {
                                         restoreState = true
                                     }
                                 }
+                                val barTuning = com.focusguard.app.ui.theme.liquidTuning(liquidAppearance)
                                 LiquidBottomTabs(
-                                    backdrop = bgBackdrop,
+                                    backdrop = barBackdrop,
                                     tabs = liquidTabs,
                                     selectedIndex = liquidTabs
                                         .indexOfFirst { it.route == (currentRoute ?: "home") }
                                         .coerceAtLeast(0),
                                     onTabSelected = { index -> go(liquidTabs[index].route) },
-                                    refractionHeight = liquidAppearance
-                                        .liquidRefractionHeight.coerceIn(8, 40).dp,
-                                    refractionAmount = (
-                                        liquidAppearance.liquidRefractionHeight.coerceIn(8, 40) *
-                                            (liquidAppearance.liquidRefraction.coerceIn(0, 100) /
-                                                100f * 2.4f)
-                                        ).dp,
-                                    blurRadius = liquidAppearance.liquidBlur
-                                        .coerceIn(0, 16).dp,
-                                    surfaceAlpha = 0.34f,
+                                    refractionHeight = barTuning.refractionHeight,
+                                    refractionAmount = barTuning.refractionAmount,
+                                    blurRadius = barTuning.blur,
+                                    surfaceAlpha = barTuning.barSurfaceAlpha,
                                     // 底栏与卡片共用同一套液态参数，设置里调什么这里就变什么
-                                    highlightStrength = liquidAppearance.liquidHighlight
-                                        .coerceIn(0, 100) / 100f,
-                                    depth = liquidAppearance.liquidDepth
-                                        .coerceIn(0, 100) / 100f,
-                                    saturation = liquidAppearance.liquidSaturation
-                                        .coerceIn(80, 160) / 100f,
-                                    brightness = liquidAppearance.liquidBrightness
-                                        .coerceIn(-30, 30) / 100f,
-                                    depthEffect = liquidAppearance.liquidDepthEffect,
-                                    dispersion = liquidAppearance.liquidDispersion,
-                                    borderVisible = liquidAppearance.cardBorder > 0
+                                    highlightStrength = barTuning.highlight,
+                                    depth = barTuning.depth,
+                                    saturation = barTuning.saturation,
+                                    brightness = barTuning.brightness,
+                                    depthEffect = barTuning.depthEffect,
+                                    dispersion = barTuning.dispersion,
+                                    borderVisible = barTuning.borderStrength > 0f,
+                                    borderStrength = barTuning.borderStrength,
+                                    lensSize = barTuning.lensSize
                                 ) {
                                     liquidTabs.forEachIndexed { index, tab ->
                                         LiquidBottomTab(
@@ -769,10 +777,27 @@ class MainActivity : ComponentActivity() {
                                 pendingMemoOpen = false
                             }
                         }
+                        val layoutDir = androidx.compose.ui.platform.LocalLayoutDirection.current
+                        val navModifier = if (isLiquidMode) {
+                            Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    start = padding.calculateStartPadding(layoutDir),
+                                    top = padding.calculateTopPadding(),
+                                    end = padding.calculateEndPadding(layoutDir)
+                                )
+                                .layerBackdrop(contentBackdrop)
+                        } else {
+                            Modifier.padding(padding)
+                        }
+                        CompositionLocalProvider(
+                            com.focusguard.app.ui.theme.LocalLiquidBottomBarPadding provides
+                                if (isLiquidMode) padding.calculateBottomPadding() else 0.dp
+                        ) {
                         NavHost(
                             navController = navController,
                             startDestination = if (pendingMemoOpen) "memo" else "home",
-                            modifier = Modifier.padding(padding),
+                            modifier = navModifier,
                             // 页面切换：顶层页之间淡入 + 轻微缩放；进入二级页横向推入
                             enterTransition = {
                                 if (targetState.destination.route in topLevelRoutes &&
@@ -841,6 +866,7 @@ class MainActivity : ComponentActivity() {
                             composable("timer_lock") {
                                 TimerLockScreen(onBack = { navController.popBackStack() })
                             }
+                        }
                         }
                     }
                     }

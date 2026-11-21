@@ -270,7 +270,10 @@ fun AiChatScreen() {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12.dp, top = 6.dp),
+                    .padding(
+                        bottom = 12.dp + com.focusguard.app.ui.theme.LocalLiquidBottomBarPadding.current,
+                        top = 6.dp
+                    ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(

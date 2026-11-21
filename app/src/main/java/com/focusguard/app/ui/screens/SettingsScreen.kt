@@ -1495,7 +1495,7 @@ fun SettingsScreen(
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp + com.focusguard.app.ui.theme.LocalLiquidBottomBarPadding.current))
     }
 }
 

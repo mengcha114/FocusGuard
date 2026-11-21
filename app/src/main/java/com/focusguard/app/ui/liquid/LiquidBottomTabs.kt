@@ -148,6 +148,8 @@ fun LiquidBottomTabs(
     depthEffect: Boolean = true,
     dispersion: Boolean = true,
     borderVisible: Boolean = true,
+    borderStrength: Float = 0.45f,
+    lensSize: Dp = 42.dp,
     content: @Composable RowScope.() -> Unit
 ) {
     if (tabs.isEmpty()) return
@@ -246,7 +248,9 @@ fun LiquidBottomTabs(
                     shape = { barShape },
                     effects = {
                         vibrancy()
-                        if (blurRadius > 0.dp) blur(blurRadius.toPx())
+                        // 底栏适度降低模糊系数，让下方滚动经过的页面内容保留清晰的折射与色散轮廓
+                        val barBlur = blurRadius * 0.65f
+                        if (barBlur > 0.dp) blur(barBlur.toPx())
                         if (saturation != 1f || brightness != 0f) {
                             colorControls(brightness = brightness, saturation = saturation)
                         }
@@ -259,18 +263,26 @@ fun LiquidBottomTabs(
                             )
                         }
                     },
-                    // 关键：不传 highlight 时库会默认画一圈 1dp、alpha=1 的白边，
-                    // 这就是「描边强度调到 0 仍有一条粗白边」的来源。改为跟随设置，
-                    // 描边强度为 0 时彻底不画高光边。
-                    highlight = if (!borderVisible || highlightStrength <= 0f) {
-                        null
+                    // 关键：描边为 0 或高光为 0 时返回 null，彻底不画边缘白线。
+                    highlight = if (!borderVisible || borderStrength <= 0f || highlightStrength <= 0f) {
+                        { null }
                     } else {
                         {
                             Highlight(
-                                // 库内部会把描边宽度 ×2，所以这里给细一点，
-                                // 避免整条底栏出现一圈很粗的白边。
-                                width = (0.2f + 0.4f * highlightStrength).dp,
-                                alpha = (0.12f + 0.4f * highlightStrength).coerceAtMost(1f)
+                                // 库内部会把描边宽度 ×2，控制在极细棱边，精致不老气。
+                                width = (0.15f + 0.30f * highlightStrength * borderStrength).dp,
+                                alpha = (0.08f + 0.42f * highlightStrength * (0.35f + 0.65f * borderStrength))
+                                    .coerceAtMost(0.70f)
+                            )
+                        }
+                    },
+                    shadow = if (depth <= 0f) {
+                        null
+                    } else {
+                        {
+                            Shadow(
+                                radius = (6f + 14f * depth).dp,
+                                alpha = 0.28f * depth
                             )
                         }
                     },
@@ -327,19 +339,20 @@ fun LiquidBottomTabs(
         // RuntimeShader 才会在图标轮廓上产生真实的弯折和彩色色散；
         // 同时不会盖住下面的文字标签，也就不再出现「放大后重影的文字」。
         val contentWidth = with(density) { constraints.maxWidth.toFloat() - 8.dp.toPx() }
-        val bubblePx = with(density) { 38.dp.toPx() }
+        val safeLensSize = lensSize.coerceIn(34.dp, 54.dp)
+        val bubblePx = with(density) { safeLensSize.toPx() }
         Box(
             Modifier
                 .padding(horizontal = 4.dp)
                 .graphicsLayer {
-                    // 水平：居中在所在格子；垂直：对齐图标中心（图标中心约在内容区 16dp 处），
-                    // 让透镜正好罩住图标、不压到文字。
+                    // 水平：居中在所在格子；垂直：对齐图标中心，大透镜略微上移避免压到文字
                     val gap = (tabWidth - bubblePx) / 2f
                     translationX =
                         if (isLtr) dampedDragAnimation.value * tabWidth + gap + panelOffset
                         else contentWidth - dampedDragAnimation.value * tabWidth - gap -
                             bubblePx + panelOffset
-                    translationY = -11.8.dp.toPx()
+                    val extraLift = ((safeLensSize - 38.dp).coerceAtLeast(0.dp)) * 0.12f
+                    translationY = -(11.8.dp + extraLift).toPx()
                 }
                 .then(dampedDragAnimation.modifier)
                 .drawBackdrop(
@@ -351,13 +364,13 @@ fun LiquidBottomTabs(
                         if (saturation != 1f || brightness != 0f) {
                             colorControls(brightness = brightness, saturation = saturation)
                         }
-                        // 折射区覆盖整个透镜（半径 19dp）：图标不再落在「不变形」的
-                        // 中心区，边缘会被弯折并分离出彩色，才是参考图里的色散效果。
-                        // 这里也不加 blur，模糊会把色散边缘直接抹掉。
-                        val h = (14.dp + refractionHeight * 0.40f)
-                            .coerceAtMost(36.dp) * (0.90f + 0.10f * press)
-                        val a = (6.dp + refractionAmount * 0.20f)
-                            .coerceAtMost(28.dp) * (0.90f + 0.10f * press)
+                        // 折射区覆盖透镜主体，直接响应折射高度/强度设置；
+                        // 不加 blur，让边缘色散和图标弯折保持锐利通透。
+                        val maxH = safeLensSize * 0.56f
+                        val h = (refractionHeight * 0.85f)
+                            .coerceIn(8.dp, maxH) * (0.92f + 0.08f * press)
+                        val a = (refractionAmount * 0.58f)
+                            .coerceIn(4.dp, safeLensSize * 0.80f) * (0.90f + 0.10f * press)
                         if (refractionHeight > 0.dp && refractionAmount > 0.dp) {
                             lens(
                                 h.toPx(),
@@ -367,16 +380,17 @@ fun LiquidBottomTabs(
                             )
                         }
                     },
-                    highlight = if (!borderVisible || highlightStrength <= 0f) {
-                        null
+                    highlight = if (!borderVisible || borderStrength <= 0f || highlightStrength <= 0f) {
+                        { null }
                     } else {
                         {
-                            // 静止只有一圈很淡的棱边，按压时才亮起来（不再有白圈）
+                            // 静止只有一圈极细柔光棱边，按压时渐亮（绝不出现粗白圈）
                             val press = dampedDragAnimation.pressProgress
                             Highlight(
-                                width = (0.2f + 0.35f * highlightStrength).dp,
-                                alpha = (0.08f * highlightStrength + 0.45f * press *
-                                    highlightStrength).coerceIn(0f, 0.6f)
+                                width = (0.14f + 0.26f * highlightStrength * borderStrength).dp,
+                                alpha = ((0.06f + 0.22f * highlightStrength) *
+                                    (0.35f + 0.65f * borderStrength) +
+                                    0.38f * press * highlightStrength).coerceIn(0f, 0.65f)
                             )
                         }
                     },
@@ -385,8 +399,8 @@ fun LiquidBottomTabs(
                     } else {
                         {
                             Shadow(
-                                radius = (4f + 8f * depth).dp,
-                                alpha = (0.10f + 0.30f * depth) *
+                                radius = (4f + 9f * depth).dp,
+                                alpha = (0.10f + 0.32f * depth) *
                                     (0.6f + 0.4f * dampedDragAnimation.pressProgress)
                             )
                         }
@@ -396,8 +410,8 @@ fun LiquidBottomTabs(
                     } else {
                         {
                             InnerShadow(
-                                radius = (3f + 4f * depth).dp,
-                                alpha = (0.08f + 0.22f * depth) *
+                                radius = (2.5f + 4.5f * depth).dp,
+                                alpha = (0.08f + 0.24f * depth) *
                                     (0.7f + 0.3f * dampedDragAnimation.pressProgress)
                             )
                         }
@@ -410,13 +424,13 @@ fun LiquidBottomTabs(
                         scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                     },
                     onDrawSurface = {
-                        // 只补一点点玻璃亮度，避免把里面的图标染白
+                        // 只补极薄玻璃透亮感，避免把里面的图标染白
                         drawRect(
-                            Color.White.copy(alpha = if (isLightTheme) 0.05f else 0.06f)
+                            Color.White.copy(alpha = if (isLightTheme) 0.04f else 0.05f)
                         )
                     }
                 )
-                .size(38.dp)
+                .size(safeLensSize)
         )
     }
 }

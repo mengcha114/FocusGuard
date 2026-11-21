@@ -1727,7 +1727,34 @@ object LockOverlayManager {
             scroll
         }
 
-        // ── 标题 + 进度 ──────────────────────────────
+        val wrapper = FrameLayout(context).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        var scratchView: ScratchpadOverlayView? = null
+        val openScratchpad: () -> Unit = {
+            val view = scratchView ?: ScratchpadOverlayView(
+                context = context,
+                questionProvider = { challengeSession?.question?.question ?: session.question.question },
+                onClose = { scratchView?.visibility = View.GONE }
+            ).also {
+                scratchView = it
+                wrapper.addView(
+                    it,
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                )
+            }
+            view.refreshQuestionBanner()
+            view.visibility = View.VISIBLE
+            view.bringToFront()
+        }
+
+        // ── 标题 + 草稿纸 + 进度 ──────────────────────────────
         container.addView(
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -1740,6 +1767,25 @@ object LockOverlayManager {
                         typeface = Typeface.DEFAULT_BOLD
                     },
                     LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                )
+                addView(
+                    TextView(context).apply {
+                        text = "✎ 草稿纸"
+                        textSize = 12f
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+                        background = GradientDrawable().apply {
+                            cornerRadius = dp(context, 10).toFloat()
+                            setColor(Color.parseColor(tint(p.accent, 0x26)))
+                            setStroke(dp(context, 1), Color.parseColor(tint(p.accent, 0x8C)))
+                        }
+                        setPadding(dp(context, 10), dp(context, 5), dp(context, 10), dp(context, 5))
+                        setOnClickListener { openScratchpad() }
+                    },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { marginEnd = dp(context, 10) }
                 )
                 addView(
                     TextView(context).apply {
@@ -1894,7 +1940,14 @@ object LockOverlayManager {
             }
         )
 
-        return host
+        wrapper.addView(
+            host,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        return wrapper
     }
 
     /** 构建朋友密码验证界面（纯传统 View，与答题界面同构）。 */

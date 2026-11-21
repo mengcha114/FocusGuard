@@ -31,9 +31,11 @@ data class Appearance(
     /** 液态玻璃折射高度（dp，8–40）。 */
     val liquidRefractionHeight: Int = 24,
     /** 液态玻璃折射强度（0–100，影响边缘弯折幅度）。 */
-    val liquidRefraction: Int = 60,
+    val liquidRefraction: Int = 65,
     /** 液态玻璃模糊半径（0–16dp）。 */
     val liquidBlur: Int = 6,
+    /** 底栏选中透镜大小（dp，34–54）。 */
+    val liquidLensSize: Int = 42,
     /** 液态玻璃高光强度（0–100，边缘亮线/顶部反光）。 */
     val liquidHighlight: Int = 60,
     /** 立体感：外阴影 + 内阴影 + 顶亮底暗（0–100）。 */
@@ -138,6 +140,7 @@ data class Appearance(
                 ),
                 liquidRefraction = p.getInt("liquid_refraction", d.liquidRefraction),
                 liquidBlur = p.getInt("liquid_blur", d.liquidBlur),
+                liquidLensSize = p.getInt("liquid_lens_size", d.liquidLensSize),
                 liquidHighlight = p.getInt("liquid_highlight", d.liquidHighlight),
                 liquidDepth = p.getInt("liquid_depth", d.liquidDepth),
                 liquidDepthEffect = p.getBoolean(
@@ -177,6 +180,7 @@ data class Appearance(
                 .putInt("liquid_refraction_height", a.liquidRefractionHeight)
                 .putInt("liquid_refraction", a.liquidRefraction)
                 .putInt("liquid_blur", a.liquidBlur)
+                .putInt("liquid_lens_size", a.liquidLensSize)
                 .putInt("liquid_highlight", a.liquidHighlight)
                 .putInt("liquid_depth", a.liquidDepth)
                 .putBoolean("liquid_depth_effect", a.liquidDepthEffect)
@@ -246,6 +250,11 @@ object AppearanceState {
             loaded = true
         }
         return value
+    }
+
+    /** 仅更新内存状态用于滑块拖动实时预览，不写磁盘。 */
+    fun preview(transform: (Appearance) -> Appearance) {
+        value = transform(value)
     }
 
     fun update(context: Context, transform: (Appearance) -> Appearance) {

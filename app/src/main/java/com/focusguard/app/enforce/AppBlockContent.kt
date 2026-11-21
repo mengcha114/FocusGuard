@@ -9,9 +9,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -49,6 +51,9 @@ fun AppBlockContent(
         )
     }
     var showQuiz by remember { mutableStateOf(false) }
+    var showScratchpad by remember { mutableStateOf(false) }
+    var currentQuizQuestion by remember { mutableStateOf("") }
+    val scratchpadState = com.focusguard.app.ui.components.rememberScratchpadState()
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(blockUntil) {
         while (blockUntil > 0L) {
@@ -62,39 +67,53 @@ fun AppBlockContent(
         modifier = Modifier
             .fillMaxSize()
             .background(palette.bg)
-            .systemBarsPadding(),
-        contentAlignment = Alignment.Center
     ) {
-        Column(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 460.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 28.dp, vertical = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+                .fillMaxSize()
+                .systemBarsPadding(),
+            contentAlignment = Alignment.Center
         ) {
-            if (showQuiz) {
-                InlineUnlockQuiz(
-                    appLabel = appLabel,
-                    palette = palette,
-                    onPassed = onUnlocked,
-                    onCancel = { showQuiz = false }
-                )
-            } else {
-                BlockSummary(
-                    appLabel = appLabel,
-                    usedMinutes = usedMinutes,
-                    limitMinutes = limitMinutes,
-                    blockUntil = blockUntil,
-                    now = now,
-                    temp = temp,
-                    palette = palette,
-                    onChallenge = { showQuiz = true },
-                    onGoHome = onGoHome
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 28.dp, vertical = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                if (showQuiz) {
+                    InlineUnlockQuiz(
+                        appLabel = appLabel,
+                        palette = palette,
+                        onOpenScratchpad = { showScratchpad = true },
+                        onQuestionChanged = { currentQuizQuestion = it },
+                        onPassed = onUnlocked,
+                        onCancel = { showQuiz = false }
+                    )
+                } else {
+                    BlockSummary(
+                        appLabel = appLabel,
+                        usedMinutes = usedMinutes,
+                        limitMinutes = limitMinutes,
+                        blockUntil = blockUntil,
+                        now = now,
+                        temp = temp,
+                        palette = palette,
+                        onChallenge = { showQuiz = true },
+                        onGoHome = onGoHome
+                    )
+                }
             }
         }
+
+        com.focusguard.app.ui.components.ScratchpadOverlay(
+            visible = showQuiz && showScratchpad,
+            state = scratchpadState,
+            questionText = currentQuizQuestion,
+            onClose = { showScratchpad = false }
+        )
     }
 }
 
@@ -234,6 +253,8 @@ private fun BlockSummary(
 private fun InlineUnlockQuiz(
     appLabel: String,
     palette: com.focusguard.app.ui.theme.FocusColors.Palette,
+    onOpenScratchpad: () -> Unit,
+    onQuestionChanged: (String) -> Unit,
     onPassed: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -328,12 +349,37 @@ private fun InlineUnlockQuiz(
         recordWrong(timeout = true)
     }
 
-    Text(
-        text = "答题解封",
-        fontSize = 22.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = palette.text
-    )
+    LaunchedEffect(question) {
+        onQuestionChanged(question.question)
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "答题解封",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = palette.text
+        )
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = palette.accent.copy(alpha = 0.16f),
+            border = BorderStroke(1.dp, palette.accent.copy(alpha = 0.55f)),
+            modifier = Modifier.clickable { onOpenScratchpad() }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = "草稿纸", tint = palette.accent, modifier = Modifier.size(14.dp))
+                Text("草稿纸", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = palette.accent)
+            }
+        }
+    }
     Text(
         text = "答对后可继续使用「$appLabel」，并把今日已用时长回退一段",
         fontSize = 13.sp,

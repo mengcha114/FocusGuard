@@ -10,8 +10,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -74,6 +79,8 @@ fun UnlockChallengeScreen(
     var aiExplanation by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var switching by remember { mutableStateOf(false) }
+    var showScratchpad by remember { mutableStateOf(false) }
+    val scratchpadState = com.focusguard.app.ui.components.rememberScratchpadState()
     // 通用版没有学段概念，显示模式名而不是兜底的学段
     val gradeLabel = remember {
         if (com.focusguard.app.challenge.ChallengeMode.needsGrade())
@@ -239,12 +246,42 @@ fun UnlockChallengeScreen(
                         color = palette.text
                     )
                 }
-                Text(
-                    "进度 $currentCorrectCount / $targetCorrectCount",
-                    color = palette.success,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = palette.accent.copy(alpha = 0.16f),
+                        border = BorderStroke(1.dp, palette.accent.copy(alpha = 0.55f)),
+                        modifier = Modifier.clickable { showScratchpad = true }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "草稿纸",
+                                tint = palette.accent,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                "草稿纸",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = palette.accent
+                            )
+                        }
+                    }
+                    Text(
+                        "进度 $currentCorrectCount / $targetCorrectCount",
+                        color = palette.success,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
             }
 
             LinearProgressIndicator(
@@ -527,5 +564,17 @@ fun UnlockChallengeScreen(
 
             Spacer(Modifier.height(24.dp))
         }
+
+        // 草稿纸打开时拦截返回键：先收起草稿纸，不会直接退回锁机页丢失进度
+        BackHandler(enabled = showScratchpad) {
+            showScratchpad = false
+        }
+
+        com.focusguard.app.ui.components.ScratchpadOverlay(
+            visible = showScratchpad,
+            state = scratchpadState,
+            questionText = if (validating) null else currentQuestion.question,
+            onClose = { showScratchpad = false }
+        )
     }
 }

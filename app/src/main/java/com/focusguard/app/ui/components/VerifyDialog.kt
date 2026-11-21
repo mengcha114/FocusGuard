@@ -4,7 +4,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +52,8 @@ fun VerifyDialog(
     var refreshLeft by remember { mutableIntStateOf(guard.refreshLeft) }
     // 作答时限：与答题页/悬浮窗一致（超时算答错）。此前验证弹窗没有计时，可以无限期停留查答案。
     var secondsLeft by remember { mutableIntStateOf(question.timeLimitSec) }
+    var showScratchpad by remember { mutableStateOf(false) }
+    val scratchpadState = rememberScratchpadState()
     val cooling = cooldownSec > 0
 
     fun nextQuestion(excludeTopic: String? = question.kind) {
@@ -118,7 +124,23 @@ fun VerifyDialog(
 
     AlertDialog(
         onDismissRequest = { /* 必须明确选择：验证或取消 */ },
-        title = { Text(title) },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, modifier = Modifier.weight(1f))
+                TextButton(
+                    onClick = { showScratchpad = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("草稿纸", fontSize = 12.sp)
+                }
+            }
+        },
         text = {
             Column(
                 modifier = Modifier
@@ -221,4 +243,21 @@ fun VerifyDialog(
         containerColor = dialogGlassColor(MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp)
     )
+
+    if (showScratchpad) {
+        Dialog(
+            onDismissRequest = { showScratchpad = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false
+            )
+        ) {
+            ScratchpadOverlay(
+                visible = true,
+                state = scratchpadState,
+                questionText = if (cooling) null else question.question,
+                onClose = { showScratchpad = false }
+            )
+        }
+    }
 }

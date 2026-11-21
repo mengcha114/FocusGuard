@@ -57,6 +57,9 @@ import com.kyant.backdrop.shadow.Shadow
  */
 val LocalAppBackdrop = staticCompositionLocalOf<com.kyant.backdrop.Backdrop?> { null }
 
+/** 液态底栏悬浮在页面内容上方时，顶层页面需要的底部留白高度（非液态模式或二级页为 0.dp）。 */
+val LocalLiquidBottomBarPadding = staticCompositionLocalOf { 0.dp }
+
 /** 当前是否处于「液态卡片 + 有背景图层」状态（可直接用 glassSurface）。 */
 @Composable
 fun isGlassActive(): Boolean {
@@ -104,13 +107,14 @@ fun Modifier.glassSurface(
                 )
             }
         },
-        highlight = if (t.highlight <= 0f) {
+        highlight = if (t.highlight <= 0f || t.borderStrength <= 0f) {
             { null }
         } else {
             {
                 com.kyant.backdrop.highlight.Highlight(
-                    width = (0.2f + 0.5f * t.highlight).dp,
-                    alpha = (0.10f + 0.45f * t.highlight).coerceAtMost(1f)
+                    width = (0.15f + 0.35f * t.highlight * t.borderStrength).dp,
+                    alpha = (0.08f + 0.48f * t.highlight * (0.35f + 0.65f * t.borderStrength))
+                        .coerceAtMost(0.75f)
                 )
             }
         },
@@ -227,36 +231,47 @@ private fun Color.compositeOver(background: Color): Color {
 }
 
 /** 液态玻璃一组可调参数（统一从外观设置换算，避免各页面各调一套）。 */
-private data class LiquidTuning(
+internal data class LiquidTuning(
     val blur: Dp,
     val refractionHeight: Dp,
     val refractionAmount: Dp,
     val highlight: Float,
+    val borderStrength: Float,
     val depth: Float,
     val saturation: Float,
     val brightness: Float,
     val depthEffect: Boolean,
-    val dispersion: Boolean
+    val dispersion: Boolean,
+    val cardSurfaceAlpha: Float,
+    val barSurfaceAlpha: Float,
+    val lensSize: Dp
 )
 
-private fun liquidTuning(a: Appearance): LiquidTuning {
+internal fun liquidTuning(a: Appearance): LiquidTuning {
     val h = a.liquidRefractionHeight.coerceIn(8, 40).dp
+    val border = a.cardBorder.coerceIn(0, 100) / 100f
+    val opacityNorm = (a.cardOpacity.coerceIn(40, 100) - 40f) / 60f
     return LiquidTuning(
         blur = a.liquidBlur.coerceIn(0, 16).dp,
         refractionHeight = h,
-        refractionAmount = h * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.4f),
-        // 描边强度为 0 时连玻璃高光边一起关掉：设置里把描边拉到 0 的用户
-        // 期望的是「完全没有白边」，而高光边以前不受描边控制，看起来像没生效。
-        highlight = if (a.cardBorder <= 0 || a.liquidHighlight <= 0) {
+        refractionAmount = h * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.6f),
+        // 描边强度为 0 时连玻璃高光边一起关掉：确保描边=0 时完全无边。
+        highlight = if (border <= 0f || a.liquidHighlight <= 0) {
             0f
         } else {
             a.liquidHighlight.coerceIn(0, 100) / 100f
         },
+        borderStrength = border,
         depth = a.liquidDepth.coerceIn(0, 100) / 100f,
         saturation = a.liquidSaturation.coerceIn(80, 160) / 100f,
         brightness = a.liquidBrightness.coerceIn(-30, 30) / 100f,
         depthEffect = a.liquidDepthEffect,
-        dispersion = a.liquidDispersion
+        dispersion = a.liquidDispersion,
+        // 二次曲线：40% 时通透清澈（0.04），默认 78% 时轻薄通透（0.22），100% 时雾感扎实（0.48）
+        cardSurfaceAlpha = 0.04f + opacityNorm * opacityNorm * 0.44f,
+        // 底栏略更通透，确保下方滚动内容折射清晰可见
+        barSurfaceAlpha = 0.12f + opacityNorm * 0.28f,
+        lensSize = a.liquidLensSize.coerceIn(34, 54).dp
     )
 }
 
@@ -279,8 +294,9 @@ fun Modifier.inkCard(
             val t = liquidTuning(a)
             val surface = container ?: scheme.surfaceVariant
             val hasRefraction = a.liquidRefraction > 0
-            var m = this
-                .clip(shape)
+            // 不在外层套 .clip(shape)：drawBackdrop 内部已按 shape 裁切玻璃与表面，
+            // 外层 clip 会把 Shadow 外阴影裁掉，导致「立体感」滑块效果大打折扣。
+            val m = this
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { shape },
@@ -302,28 +318,27 @@ fun Modifier.inkCard(
                             )
                         }
                     },
-                    // 高光强度独立可调；描边强度为 0 时边框消失，但玻璃高光仍保留
-                    highlight = if (t.highlight <= 0f) {
+                    highlight = if (t.highlight <= 0f || t.borderStrength <= 0f) {
                         { null }
                     } else {
                         {
                             com.kyant.backdrop.highlight.Highlight(
-                                // 库内部把描边宽度再乘 2，这里必须给得很细，
-                                // 否则卡片会是一圈厚白边（就是「老气」的来源）。
-                                width = (0.2f + 0.5f * t.highlight).dp,
-                                alpha = (0.10f + 0.45f * t.highlight).coerceAtMost(1f)
+                                // 库内部把描边宽度再乘 2，用细腻宽度 + 描边强度联动，避免粗白边
+                                width = (0.15f + 0.35f * t.highlight * t.borderStrength).dp,
+                                alpha = (0.08f + 0.48f * t.highlight * (0.35f + 0.65f * t.borderStrength))
+                                    .coerceAtMost(0.75f)
                             )
                         }
                     },
-                    // 立体感：外阴影 + 内阴影
+                    // 立体感：外阴影 + 内阴影，随 liquidDepth 线性放大
                     shadow = if (t.depth <= 0f) {
                         null
                     } else {
                         {
                             Shadow(
-                                radius = (14f * t.depth).dp,
-                                offset = DpOffset(0.dp, (4f * t.depth).dp),
-                                alpha = 0.30f * t.depth
+                                radius = (4f + 16f * t.depth).dp,
+                                offset = DpOffset(0.dp, (1f + 5f * t.depth).dp),
+                                alpha = 0.36f * t.depth
                             )
                         }
                     },
@@ -332,47 +347,44 @@ fun Modifier.inkCard(
                     } else {
                         {
                             InnerShadow(
-                                radius = (8f * t.depth).dp,
-                                alpha = 0.36f * t.depth
+                                radius = (2f + 9f * t.depth).dp,
+                                alpha = 0.42f * t.depth
                             )
                         }
                     },
                     onDrawSurface = {
-                        // 底色更薄一点，让背景透上来；厚涂才是「塑料感」的来源。
-                        drawRect(
-                            surface.copy(
-                                alpha = (a.cardOpacity.coerceIn(40, 100) / 100f) * 0.18f
-                            )
-                        )
-                        // 左上到右下的斜向反光
-                        drawRect(
-                            Brush.linearGradient(
-                                listOf(
-                                    Color.White.copy(alpha = 0.04f + 0.10f * t.depth),
-                                    Color.Transparent,
-                                    Color.White.copy(alpha = 0.015f)
+                        drawRect(surface.copy(alpha = t.cardSurfaceAlpha))
+                        if (t.depth > 0f) {
+                            // 左上到右下的斜向反光
+                            drawRect(
+                                Brush.linearGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.02f + 0.12f * t.depth),
+                                        Color.Transparent,
+                                        Color.White.copy(alpha = 0.02f * t.depth)
+                                    )
                                 )
                             )
-                        )
-                        // 顶部薄高光 + 底部轻微压暗，做出玻璃厚度
-                        drawRect(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.White.copy(alpha = 0.03f + 0.12f * t.depth),
-                                    Color.Transparent
-                                ),
-                                endY = size.height * 0.42f
+                            // 顶部薄高光 + 底部轻微压暗，做出玻璃厚度
+                            drawRect(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.02f + 0.14f * t.depth),
+                                        Color.Transparent
+                                    ),
+                                    endY = size.height * 0.40f
+                                )
                             )
-                        )
-                        drawRect(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.03f + 0.06f * t.depth)
-                                ),
-                                startY = size.height * 0.62f
+                            drawRect(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.02f + 0.09f * t.depth)
+                                    ),
+                                    startY = size.height * 0.60f
+                                )
                             )
-                        )
+                        }
                     }
                 )
             // 边框交给库里的 Highlight 画（更细、带方向性）；

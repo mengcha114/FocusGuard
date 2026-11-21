@@ -24,6 +24,7 @@ import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.colorControls
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
@@ -56,9 +57,13 @@ fun LiquidButton(
     val appearance = com.focusguard.app.ui.theme.AppearanceState.get(
         androidx.compose.ui.platform.LocalContext.current
     )
-    // 跟随设置：描边强度 0 或高光 0 时不再画边缘白线（默认 Highlight 是纯白，很扎眼）
+    // 跟随设置：描边强度 0 或高光 0 时不再画边缘白线
     val highlightStrength = appearance.liquidHighlight.coerceIn(0, 100) / 100f
-    val showHighlight = appearance.cardBorder > 0 && highlightStrength > 0f
+    val borderStrength = appearance.cardBorder.coerceIn(0, 100) / 100f
+    val depth = appearance.liquidDepth.coerceIn(0, 100) / 100f
+    val saturation = appearance.liquidSaturation.coerceIn(80, 160) / 100f
+    val brightness = appearance.liquidBrightness.coerceIn(-30, 30) / 100f
+    val showHighlight = borderStrength > 0f && highlightStrength > 0f
     val interactiveHighlight = remember(animationScope) {
         InteractiveHighlight(animationScope = animationScope)
     }
@@ -69,13 +74,17 @@ fun LiquidButton(
                 shape = { RoundedCornerShape(percent = 50) },
                 effects = {
                     vibrancy()
-                    blur(2.dp.toPx())
+                    val btnBlur = (appearance.liquidBlur.coerceIn(0, 16) * 0.4f).dp
+                    if (btnBlur > 0.dp) blur(btnBlur.toPx())
+                    if (saturation != 1f || brightness != 0f) {
+                        colorControls(brightness = brightness, saturation = saturation)
+                    }
                     // 折射同样跟随设置，避免"按钮调了参数没反应"
                     if (appearance.liquidRefraction > 0) {
                         val refHeight = appearance.liquidRefractionHeight
                             .coerceIn(8, 40).dp
                         val refAmount = refHeight *
-                            (appearance.liquidRefraction.coerceIn(0, 100) / 100f * 1.6f)
+                            (appearance.liquidRefraction.coerceIn(0, 100) / 100f * 1.8f)
                         lens(
                             refHeight.toPx(),
                             refAmount.toPx(),
@@ -85,25 +94,37 @@ fun LiquidButton(
                     }
                 },
                 highlight = if (!showHighlight) {
-                    null
+                    { null }
                 } else {
                     {
                         Highlight(
-                            width = (0.3f + 0.9f * highlightStrength).dp,
-                            alpha = (0.15f + 0.55f * highlightStrength +
-                                0.2f * interactiveHighlight.pressProgress).coerceAtMost(1f)
+                            width = (0.15f + 0.35f * highlightStrength * borderStrength).dp,
+                            alpha = ((0.10f + 0.42f * highlightStrength) *
+                                (0.35f + 0.65f * borderStrength) +
+                                0.22f * interactiveHighlight.pressProgress).coerceAtMost(0.85f)
                         )
                     }
                 },
-                shadow = {
-                    Shadow(alpha = 0.20f + 0.45f * interactiveHighlight.pressProgress)
+                shadow = if (depth <= 0f) {
+                    null
+                } else {
+                    {
+                        Shadow(
+                            radius = (4f + 10f * depth).dp,
+                            alpha = (0.12f + 0.24f * depth) + 0.35f * interactiveHighlight.pressProgress
+                        )
+                    }
                 },
-                innerShadow = {
-                    val progress = interactiveHighlight.pressProgress
-                    InnerShadow(
-                        radius = 4.dp + 4.dp * progress,
-                        alpha = 0.18f + 0.35f * progress
-                    )
+                innerShadow = if (depth <= 0f) {
+                    null
+                } else {
+                    {
+                        val progress = interactiveHighlight.pressProgress
+                        InnerShadow(
+                            radius = (2f + 5f * depth).dp + 3.dp * progress,
+                            alpha = (0.10f + 0.24f * depth) + 0.28f * progress
+                        )
+                    }
                 },
                 layerBlock = if (isInteractive) {
                     {

@@ -67,6 +67,7 @@ fun AppearancePanel() {
     val context = LocalContext.current
     val a = AppearanceState.get(context)
     fun set(transform: (Appearance) -> Appearance) = AppearanceState.update(context, transform)
+    fun preview(transform: (Appearance) -> Appearance) = AppearanceState.preview(transform)
 
     var importing by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf(false) }
@@ -236,14 +237,20 @@ fun AppearancePanel() {
             visible = a.cardStyle == Appearance.CARD_GLASS ||
                 a.cardStyle == Appearance.CARD_LIQUID
         ) {
-            SliderRow(title = "卡片不透明度", value = a.cardOpacity, range = 40f..100f, suffix = "%") { v ->
+            SliderRow(
+                title = "卡片不透明度",
+                value = a.cardOpacity,
+                range = 40f..100f,
+                suffix = "%",
+                onPreview = { v -> preview { it.copy(cardOpacity = v) } }
+            ) { v ->
                 set { it.copy(cardOpacity = v) }
             }
         }
         FxExpand(visible = a.cardStyle == Appearance.CARD_LIQUID) {
             // 棋盘实时预览：折射/模糊/色散/高光/立体感的变化在这里最直观
             Text(
-                "参数预览（棋盘背景更容易看出折射）",
+                "参数预览（拖动滑块实时生效）",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -254,43 +261,57 @@ fun AppearancePanel() {
                 title = "折射高度",
                 value = a.liquidRefractionHeight,
                 range = 8f..40f,
-                suffix = "dp"
+                suffix = "dp",
+                onPreview = { v -> preview { it.copy(liquidRefractionHeight = v) } }
             ) { v -> set { it.copy(liquidRefractionHeight = v) } }
             SliderRow(
                 title = "折射强度",
                 value = a.liquidRefraction,
                 range = 0f..100f,
-                suffix = "%"
+                suffix = "%",
+                onPreview = { v -> preview { it.copy(liquidRefraction = v) } }
             ) { v -> set { it.copy(liquidRefraction = v) } }
             SliderRow(
                 title = "玻璃模糊",
                 value = a.liquidBlur,
                 range = 0f..16f,
-                suffix = "dp"
+                suffix = "dp",
+                onPreview = { v -> preview { it.copy(liquidBlur = v) } }
             ) { v -> set { it.copy(liquidBlur = v) } }
             SliderRow(
                 title = "高光强度",
                 value = a.liquidHighlight,
                 range = 0f..100f,
-                suffix = "%"
+                suffix = "%",
+                onPreview = { v -> preview { it.copy(liquidHighlight = v) } }
             ) { v -> set { it.copy(liquidHighlight = v) } }
             SliderRow(
                 title = "立体感",
                 value = a.liquidDepth,
                 range = 0f..100f,
-                suffix = "%"
+                suffix = "%",
+                onPreview = { v -> preview { it.copy(liquidDepth = v) } }
             ) { v -> set { it.copy(liquidDepth = v) } }
+            SliderRow(
+                title = "底栏透镜大小",
+                value = a.liquidLensSize,
+                range = 34f..54f,
+                suffix = "dp",
+                onPreview = { v -> preview { it.copy(liquidLensSize = v) } }
+            ) { v -> set { it.copy(liquidLensSize = v) } }
             SliderRow(
                 title = "背景饱和度",
                 value = a.liquidSaturation,
                 range = 80f..160f,
-                suffix = "%"
+                suffix = "%",
+                onPreview = { v -> preview { it.copy(liquidSaturation = v) } }
             ) { v -> set { it.copy(liquidSaturation = v) } }
             SliderRow(
                 title = "背景亮度",
                 value = a.liquidBrightness,
                 range = -30f..30f,
-                suffix = "%"
+                suffix = "%",
+                onPreview = { v -> preview { it.copy(liquidBrightness = v) } }
             ) { v -> set { it.copy(liquidBrightness = v) } }
             SwitchRow(
                 title = "折射景深",
@@ -305,7 +326,8 @@ fun AppearancePanel() {
             title = "描边强度",
             value = a.cardBorder,
             range = 0f..100f,
-            suffix = "%"
+            suffix = "%",
+            onPreview = { v -> preview { it.copy(cardBorder = v) } }
         ) { v -> set { it.copy(cardBorder = v) } }
         Label("圆角")
         FxOptionRow(
@@ -381,56 +403,93 @@ private fun AppearancePreview(a: Appearance) {
         preset != null && a.background != Appearance.BG_IMAGE -> Brush.verticalGradient(preset)
         else -> Brush.verticalGradient(
             listOf(
-                lerp(scheme.background, scheme.primary, 0.10f),
+                lerp(scheme.background, scheme.primary, 0.14f),
                 scheme.background,
-                lerp(scheme.background, scheme.tertiary, 0.08f)
+                lerp(scheme.background, scheme.tertiary, 0.12f)
             )
         )
+    }
+    val previewBackdrop = rememberLayerBackdrop {
+        drawRect(scheme.background)
+        drawContent()
     }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(158.dp)
             .clip(RoundedCornerShape(18.dp))
-            .background(brush)
     ) {
-        if (a.background == Appearance.BG_IMAGE) {
-            ImageBackground(a, scheme.background)
-        }
-        Column(
+        // 预览区自带独立背景图层，确保修改背景/折射/模糊/高光时预览卡片立即产生真实折射
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.Center
+                .matchParentSize()
+                .layerBackdrop(previewBackdrop)
+                .background(brush)
         ) {
-            Box(
+            if (a.background == Appearance.BG_IMAGE) {
+                ImageBackground(a, scheme.background)
+            } else {
+                // 柔和装饰光斑：让渐变/纯色背景下也能看出液态卡片的折射与饱和度变化
+                Canvas(Modifier.matchParentSize()) {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            listOf(scheme.primary.copy(alpha = 0.28f), Color.Transparent),
+                            center = Offset(size.width * 0.18f, size.height * 0.25f),
+                            radius = size.width * 0.45f
+                        ),
+                        radius = size.width * 0.45f,
+                        center = Offset(size.width * 0.18f, size.height * 0.25f)
+                    )
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            listOf(scheme.tertiary.copy(alpha = 0.26f), Color.Transparent),
+                            center = Offset(size.width * 0.84f, size.height * 0.78f),
+                            radius = size.width * 0.48f
+                        ),
+                        radius = size.width * 0.48f,
+                        center = Offset(size.width * 0.84f, size.height * 0.78f)
+                    )
+                }
+            }
+        }
+        CompositionLocalProvider(
+            com.focusguard.app.ui.theme.LocalAppBackdrop provides previewBackdrop
+        ) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .inkCard()
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .fillMaxSize()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "今日专注",
-                            fontSize = 11.sp,
-                            color = scheme.onSurfaceVariant
-                        )
-                        Text(
-                            "25:00",
-                            fontSize = (26 * a.fontScale / 100f).sp,
-                            fontWeight = FontWeight.Bold,
-                            color = scheme.onSurface
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(scheme.primary.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("▶", fontSize = 12.sp, color = scheme.primary)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .inkCard()
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "今日专注",
+                                fontSize = 11.sp,
+                                color = scheme.onSurfaceVariant
+                            )
+                            Text(
+                                "25:00",
+                                fontSize = (26 * a.fontScale / 100f).sp,
+                                fontWeight = FontWeight.Bold,
+                                color = scheme.onSurface
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(scheme.primary.copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("▶", fontSize = 12.sp, color = scheme.primary)
+                        }
                     }
                 }
             }
@@ -506,7 +565,7 @@ private fun SwitchRow(title: String, checked: Boolean, hint: String? = null, onC
     }
 }
 
-/** 滑杆：拖动时只更新本地值，松手才写入（避免每帧写 prefs 与全局重组）。 */
+/** 滑杆：拖动时实时预览内存状态且不打断浮点手势，松手才落盘写入 prefs。 */
 @Composable
 private fun SliderRow(
     title: String,
@@ -515,18 +574,40 @@ private fun SliderRow(
     suffix: String,
     hint: String? = null,
     steps: Int = 0,
+    onPreview: ((Int) -> Unit)? = null,
     onCommit: (Int) -> Unit
 ) {
-    var local by remember(value) { mutableFloatStateOf(value.toFloat()) }
+    var local by remember { mutableFloatStateOf(value.toFloat()) }
+    var dragging by remember { mutableStateOf(false) }
+    var lastEmitted by remember { mutableIntStateOf(value) }
+    LaunchedEffect(value) {
+        if (!dragging) {
+            local = value.toFloat()
+            lastEmitted = value
+        }
+    }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-            Text("${local.toInt()}$suffix", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+            Text("${kotlin.math.round(local).toInt()}$suffix", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
         }
         Slider(
             value = local,
-            onValueChange = { local = it },
-            onValueChangeFinished = { onCommit(local.toInt()) },
+            onValueChange = {
+                dragging = true
+                local = it
+                val next = kotlin.math.round(it).toInt()
+                if (next != lastEmitted) {
+                    lastEmitted = next
+                    onPreview?.invoke(next)
+                }
+            },
+            onValueChangeFinished = {
+                dragging = false
+                val finalVal = kotlin.math.round(local).toInt()
+                lastEmitted = finalVal
+                onCommit(finalVal)
+            },
             valueRange = range,
             steps = steps
         )
@@ -547,22 +628,18 @@ private fun LiquidParamPreview(a: Appearance) {
         drawRect(Color.Transparent)
         drawContent()
     }
+    val t = com.focusguard.app.ui.theme.liquidTuning(a)
+    val scheme = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(18.dp)
-    val h = a.liquidRefractionHeight.coerceIn(8, 40).dp
-    val amount = h * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.4f)
-    val blurDp = a.liquidBlur.coerceIn(0, 16).dp
-    val hi = a.liquidHighlight.coerceIn(0, 100) / 100f
-    val depth = a.liquidDepth.coerceIn(0, 100) / 100f
-    val sat = a.liquidSaturation.coerceIn(80, 160) / 100f
-    val bright = a.liquidBrightness.coerceIn(-30, 30) / 100f
+    val lensShape = RoundedCornerShape(percent = 50)
 
     Box(
         Modifier
             .fillMaxWidth()
-            .height(104.dp)
+            .height(112.dp)
             .clip(RoundedCornerShape(18.dp))
     ) {
-        // 背景层：高对比棋盘，只被采样、不直接显示给玻璃以外的逻辑
+        // 背景层：高对比彩色棋盘，便于同时看清折射、色散、饱和度与亮度变化
         Box(
             Modifier
                 .matchParentSize()
@@ -574,12 +651,13 @@ private fun LiquidParamPreview(a: Appearance) {
                 val rows = (size.height / cell).toInt() + 1
                 for (r in 0 until rows) {
                     for (c in 0 until cols) {
+                        val color = when {
+                            (r + c) % 2 == 0 -> Color(0xFF13202E)
+                            (r + c) % 4 == 1 -> Color(0xFF38BDF8)
+                            else -> Color(0xFFF2F6FA)
+                        }
                         drawRect(
-                            color = if ((r + c) % 2 == 0) {
-                                Color(0xFF13202E)
-                            } else {
-                                Color(0xFFF2F6FA)
-                            },
+                            color = color,
                             topLeft = Offset(c * cell, r * cell),
                             size = Size(cell, cell)
                         )
@@ -587,62 +665,116 @@ private fun LiquidParamPreview(a: Appearance) {
                 }
             }
         }
-        // 玻璃层：与卡片使用同一组参数
-        Box(
-            Modifier
+        // 左侧：卡片玻璃预览；右侧：圆形透镜预览（直观反映透镜大小与色散）
+        Row(
+            modifier = Modifier
                 .matchParentSize()
-                .padding(14.dp)
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { shape },
-                    effects = {
-                        vibrancy()
-                        if (blurDp > 0.dp) blur(blurDp.toPx())
-                        if (sat != 1f || bright != 0f) {
-                            colorControls(brightness = bright, saturation = sat)
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { shape },
+                        effects = {
+                            vibrancy()
+                            if (t.blur > 0.dp) blur(t.blur.toPx())
+                            if (t.saturation != 1f || t.brightness != 0f) {
+                                colorControls(brightness = t.brightness, saturation = t.saturation)
+                            }
+                            if (a.liquidRefraction > 0) {
+                                lens(
+                                    t.refractionHeight.toPx(),
+                                    t.refractionAmount.toPx(),
+                                    depthEffect = t.depthEffect,
+                                    chromaticAberration = t.dispersion
+                                )
+                            }
+                        },
+                        highlight = if (t.highlight <= 0f || t.borderStrength <= 0f) {
+                            { null }
+                        } else {
+                            {
+                                Highlight(
+                                    width = (0.15f + 0.35f * t.highlight * t.borderStrength).dp,
+                                    alpha = (0.08f + 0.48f * t.highlight * (0.35f + 0.65f * t.borderStrength))
+                                        .coerceAtMost(0.75f)
+                                )
+                            }
+                        },
+                        shadow = if (t.depth <= 0f) {
+                            null
+                        } else {
+                            {
+                                Shadow(
+                                    radius = (4f + 16f * t.depth).dp,
+                                    offset = DpOffset(0.dp, (1f + 5f * t.depth).dp),
+                                    alpha = 0.36f * t.depth
+                                )
+                            }
+                        },
+                        innerShadow = if (t.depth <= 0f) {
+                            null
+                        } else {
+                            {
+                                InnerShadow(
+                                    radius = (2f + 9f * t.depth).dp,
+                                    alpha = 0.42f * t.depth
+                                )
+                            }
+                        },
+                        onDrawSurface = {
+                            drawRect(scheme.surfaceVariant.copy(alpha = t.cardSurfaceAlpha))
                         }
-                        if (a.liquidRefraction > 0) {
-                            lens(
-                                h.toPx(),
-                                amount.toPx(),
-                                depthEffect = a.liquidDepthEffect,
-                                chromaticAberration = a.liquidDispersion
-                            )
-                        }
-                    },
-                    highlight = if (hi <= 0f || a.cardBorder <= 0) {
-                        { null }
-                    } else {
-                        {
-                            Highlight(
-                                width = (0.3f + 0.9f * hi).dp,
-                                alpha = (0.15f + 0.65f * hi).coerceAtMost(1f)
-                            )
-                        }
-                    },
-                    shadow = if (depth <= 0f) {
-                        null
-                    } else {
-                        {
-                            Shadow(
-                                radius = (14f * depth).dp,
-                                offset = DpOffset(0.dp, (4f * depth).dp),
-                                alpha = 0.30f * depth
-                            )
-                        }
-                    },
-                    innerShadow = if (depth <= 0f) {
-                        null
-                    } else {
-                        {
-                            InnerShadow(
-                                radius = (8f * depth).dp,
-                                alpha = 0.36f * depth
-                            )
-                        }
-                    },
-                    onDrawSurface = { drawRect(Color.White.copy(alpha = 0.06f)) }
-                )
-        )
+                    )
+            )
+            Box(
+                Modifier
+                    .size(t.lensSize)
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { lensShape },
+                        effects = {
+                            vibrancy()
+                            if (t.saturation != 1f || t.brightness != 0f) {
+                                colorControls(brightness = t.brightness, saturation = t.saturation)
+                            }
+                            if (a.liquidRefraction > 0) {
+                                val maxH = t.lensSize * 0.56f
+                                val lh = (t.refractionHeight * 0.85f).coerceIn(8.dp, maxH)
+                                val la = (t.refractionAmount * 0.58f).coerceIn(4.dp, t.lensSize * 0.80f)
+                                lens(
+                                    lh.toPx(),
+                                    la.toPx(),
+                                    depthEffect = t.depthEffect,
+                                    chromaticAberration = t.dispersion
+                                )
+                            }
+                        },
+                        highlight = if (t.highlight <= 0f || t.borderStrength <= 0f) {
+                            { null }
+                        } else {
+                            {
+                                Highlight(
+                                    width = (0.14f + 0.26f * t.highlight * t.borderStrength).dp,
+                                    alpha = ((0.06f + 0.22f * t.highlight) * (0.35f + 0.65f * t.borderStrength))
+                                        .coerceIn(0f, 0.65f)
+                                )
+                            }
+                        },
+                        shadow = if (t.depth <= 0f) null else {
+                            { Shadow(radius = (4f + 9f * t.depth).dp, alpha = 0.28f * t.depth) }
+                        },
+                        innerShadow = if (t.depth <= 0f) null else {
+                            { InnerShadow(radius = (2.5f + 4.5f * t.depth).dp, alpha = 0.26f * t.depth) }
+                        },
+                        onDrawSurface = { drawRect(Color.White.copy(alpha = 0.04f)) }
+                    )
+            )
+        }
     }
 }

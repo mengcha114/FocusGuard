@@ -49,9 +49,15 @@ fun HomeScreen(
     val violations = remember { logStore.getTodayViolations().size }
     val recentLogs = remember { logStore.getAllLogs().take(5) }
 
+    val liquidBottomPadding = com.focusguard.app.ui.theme.LocalLiquidBottomBarPadding.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = 12.dp,
+            bottom = 12.dp + liquidBottomPadding
+        ),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {

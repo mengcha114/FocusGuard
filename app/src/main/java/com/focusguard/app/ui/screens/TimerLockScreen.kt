@@ -363,7 +363,7 @@ fun TimerLockScreen(onBack: () -> Unit) {
             )
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(12.dp + com.focusguard.app.ui.theme.LocalLiquidBottomBarPadding.current))
     }
 
     if (showConfirm) {

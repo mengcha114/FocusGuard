@@ -198,6 +198,9 @@ fun AppControlScreen() {
             }
             LazyColumn(
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    bottom = 12.dp + com.focusguard.app.ui.theme.LocalLiquidBottomBarPadding.current
+                ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(filteredApps, key = { it.packageName }) { app ->
