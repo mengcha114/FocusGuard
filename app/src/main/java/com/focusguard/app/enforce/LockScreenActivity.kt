@@ -495,30 +495,9 @@ class LockScreenActivity : ComponentActivity() {
         pendingPause = count < 0
         val required = kotlin.math.abs(count).coerceAtLeast(1)
 
-        // 优先在无障碍覆盖层里答题。
-        // 原因：Activity 天生位于其它应用的 TYPE_APPLICATION_OVERLAY 之下，
-        // 只要对方有悬浮窗（语音助手 / 加速球 / 聊天工具的小气泡），
-        // 答题页就会被盖住。覆盖层是 TYPE_ACCESSIBILITY_OVERLAY，层级最高，压得住。
-        if (LockOverlayManager.canShow(applicationContext) &&
-            com.focusguard.app.access.GuardAccessibilityService.instance != null
-        ) {
-            try {
-                LockOverlayManager.enterChallengeMode(
-                    context = applicationContext,
-                    lockState = lockState,
-                    requiredCorrect = required,
-                    forPause = pendingPause,
-                    onPassed = { forPause ->
-                        handleOverlayChallengePassed(applicationContext, forPause)
-                    }
-                )
-                Log.d(TAG, "答题已转入无障碍覆盖层（可压住其它应用悬浮窗）")
-                return
-            } catch (e: Exception) {
-                Log.w(TAG, "覆盖层答题启动失败，回退 Activity：${e.message}")
-            }
-        }
-
+        // 答题仍用 Activity（Compose 版界面完整、草稿纸/输入体验都在上面）。
+        // 曾经试过把答题搬进无障碍覆盖层的原生 View 界面，但观感明显不如 Activity，
+        // 且会连带影响草稿纸浮层，已回退。
         // 使用 Activity Context，让答题页压在锁机页同一个 task 中；
         // applicationContext 会强制 NEW_TASK，正是答题页被顶回的根因之一。
         val launched = UnlockChallengeActivity.show(this, required)

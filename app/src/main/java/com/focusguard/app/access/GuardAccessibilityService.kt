@@ -960,6 +960,22 @@ class GuardAccessibilityService : AccessibilityService() {
      */
     private val windowPkgCache = java.util.concurrent.ConcurrentHashMap<Int, String>()
 
+    /**
+     * 窗口扫描线程。
+     *
+     * `AccessibilityWindowInfo.root` 是跨进程调用，**只有它**会阻塞；
+     * 在无障碍回调（主线程）里调用过一次就会把主线程拖死（实测 254s ANR）。
+     * 但它又确实是唯一能拿到「别的应用窗口属于哪个包」的途径。
+     * 折中：把扫描整个丢到这条独立线程上执行，主线程只读扫描结果。
+     */
+    private val windowScanExecutor = java.util.concurrent.Executors
+        .newSingleThreadExecutor { r ->
+            Thread(r, "a11y-window-scan").apply { isDaemon = true }
+        }
+    @Volatile private var scanInFlight = false
+    @Volatile private var scannedForeign: List<String> = emptyList()
+    @Volatile private var scannedAt = 0L
+
     /** 最近一次「不属于我们也不是系统底座」的窗口包名（用于识别外来悬浮窗）。 */
     @Volatile private var lastForeignPkg: String? = null
     @Volatile private var lastForeignAt: Long = 0L
@@ -1010,15 +1026,57 @@ class GuardAccessibilityService : AccessibilityService() {
      * 键盘等）的包名挑出来，交给上层做「重新置顶 + 顶置守卫」处理。
      */
     /**
-     * 列出「可能盖在我们上面」的外来窗口所属包名。
+     * 后台扫描一次窗口清单，挑出「可能盖在我们上面」的外来包名。
      *
-     * 只用事件缓存，**不访问 window.root**（那是跨进程阻塞源，曾导致主线程卡 254s）。
-     * 5 秒内的外来窗口视为仍在屏幕上。
+     * 只在扫描线程里访问 `window.root`（阻塞源），主线程永不触碰。
+     * 扫描在进行中时直接跳过，避免堆积。
+     */
+    private fun requestWindowScan() {
+        if (scanInFlight) return
+        scanInFlight = true
+        try {
+            windowScanExecutor.execute {
+                try {
+                    val self = packageName
+                    val found = ArrayList<String>(4)
+                    windows.orEmpty().forEach { w ->
+                        try {
+                            if (!w.isVisible) return@forEach
+                            val t = w.type
+                            if (t != AccessibilityWindowInfo.TYPE_SYSTEM &&
+                                t != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY
+                            ) return@forEach
+                            val pkg = w.root?.packageName?.toString() ?: return@forEach
+                            if (pkg.isBlank() || pkg == self) return@forEach
+                            if (pkg.contains("systemui") || pkg.contains("launcher") ||
+                                pkg.contains("keyguard")
+                            ) return@forEach
+                            found.add(pkg)
+                        } catch (_: Throwable) {
+                        }
+                    }
+                    scannedForeign = found.distinct()
+                    scannedAt = System.currentTimeMillis()
+                } catch (_: Throwable) {
+                } finally {
+                    scanInFlight = false
+                }
+            }
+        } catch (_: Throwable) {
+            scanInFlight = false
+        }
+    }
+
+    /**
+     * 外来覆盖层包名（供锁机看门狗判断是否需要重新置顶）。
+     *
+     * 该函数本身**不做任何阻塞调用**：只读扫描线程的结果，
+     * 结果超过 3 秒就顺手触发一次后台重扫。
      */
     fun foreignOverlayPackages(): List<String> {
-        val pkg = lastForeignPkg ?: return emptyList()
-        if (System.currentTimeMillis() - lastForeignAt > 5_000L) return emptyList()
-        return listOf(pkg)
+        val age = System.currentTimeMillis() - scannedAt
+        if (age > 3_000L) requestWindowScan()
+        return if (age <= 6_000L) scannedForeign else emptyList()
     }
 
     /** 当前是否已用无障碍覆盖层承载锁机主体。 */
