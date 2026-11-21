@@ -610,7 +610,7 @@ private fun SliderRow(
     onCommit: (Int) -> Unit
 ) {
     var local by remember {
-        mutableFloatStateOf(value.coerceIn(range.start, range.endInclusive))
+        mutableFloatStateOf(value.toFloat().coerceIn(range.start, range.endInclusive))
     }
     var dragging by remember { mutableStateOf(false) }
     var lastEmitted by remember { mutableIntStateOf(value) }

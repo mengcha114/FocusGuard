@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.focusguard.app.ui.theme.dialogGlassColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
