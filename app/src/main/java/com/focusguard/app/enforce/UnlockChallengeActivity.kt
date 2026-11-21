@@ -424,7 +424,7 @@ class UnlockChallengeActivity : ComponentActivity() {
             com.focusguard.app.enforce.LockOverlayManager.endActivityChallenge()
             val ls = com.focusguard.app.data.LockState(this)
             if (ls.isLocked) {
-                com.focusguard.app.enforce.LockScreenActivity.start(this)
+                com.focusguard.app.enforce.LockScreenActivity.show(this)
             }
         }
         super.onDestroy()
