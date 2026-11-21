@@ -546,6 +546,11 @@ class MonitorService : Service() {
     /** 体检：悬浮窗权限是所有锁机形态的前提，丢了要立刻让用户知道。 */
     private fun checkOverlayPermission() {
         if (android.provider.Settings.canDrawOverlays(this)) return
+        // 掉了先尝试自动补回（Shizuku 通道），补不回来才提醒用户
+        if (com.focusguard.app.enhance.ShizukuEnhancer.ensureOverlayPermission(this)) {
+            Log.d(TAG, "悬浮窗权限已自动恢复")
+            return
+        }
         val a11y = com.focusguard.app.access.GuardAccessibilityService.instance != null
         if (a11y) return
         Log.e(TAG, "悬浮窗权限缺失且无障碍未连接：锁机将无法显示")
@@ -1305,6 +1310,7 @@ class MonitorService : Service() {
             // 悬浮窗权限被系统/ROM 关掉后，后台拉不起锁机页，但锁机状态照样会落，
             // 结果就是「冻结了一堆应用、却没有解锁入口」，用户必须手动打开本应用
             // 才能恢复 —— 实测过，这是最伤人的状态。
+            com.focusguard.app.enhance.ShizukuEnhancer.ensureOverlayPermission(this)
             val hasOverlay = android.provider.Settings.canDrawOverlays(this)
             val hasA11y = com.focusguard.app.access.GuardAccessibilityService.instance != null
             if (!hasOverlay && !hasA11y) {

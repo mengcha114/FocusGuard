@@ -176,6 +176,26 @@ object ShizukuEnhancer {
      * 2. 电池优化白名单 + 允许后台运行 + 待机分组固定为 active（防国产 ROM 冂结 / 清理）
      * 3. 悬浮窗、通知、精确闹钟授权（新用户免去逐项手动开启）
      */
+    /**
+     * 悬浮窗权限被系统/ROM 回收后自动补回（需要 Shizuku 就绪）。
+     *
+     * ROM 会在「清理」「应用长时间未使用」「系统更新」后撤销 SYSTEM_ALERT_WINDOW，
+     * 而锁机完全依赖它显示界面 —— 掉了就等于锁机失效，必须能自己找回来。
+     * 返回 true 表示当前已具备权限。
+     */
+    fun ensureOverlayPermission(context: Context): Boolean {
+        if (android.provider.Settings.canDrawOverlays(context)) return true
+        if (!isReady()) {
+            Log.w(TAG, "悬浮窗权限缺失，Shizuku 未就绪，无法自动恢复")
+            return false
+        }
+        Log.d(TAG, "悬浮窗权限缺失，尝试用 Shizuku 自动恢复")
+        selfHeal(context)
+        val ok = android.provider.Settings.canDrawOverlays(context)
+        Log.d(TAG, "悬浮窗权限自动恢复结果：$ok")
+        return ok
+    }
+
     fun selfHeal(context: Context) {
         if (!isReady()) return
         val pkg = context.packageName

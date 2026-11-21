@@ -196,6 +196,11 @@ class GuardAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        // 开机/重启后 ROM 常把悬浮窗权限清掉：无障碍一连上就补回，
+        // 避免等到执法瞬间才发现锁机页显示不出来
+        runCatching {
+            com.focusguard.app.enhance.ShizukuEnhancer.ensureOverlayPermission(this)
+        }
         super.onServiceConnected()
         instance = this
         lockState = LockState(this)
