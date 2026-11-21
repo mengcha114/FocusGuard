@@ -746,8 +746,22 @@ object LockPolicies {
      */
     private fun freeze(context: Context, pkgs: Set<String>): String? {
         if (pkgs.isEmpty()) return null
-        if (DhizukuEnhancer.setPackagesSuspended(context, pkgs, true)) return "dhizuku"
-        if (ShizukuEnhancer.suspendPackages(pkgs, true)) return "shizuku"
+        // 本软件同时有 Shizuku 与 Dhizuku 两条挂起通道，Android 的挂起状态是
+        // **按施加者分别记录**的：已经被任一通道挂起的包，再用另一通道施加会返回
+        // 失败（或看似成功），而 PackageManager 的 FLAG_SUSPENDED 早已置位，
+        // 复核会误判成「这次施加成功」→ 记错施主 → 锁机结束解不掉，包被永久冻结。
+        // 因此先查真实状态：已经挂着就记空串（解冻时两条通道都试）。
+        if (stillSuspended(context, pkgs)) return ""
+
+        // DPM / Shizuku 返回「调用成功」也不等于真的挂起（施主已注销、系统拒绝等），
+        // 必须用 FLAG_SUSPENDED 复核，否则日志会谎报「已冻结」。
+        if (DhizukuEnhancer.setPackagesSuspended(context, pkgs, true) &&
+            stillSuspended(context, pkgs)
+        ) return "dhizuku"
+        if (ShizukuEnhancer.suspendPackages(pkgs, true) && stillSuspended(context, pkgs)) {
+            return "shizuku"
+        }
+        Log.w(TAG, "冻结未真正生效（已复核 FLAG_SUSPENDED，Shizuku/Dhizuku 均未成功）：$pkgs")
         return null
     }
 
@@ -847,9 +861,12 @@ object LockPolicies {
         val current = blockFrozen(app)
         if (pkg in current) return true
         if (pkg in suspendedPackages(app) || pkg in persistentFrozen(app)) {
-            // 已经被别的机制挂起了：只登记引用，不重复施加
-            p.edit().putStringSet(KEY_BLOCK_FROZEN, current + pkg).apply()
-            return true
+            // 记录里写着已挂起：复核系统真实状态，避免「记录说有、实际没挂」
+            if (stillSuspended(app, setOf(pkg))) {
+                p.edit().putStringSet(KEY_BLOCK_FROZEN, current + pkg).apply()
+                return true
+            }
+            Log.w(TAG, "记录显示 $pkg 已挂起，但系统实际未挂起，重新施加")
         }
         val by = freeze(app, setOf(pkg)) ?: return false
         p.edit()

@@ -16,6 +16,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import kotlin.math.sin
+import kotlin.math.cos
+import kotlin.math.atan2
+import kotlin.math.abs
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -675,6 +679,71 @@ fun Modifier.liquidPress(
  * 按压回弹：按下缩到 [pressedScale]，松手弹簧回弹（低阻尼，带轻微过冲的弹性）。
  * 传入与 clickable / Button 共用的 [interactionSource] 才能感知按压。
  */
+/**
+ * 液态弹性按压（含长按拖动）。
+ *
+ * 按下轻微压扁 → 按住拖动时按钮像黏在手指上的液体一样跟手偏移，
+ * 并按拖动速度做横向拉伸 / 纵向压扁 → 松手低阻尼弹簧回弹并轻微过冲。
+ *
+ * 全程**不消费**触摸事件，因此不会影响原 Button / clickable 的点击判定，
+ * 可安全叠加在任意可点击组件上。
+ */
+fun Modifier.liquidElastic(
+    enabled: Boolean = true,
+    pressedScale: Float = 0.93f
+): Modifier = composed {
+    val scope = rememberCoroutineScope()
+    val anim = remember { Animatable(1f) }
+    val offX = remember { Animatable(0f) }
+    val offY = remember { Animatable(0f) }
+    val stretchX = remember { Animatable(1f) }
+    val stretchY = remember { Animatable(1f) }
+    val on = animationsEnabled()
+    val back = spring<Float>(dampingRatio = 0.34f, stiffness = Spring.StiffnessMedium)
+    this
+        .graphicsLayer {
+            scaleX = anim.value * stretchX.value
+            scaleY = anim.value * stretchY.value
+            translationX = offX.value
+            translationY = offY.value
+        }
+        .pointerInput(enabled, on) {
+            if (!enabled) return@pointerInput
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                if (!on) return@awaitEachGesture
+                val start = down.position
+                val h = size.height.toFloat().coerceAtLeast(1f)
+                val w = size.width.toFloat().coerceAtLeast(1f)
+                scope.launch {
+                    anim.animateTo(pressedScale, spring(0.95f, 1600f))
+                }
+                while (true) {
+                    val ev = awaitPointerEvent()
+                    val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!ch.pressed) break
+                    val d = ch.position - start
+                    val k = (d.getDistance() / h).coerceIn(0f, 0.8f)
+                    val angle = atan2(d.y, d.x)
+                    scope.launch {
+                        // tanh 阻尼跟随：拖再远也只偏移一小段，像黏住的液体
+                        offX.snapTo(d.x * 0.15f)
+                        offY.snapTo(d.y * 0.15f)
+                        stretchX.snapTo(1f + k * 0.16f * abs(cos(angle)) * (w / h).coerceAtMost(1f))
+                        stretchY.snapTo(1f - k * 0.10f * abs(sin(angle)))
+                    }
+                }
+                scope.launch {
+                    launch { anim.animateTo(1f, back) }
+                    launch { offX.animateTo(0f, back) }
+                    launch { offY.animateTo(0f, back) }
+                    launch { stretchX.animateTo(1f, back) }
+                    launch { stretchY.animateTo(1f, back) }
+                }
+            }
+        }
+}
+
 fun Modifier.pressScale(
     interactionSource: MutableInteractionSource,
     pressedScale: Float = 0.94f

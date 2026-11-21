@@ -930,11 +930,56 @@ class GuardAccessibilityService : AccessibilityService() {
         statusBarBlock = null
     }
 
+    // ── 高层全屏覆盖（z-order 高于其它应用的 TYPE_APPLICATION_OVERLAY） ──
+    @Volatile private var topOverlayView: android.view.View? = null
+
+    /**
+     * 把锁机全屏窗口挂到无障碍覆盖层。
+     *
+     * 普通悬浮窗是 TYPE_APPLICATION_OVERLAY，**同类型后加的窗口会压在我们上面**
+     * （语音助手、加速球、录屏/悬浮工具等「顽固悬浮窗」就是这么盖住的）。
+     * TYPE_ACCESSIBILITY_OVERLAY 的窗口层级高于所有普通应用悬浮窗，
+     * 锁机主体挂到这里之后，其它应用再怎么加悬浮窗也压不到它上面。
+     *
+     * 失败（服务被中断、系统拒绝）时返回 false，调用方自动回退普通悬浮窗。
+     */
+    fun attachTopOverlay(
+        view: android.view.View,
+        params: android.view.WindowManager.LayoutParams
+    ): Boolean = try {
+        detachTopOverlay()
+        params.type = android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+        getSystemService(android.view.WindowManager::class.java).addView(view, params)
+        topOverlayView = view
+        Log.d(TAG, "锁机主体已挂到无障碍覆盖层（层级高于其它应用悬浮窗）")
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "无障碍覆盖层挂载失败，回退普通悬浮窗：${e.message}")
+        topOverlayView = null
+        false
+    }
+
+    /** 撤下无障碍覆盖层（锁机结束 / 窗口重建时调用）。 */
+    fun detachTopOverlay() {
+        try {
+            topOverlayView?.let {
+                getSystemService(android.view.WindowManager::class.java).removeViewImmediate(it)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "移除无障碍覆盖层失败：${e.message}")
+        }
+        topOverlayView = null
+    }
+
+    /** 当前是否已用无障碍覆盖层承载锁机主体。 */
+    val hasTopOverlay: Boolean get() = topOverlayView != null
+
     override fun onInterrupt() {
         Log.w(TAG, "无障碍服务被中断")
     }
 
     override fun onDestroy() {
+        detachTopOverlay()
         super.onDestroy()
         removeStatusBarBlock()
         removeGestureBlocker()

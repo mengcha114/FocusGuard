@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.ui.theme.inkCard
 import com.focusguard.app.ui.theme.pressScale
+import com.focusguard.app.ui.theme.liquidElastic
 
 /**
  * 通用视觉组件：统一卡片、选项块、分段标题。
@@ -108,7 +109,7 @@ fun FxOption(
         verticalArrangement = Arrangement.Center,
         modifier = modifier
             .heightIn(min = 48.dp)
-            .pressScale(interaction)
+            .liquidElastic()
             .clip(RoundedCornerShape(14.dp))
             .background(bg)
             .border(if (selected) 1.5.dp else 1.dp, border, RoundedCornerShape(14.dp))
@@ -200,7 +201,7 @@ fun FxPrimaryButton(
         interactionSource = interaction,
         shape = RoundedCornerShape(18.dp),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp).pressScale(interaction)
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp).liquidElastic()
     ) {
         if (icon != null) {
             Icon(icon, null, modifier = Modifier.size(20.dp))

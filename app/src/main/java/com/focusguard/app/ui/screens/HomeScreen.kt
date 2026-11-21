@@ -32,6 +32,7 @@ import com.focusguard.app.ui.theme.animationsEnabled
 import com.focusguard.app.ui.theme.glassSurface
 import com.focusguard.app.ui.theme.inkCard
 import com.focusguard.app.ui.theme.pressScale
+import com.focusguard.app.ui.theme.liquidElastic
 
 @Composable
 fun HomeScreen(
@@ -109,7 +110,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .weight(1.3f)
                             .height(56.dp)
-                            .then(Modifier.pressScaleCompat(interaction)),
+                            .then(Modifier.liquidElastic()),
                         shape = RoundedCornerShape(18.dp),
                         colors = if (serviceRunning) ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.16f),
@@ -134,7 +135,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .weight(1f)
                             .height(56.dp)
-                            .then(Modifier.pressScaleCompat(testInteraction)),
+                            .then(Modifier.liquidElastic()),
                         shape = RoundedCornerShape(18.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                     ) {

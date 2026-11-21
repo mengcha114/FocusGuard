@@ -76,6 +76,8 @@ object LockOverlayManager {
 
     private var windowManager: WindowManager? = null
     private var overlayRoot: FrameLayout? = null
+    /** 本次是否由无障碍覆盖层承载（决定用哪种方式移除）。 */
+    @Volatile private var attachedViaA11y = false
     private var timeText: TextView? = null
     private var statusText: TextView? = null
     private var currentLockState: LockState? = null
@@ -437,7 +439,12 @@ object LockOverlayManager {
             } else {
                 root.addView(buildContent(appContext, lockState, onStartChallenge, onRequestPause))
             }
-            wm.addView(root, buildLayoutParams())
+            // 优先挂到无障碍覆盖层：层级高于其它应用悬浮窗，顽固悬浮窗压不住
+            val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
+            attachedViaA11y = a11y != null && a11y.attachTopOverlay(root, buildLayoutParams())
+            if (!attachedViaA11y) {
+                wm.addView(root, buildLayoutParams())
+            }
             root.requestFocus()
             hideSystemBars(root)
 
@@ -2743,9 +2750,15 @@ object LockOverlayManager {
         try {
             val root = overlayRoot
             val wm = windowManager
+            val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
             if (root != null && wm != null) {
-                wm.removeViewImmediate(root)
+                if (attachedViaA11y && a11y != null) {
+                    a11y.detachTopOverlay()
+                } else {
+                    wm.removeViewImmediate(root)
+                }
             }
+            attachedViaA11y = false
         } catch (e: Exception) {
             Log.w(TAG, "移除覆盖层视图失败：${e.message}")
         }
