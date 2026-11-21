@@ -823,7 +823,7 @@ class ScratchpadOverlayView(
     }
 
     companion object {
-        fun buildPath(xs: FloatArray, ys: FloatArray): Path {
+        private fun buildPath(xs: FloatArray, ys: FloatArray): Path {
             val p = Path()
             if (xs.isEmpty()) return p
             p.moveTo(xs[0], ys[0])
@@ -842,7 +842,7 @@ class ScratchpadOverlayView(
             return p
         }
 
-        fun hitTest(item: Item, px: Float, py: Float, threshold: Float): Boolean = when (item) {
+        private fun hitTest(item: Item, px: Float, py: Float, threshold: Float): Boolean = when (item) {
             is Item.Stroke -> {
                 if (item.xs.isEmpty()) {
                     false
@@ -893,7 +893,7 @@ class ScratchpadOverlayView(
             }
         }
 
-        fun distSeg(
+        private fun distSeg(
             px: Float, py: Float,
             ax: Float, ay: Float,
             bx: Float, by: Float
