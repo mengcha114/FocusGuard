@@ -260,7 +260,7 @@ fun AppearancePanel() {
             SliderRow(
                 title = "折射高度",
                 value = a.liquidRefractionHeight,
-                range = 8f..40f,
+                range = 8f..28f,
                 suffix = "dp",
                 onPreview = { v -> preview { it.copy(liquidRefractionHeight = v) } }
             ) { v -> set { it.copy(liquidRefractionHeight = v) } }

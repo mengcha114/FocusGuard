@@ -247,22 +247,22 @@ internal data class LiquidTuning(
 )
 
 internal fun liquidTuning(a: Appearance, isLight: Boolean = false): LiquidTuning {
-    val h = a.liquidRefractionHeight.coerceIn(8, 40).dp
+    // 折射高度必须限幅：官方 lens(24,48) 是给 68dp 窄元素用的，
+    // 把 2~2.8 倍的折射量套到整页大卡片上，会连正文一起卷曲 —— 那就是「果冻」。
+    // 真正的液态玻璃只有**边缘窄带**弯折，中心保持平直。
+    val h = a.liquidRefractionHeight.coerceIn(8, 28).dp
     val border = a.cardBorder.coerceIn(0, 100) / 100f
-    // 液态玻璃的核心是「中心高度通透 + 边缘强折射弯折 + 锐利棱光」。
-    // 表面涂层必须很薄，否则白雾会盖住折射/色散，看起来就变成普通毛玻璃。
-    // 40%(0.02) → 默认 78%(约 0.22) → 100%(0.52)，用二次曲线让中段变化更明显。
     val n = (a.cardOpacity.coerceIn(40, 100) - 40f) / 60f
-    val n2 = n * n
-    val cardAlpha = if (isLight) 0.02f + n2 * 0.50f else 0.02f + n2 * 0.46f
-    val barAlpha = if (isLight) 0.06f + n2 * 0.60f else 0.05f + n2 * 0.58f
+    // 表面厚度取官方区间（0.4~0.6 之间）：太薄会在亮背景上"消失"只剩描边，
+    // 太厚又变成毛玻璃。默认 78% ≈ 0.42（浅色）/ 0.36（深色）。
+    val cardAlpha = if (isLight) 0.10f + n * 0.50f else 0.08f + n * 0.44f
+    val barAlpha = if (isLight) 0.14f + n * 0.46f else 0.12f + n * 0.44f
     return LiquidTuning(
-        // 卡片模糊刻意压低：模糊会抹掉折射细节，官方 ControlCenter 卡片甚至是 0 模糊
-        blur = (a.liquidBlur.coerceIn(0, 24) * 0.55f).dp,
-        barBlur = (a.liquidBlur.coerceIn(0, 24) * 0.95f).dp,
+        blur = (a.liquidBlur.coerceIn(0, 24) * 0.70f).dp,
+        barBlur = (a.liquidBlur.coerceIn(0, 24) * 1.00f).dp,
         refractionHeight = h,
-        // 官方对话框/控制中心用 lens(24dp, 48dp)，即折射量约为高度的 2 倍，这里跟到 2.8 让弯折更明显
-        refractionAmount = h * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.8f),
+        // 1.3 倍：边缘有明显弯折与色散，中心仍是平的，不会把内容卷起来
+        refractionAmount = h * (a.liquidRefraction.coerceIn(0, 100) / 100f * 1.3f),
         highlight = if (border <= 0f || a.liquidHighlight <= 0) {
             0f
         } else {
@@ -362,15 +362,28 @@ fun Modifier.inkCard(
                     onDrawSurface = {
                         drawRect(surface.copy(alpha = t.cardSurfaceAlpha))
                         if (t.depth > 0f) {
+                            // 顶部亮边 + 底部暗边：在亮背景上界定玻璃轮廓，
+                            // 否则白玻璃会"融进"背景只剩一圈描边
                             drawRect(
                                 Brush.verticalGradient(
                                     listOf(
                                         Color.White.copy(
-                                            alpha = (if (isLight) 0.18f else 0.06f) * t.depth
+                                            alpha = (if (isLight) 0.30f else 0.10f) * t.depth
                                         ),
                                         Color.Transparent
                                     ),
-                                    endY = size.height * 0.45f
+                                    endY = size.height * 0.38f
+                                )
+                            )
+                            drawRect(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.Transparent,
+                                        Color.Black.copy(
+                                            alpha = (if (isLight) 0.10f else 0.16f) * t.depth
+                                        )
+                                    ),
+                                    startY = size.height * 0.66f
                                 )
                             )
                         }
@@ -690,7 +703,7 @@ fun Modifier.liquidPress(
  */
 fun Modifier.liquidElastic(
     enabled: Boolean = true,
-    pressedScale: Float = 0.93f
+    pressedScale: Float = 0.96f
 ): Modifier = composed {
     val scope = rememberCoroutineScope()
     val anim = remember { Animatable(1f) }
@@ -699,7 +712,8 @@ fun Modifier.liquidElastic(
     val stretchX = remember { Animatable(1f) }
     val stretchY = remember { Animatable(1f) }
     val on = animationsEnabled()
-    val back = spring<Float>(dampingRatio = 0.34f, stiffness = Spring.StiffnessMedium)
+    // 官方液态按钮的回弹是"轻微回正"，不是橡皮糖：阻尼 0.55 基本不过冲
+    val back = spring<Float>(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow)
     this
         .graphicsLayer {
             scaleX = anim.value * stretchX.value
@@ -715,6 +729,9 @@ fun Modifier.liquidElastic(
                 val start = down.position
                 val h = size.height.toFloat().coerceAtLeast(1f)
                 val w = size.width.toFloat().coerceAtLeast(1f)
+                // 位移上限 3dp，避免按钮在长按时"滑走"
+                // PointerInputScope 本身是 Density，可直接换算
+                val maxShift = 3.dp.toPx()
                 scope.launch {
                     anim.animateTo(pressedScale, spring(0.95f, 1600f))
                 }
@@ -726,11 +743,11 @@ fun Modifier.liquidElastic(
                     val k = (d.getDistance() / h).coerceIn(0f, 0.8f)
                     val angle = atan2(d.y, d.x)
                     scope.launch {
-                        // tanh 阻尼跟随：拖再远也只偏移一小段，像黏住的液体
-                        offX.snapTo(d.x * 0.15f)
-                        offY.snapTo(d.y * 0.15f)
-                        stretchX.snapTo(1f + k * 0.16f * abs(cos(angle)) * (w / h).coerceAtMost(1f))
-                        stretchY.snapTo(1f - k * 0.10f * abs(sin(angle)))
+                        // 幅度控制在 2~4dp 量级：只是"有生命感"，不是软体果冻
+                        offX.snapTo((d.x * 0.07f).coerceIn(-maxShift, maxShift))
+                        offY.snapTo((d.y * 0.07f).coerceIn(-maxShift, maxShift))
+                        stretchX.snapTo(1f + k * 0.06f * abs(cos(angle)) * (w / h).coerceAtMost(1f))
+                        stretchY.snapTo(1f - k * 0.04f * abs(sin(angle)))
                     }
                 }
                 scope.launch {
