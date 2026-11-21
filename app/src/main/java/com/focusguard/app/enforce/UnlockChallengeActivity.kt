@@ -419,6 +419,14 @@ class UnlockChallengeActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        // 答题页退场：解除悬浮窗压制；若仍在锁机中，让守护服务把悬浮窗锁机页放回来
+        runCatching {
+            com.focusguard.app.enforce.LockOverlayManager.endActivityChallenge()
+            val ls = com.focusguard.app.data.LockState(this)
+            if (ls.isLocked) {
+                com.focusguard.app.enforce.LockScreenActivity.start(this)
+            }
+        }
         super.onDestroy()
         if (instance === this) instance = null
         instanceCreatedAt = 0L

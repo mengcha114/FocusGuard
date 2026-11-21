@@ -300,22 +300,14 @@ class LockScreenActivity : ComponentActivity() {
                     appCtx.startActivity(intent)
                     return
                 }
-                // 优先走悬浮窗内自绘键盘答题（0 露桌、手势无法退出）
-                if (LockOverlayManager.canShow(appCtx)) {
-                    val required = if (lockState.unlockStrength == 2) 5 else 1
-                    LockOverlayManager.enterChallengeMode(
-                        context = appCtx,
-                        lockState = lockState,
-                        requiredCorrect = required,
-                        forPause = false,
-                        onPassed = { forPause -> handleOverlayChallengePassed(appCtx, forPause) }
-                    )
-                } else {
-                    // 无悬浮窗权限 → 退回 Activity 答题（内部自绘键盘）
-                    UnlockChallengeActivity.markLaunchPending()
-                    val required = if (lockState.unlockStrength == 2) 5 else 1
-                    UnlockChallengeActivity.show(appCtx, required)
-                }
+                // 统一走 Activity 答题（Compose 版）。
+                // 悬浮窗内那套自绘 View 答题界面观感差、草稿纸也不好用；
+                // 为了不让悬浮窗(31 层)盖住 Activity，先撤下悬浮窗并压制重显。
+                val required = if (lockState.unlockStrength == 2) 5 else 1
+                LockOverlayManager.beginActivityChallenge()
+                LockOverlayManager.hideNow()
+                UnlockChallengeActivity.markLaunchPending()
+                UnlockChallengeActivity.show(appCtx, required)
             } catch (e: Exception) {
                 // 强度 3 的 Activity 未能拉起时收回让位标志，守护立即接管，
                 // 防止 flag 悬挂导致守护永久放行。

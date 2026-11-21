@@ -372,6 +372,26 @@ object LockOverlayManager {
     fun canShow(context: Context): Boolean = Settings.canDrawOverlays(context)
 
     /**
+     * 答题 Activity 打开期间压制悬浮窗。
+     *
+     * 悬浮窗是 TYPE_ACCESSIBILITY_OVERLAY(31 层)，一旦重新显示就会盖住
+     * 答题 Activity，用户既看不到题也点不到草稿纸（实测：有悬浮窗权限时
+     * 草稿纸完全没法用）。所以答题期间宁可短暂"露桌"，也不能让悬浮窗回来。
+     */
+    @Volatile private var suppressUntilMs = 0L
+
+    fun beginActivityChallenge() {
+        suppressUntilMs = System.currentTimeMillis() + 15 * 60_000L
+    }
+
+    fun endActivityChallenge() {
+        suppressUntilMs = 0L
+    }
+
+    fun isActivityChallengeActive(): Boolean =
+        System.currentTimeMillis() < suppressUntilMs
+
+    /**
      * 显示覆盖层（幂等）。任意线程可调用；窗口操作在内部切到主线程执行。
      *
      * @param force true 时忽略 hide 冷却（锁机主体显示用）。
@@ -384,6 +404,11 @@ object LockOverlayManager {
         onStartChallenge: () -> Unit,
         onRequestPause: (() -> Unit)? = null
     ) {
+        // 答题 Activity 打开时不要重新显示悬浮窗，否则会把它盖住
+        if (isActivityChallengeActive()) {
+            Log.d(TAG, "答题进行中，跳过悬浮窗显示")
+            return
+        }
         if (isShowing) return
         if (!force) {
             val now = System.currentTimeMillis()
