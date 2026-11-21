@@ -273,7 +273,7 @@ class GuardAccessibilityService : AccessibilityService() {
                 val target = com.focusguard.app.enforce.ForceStopHelper.armedPackage()
                 val clicked = runCatching {
                     windows.firstNotNullOfOrNull { w ->
-                        val owner = w.root?.packageName?.toString() ?: return@firstNotNullOfOrNull null
+                        val owner = windowPkgCache[w.id] ?: return@firstNotNullOfOrNull null
                         if (com.focusguard.app.enforce.ForceStopHelper.isAppDetailHost(owner)) {
                             if (com.focusguard.app.enforce.ForceStopHelper.clickForceStop(w.root)) true else null
                         } else {
@@ -606,7 +606,7 @@ class GuardAccessibilityService : AccessibilityService() {
             val fullW = dm.widthPixels
             val fullH = dm.heightPixels
             windows.any { window ->
-                val owner = runCatching { window.root?.packageName?.toString() }.getOrNull()
+                val owner = runCatching { windowindowPkgCache[w.id] }.getOrNull()
                 if (owner != pkg) return@any false
                 val bounds = android.graphics.Rect()
                 window.getBoundsInScreen(bounds)
@@ -620,7 +620,7 @@ class GuardAccessibilityService : AccessibilityService() {
     /** [pkg] 当前拥有的窗口数：>1 说明它处于画中画/分屏（全屏应用只有一个活动窗口）。 */
     private fun windowCountOf(pkg: String): Int = try {
         windows.count { window ->
-            runCatching { window.root?.packageName?.toString() }.getOrNull() == pkg
+            runCatching { windowindowPkgCache[w.id] }.getOrNull() == pkg
         }
     } catch (e: Exception) {
         0
@@ -732,7 +732,7 @@ class GuardAccessibilityService : AccessibilityService() {
                     it.isActive
             } ?: emptyList()
             val ownOrLauncher = appWindows.all { w ->
-                val pkg = w.root?.packageName?.toString() ?: ""
+                val pkg = windowPkgCache[w.id] ?: ""
                 pkg == packageName ||
                     pkg.contains("launcher", ignoreCase = true) ||
                     pkg.contains("systemui", ignoreCase = true)
@@ -749,7 +749,7 @@ class GuardAccessibilityService : AccessibilityService() {
         val hasForeignSysWindow = try {
             windows?.any { w ->
                 w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
-                    w.root?.packageName?.toString()?.let { pkg ->
+                    windowPkgCache[w.id]?.let { pkg ->
                         pkg != packageName &&
                             !pkg.contains("launcher", ignoreCase = true) &&
                             !(pkg == "com.android.systemui" &&
