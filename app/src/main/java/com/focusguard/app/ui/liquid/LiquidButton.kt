@@ -74,17 +74,15 @@ fun LiquidButton(
                 shape = { RoundedCornerShape(percent = 50) },
                 effects = {
                     vibrancy()
-                    val btnBlur = (appearance.liquidBlur.coerceIn(0, 16) * 0.4f).dp
+                    val btnBlur = (appearance.liquidBlur.coerceIn(0, 24) * 0.35f).dp
                     if (btnBlur > 0.dp) blur(btnBlur.toPx())
                     if (saturation != 1f || brightness != 0f) {
                         colorControls(brightness = brightness, saturation = saturation)
                     }
-                    // 折射同样跟随设置，避免"按钮调了参数没反应"
                     if (appearance.liquidRefraction > 0) {
-                        val refHeight = appearance.liquidRefractionHeight
-                            .coerceIn(8, 40).dp
+                        val refHeight = (appearance.liquidRefractionHeight.coerceIn(8, 40) * 0.5f).dp
                         val refAmount = refHeight *
-                            (appearance.liquidRefraction.coerceIn(0, 100) / 100f * 1.8f)
+                            (appearance.liquidRefraction.coerceIn(0, 100) / 100f * 2.0f)
                         lens(
                             refHeight.toPx(),
                             refAmount.toPx(),
@@ -94,14 +92,14 @@ fun LiquidButton(
                     }
                 },
                 highlight = if (!showHighlight) {
-                    { null }
+                    null
                 } else {
                     {
                         Highlight(
-                            width = (0.15f + 0.35f * highlightStrength * borderStrength).dp,
-                            alpha = ((0.10f + 0.42f * highlightStrength) *
-                                (0.35f + 0.65f * borderStrength) +
-                                0.22f * interactiveHighlight.pressProgress).coerceAtMost(0.85f)
+                            width = (0.25f + 0.30f * highlightStrength * borderStrength).dp,
+                            alpha = ((0.18f + 0.45f * highlightStrength) *
+                                (0.4f + 0.6f * borderStrength) +
+                                0.25f * interactiveHighlight.pressProgress).coerceAtMost(0.92f)
                         )
                     }
                 },

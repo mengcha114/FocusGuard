@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -648,7 +649,11 @@ class MainActivity : ComponentActivity() {
                                         restoreState = true
                                     }
                                 }
-                                val barTuning = com.focusguard.app.ui.theme.liquidTuning(liquidAppearance)
+                                val isLightBar = MaterialTheme.colorScheme.background.luminance() > 0.5f
+                                val barTuning = com.focusguard.app.ui.theme.liquidTuning(
+                                    liquidAppearance,
+                                    isLightBar
+                                )
                                 LiquidBottomTabs(
                                     backdrop = barBackdrop,
                                     tabs = liquidTabs,
@@ -660,7 +665,6 @@ class MainActivity : ComponentActivity() {
                                     refractionAmount = barTuning.refractionAmount,
                                     blurRadius = barTuning.blur,
                                     surfaceAlpha = barTuning.barSurfaceAlpha,
-                                    // 底栏与卡片共用同一套液态参数，设置里调什么这里就变什么
                                     highlightStrength = barTuning.highlight,
                                     depth = barTuning.depth,
                                     saturation = barTuning.saturation,
@@ -669,7 +673,7 @@ class MainActivity : ComponentActivity() {
                                     dispersion = barTuning.dispersion,
                                     borderVisible = barTuning.borderStrength > 0f,
                                     borderStrength = barTuning.borderStrength,
-                                    lensSize = barTuning.lensSize
+                                    pillScalePercent = barTuning.pillScalePercent
                                 ) {
                                     liquidTabs.forEachIndexed { index, tab ->
                                         LiquidBottomTab(
@@ -681,7 +685,13 @@ class MainActivity : ComponentActivity() {
                                                 contentDescription = null,
                                                 modifier = Modifier.size(22.dp)
                                             )
-                                            Text(tab.label, fontSize = 10.sp)
+                                            Text(
+                                                tab.label,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
                                         }
                                     }
                                 }

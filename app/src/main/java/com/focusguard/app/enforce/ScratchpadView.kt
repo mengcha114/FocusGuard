@@ -15,6 +15,7 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.focusguard.app.ui.theme.FocusColors
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -24,40 +25,40 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * 悬浮窗答题模式专用原生草稿纸浮层（不依赖 Compose Window，可直接盖在 LockOverlayManager 之上）。
+ * 悬浮窗答题模式的草稿纸浮层（纯传统 View，可直接叠在 LockOverlayManager 之上）。
  *
- * 与 Compose 版 [com.focusguard.app.ui.components.ScratchpadOverlay] 功能对齐：
- * - 高刷历史点采样 + 二次贝塞尔平滑书写；
- * - 画笔、橡皮擦、直线、矩形、圆形、箭头；
- * - 撤销 / 重做 / 清空 / 多页管理；
- * - 双指上下划换页（末页自动新建）+ 右侧页码条单指上下划换页；
- * - 三种纸面（半透明透视 / 暗色网格 / 白色网格）+ 可展开题目对照栏。
+ * 与 Compose 版 [com.focusguard.app.ui.components.ScratchpadOverlay] 功能与视觉完全对齐：
+ * - 配色 100% 来自 [FocusColors.Palette]，与锁机页/悬浮窗/主界面同一套令牌，无野生硬编码色；
+ * - 单行顶栏（收起 · 页码 · 新建 · 看题 · 纸面）+ 单层横向紧凑工具坞，画布面积最大化；
+ * - 高刷历史点采样 + 二次贝塞尔平滑书写；对象级碰撞橡皮擦；
+ * - 双指上下划换页（末页自动新建），不与单指书写冲突。
  */
 class ScratchpadOverlayView(
     context: Context,
+    private val palette: FocusColors.Palette,
     private val questionProvider: () -> String,
     private val onClose: () -> Unit
 ) : FrameLayout(context) {
 
     private enum class Tool(val label: String) {
-        PEN("画笔"),
-        ERASER("橡皮"),
-        LINE("直线"),
-        RECT("矩形"),
-        OVAL("圆形"),
-        ARROW("箭头")
+        PEN("画笔"), ERASER("橡皮"), LINE("直线"),
+        RECT("矩形"), OVAL("圆形"), ARROW("箭头")
     }
 
     private enum class Paper(val label: String) {
-        TRANSLUCENT("透视"),
-        DARK_GRID("暗格"),
-        LIGHT_GRID("白格")
+        TRANSLUCENT("半透"), THEME("主题纸"), PAPER("纸白")
     }
 
     private sealed class Item(val color: Int, val widthPx: Float) {
-        class Stroke(val xs: FloatArray, val ys: FloatArray, color: Int, widthPx: Float) : Item(color, widthPx) {
+        class Stroke(
+            val xs: FloatArray,
+            val ys: FloatArray,
+            color: Int,
+            widthPx: Float
+        ) : Item(color, widthPx) {
             val path: Path = buildPath(xs, ys)
         }
+
         class Shape(
             val kind: Tool,
             val x1: Float,
@@ -123,194 +124,167 @@ class ScratchpadOverlayView(
     private var widthIdx = 1
     private var showQuestion = false
 
-    private val darkColors = intArrayOf(
-        Color.parseColor("#F8FAFC"),
-        Color.parseColor("#38BDF8"),
-        Color.parseColor("#FB7185"),
-        Color.parseColor("#34D399"),
-        Color.parseColor("#FBBF24")
-    )
-    private val lightColors = intArrayOf(
-        Color.parseColor("#1A1F2C"),
-        Color.parseColor("#1D4ED8"),
-        Color.parseColor("#DC2626"),
-        Color.parseColor("#059669"),
-        Color.parseColor("#D97706")
-    )
     private val widthsDp = floatArrayOf(2.2f, 3.8f, 6.2f)
+
+    private val inkColors: IntArray
+    private val paperIsLight: Boolean
+        get() = paper == Paper.PAPER || palette.isLight
 
     private val canvasView = DrawingSurface(context)
     private val pageLabel: TextView
-    private val edgeLabel: TextView
     private val paperBtn: TextView
     private val questionBtn: TextView
     private val questionBox: TextView
     private val toastView: TextView
     private val toolButtons = LinkedHashMap<Tool, TextView>()
     private val colorDots = ArrayList<View>()
-    private val widthDots = ArrayList<View>()
+    private val widthDots = ArrayList<TextView>()
     private val hideToastRunnable = Runnable { toastView.visibility = View.GONE }
 
     private fun dp(v: Float): Int = (v * resources.displayMetrics.density).toInt()
     private fun dpf(v: Float): Float = v * resources.displayMetrics.density
+    private fun argb(c: Int, alpha: Int): Int =
+        (c and 0x00FFFFFF) or ((alpha.coerceIn(0, 255)) shl 24)
+    private fun focus(c: androidx.compose.ui.graphics.Color): Int =
+        Color.parseColor(FocusColors.hex(c))
+
     private fun currentPage(): Page = pages[pageIdx.coerceIn(0, pages.lastIndex)]
-    private fun activeColor(): Int = (if (paper == Paper.LIGHT_GRID) lightColors else darkColors)[colorIdx]
+    private fun activeColor(): Int = inkColors[colorIdx.coerceIn(0, inkColors.lastIndex)]
     private fun activeWidthPx(): Float = dpf(widthsDp[widthIdx])
 
     init {
         isClickable = true
         isFocusable = true
 
-        // 1. 全屏绘制画布
+        val cText = focus(palette.text)
+        val cHaze = focus(palette.haze)
+        val cFaint = focus(palette.faint)
+        val cAccent = focus(palette.accent)
+        val cCard = focus(palette.card)
+        val cLine = focus(palette.line)
+        val cError = focus(palette.error)
+        val cSuccess = focus(palette.success)
+
+        inkColors = if (palette.isLight) {
+            intArrayOf(
+                Color.parseColor("#0F172A"), cAccent, cError, cSuccess,
+                Color.parseColor("#64748B")
+            )
+        } else {
+            intArrayOf(cText, cAccent, cError, cSuccess, cHaze)
+        }
+
         addView(canvasView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
-        // 2. 右侧边缘单指上下划换页条
-        edgeLabel = TextView(context).apply {
-            text = "▲\n1/1\n▼"
-            textSize = 9.5f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setLineSpacing(dpf(2f), 1f)
-            background = GradientDrawable().apply {
-                cornerRadius = dpf(13f)
-                setColor(Color.parseColor("#B818202C"))
-                setStroke(dp(1f), Color.parseColor("#33FFFFFF"))
-            }
-            var startY = 0f
-            var fired = false
-            setOnTouchListener { _, ev ->
-                when (ev.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        startY = ev.y
-                        fired = false
-                        true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val dy = ev.y - startY
-                        if (!fired && abs(dy) >= dpf(38f)) {
-                            fired = true
-                            if (dy < 0f) nextPage(true) else prevPage()
-                        }
-                        true
-                    }
-                    else -> true
-                }
-            }
-        }
-        addView(
-            edgeLabel,
-            LayoutParams(dp(28f), dp(128f)).apply {
-                gravity = Gravity.END or Gravity.CENTER_VERTICAL
-                marginEnd = dp(6f)
-            }
-        )
-
-        // 3. 顶部工具条 + 可展开题干栏
+        // ── 顶栏（横向可滚动，绝不溢出） ──
         val topWrapper = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12f), dp(42f), dp(12f), 0)
+            setPadding(dp(12f), dp(40f), dp(12f), 0)
         }
+        val topScroll = HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled = false }
         val topBar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = pillBg("#EE18202C", 16f)
-            setPadding(dp(8f), dp(6f), dp(8f), dp(6f))
+            background = panelBg(argb(cCard, 242), 16f, argb(cLine, 140))
+            setPadding(dp(6f), dp(4f), dp(6f), dp(4f))
         }
-        topBar.addView(smallBtn("◀") { prevPage() })
+        topBar.addView(smallBtn("✕", argb(cHaze, 255)) { onClose() })
+        topBar.addView(TextView(context).apply {
+            text = "草稿"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(cText)
+            setPadding(dp(6f), 0, dp(8f), 0)
+        })
+        topBar.addView(smallBtn("‹", argb(cText, 255)) { prevPage() })
         pageLabel = TextView(context).apply {
             textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-            setPadding(dp(4f), 0, dp(4f), 0)
+            setTextColor(cHaze)
+            setPadding(dp(2f), 0, dp(2f), 0)
         }
         topBar.addView(pageLabel)
-        topBar.addView(smallBtn("▶") { nextPage(true) })
-        topBar.addView(smallBtn("+页", "#38BDF8") { addPage() })
+        topBar.addView(smallBtn("›", argb(cText, 255)) { nextPage(true) })
+        topBar.addView(smallBtn("+", argb(cAccent, 255)) { addPage() })
 
-        topBar.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
-
-        questionBtn = smallBtn("看题", "#38BDF8") {
+        questionBtn = chip("看题", argb(cAccent, 255), argb(cHaze, 255)) {
             showQuestion = !showQuestion
             refreshQuestionBanner()
         }
         topBar.addView(questionBtn)
 
-        paperBtn = smallBtn(paper.label, "#38BDF8") {
+        paperBtn = chip(paper.label, argb(cAccent, 255), argb(cHaze, 255)) {
             val all = Paper.entries
             paper = all[(paper.ordinal + 1) % all.size]
             refreshUi()
         }
         topBar.addView(paperBtn)
-
-        topBar.addView(smallBtn("收起", "#FB7185") { onClose() })
-        topWrapper.addView(topBar, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        topScroll.addView(topBar)
+        topWrapper.addView(
+            topScroll,
+            LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+        )
 
         questionBox = TextView(context).apply {
             textSize = 13f
-            setTextColor(Color.WHITE)
+            setTextColor(cText)
             setLineSpacing(dpf(3f), 1f)
-            background = pillBg("#EE18202C", 12f)
+            background = panelBg(argb(cCard, 242), 12f, argb(cLine, 130))
             setPadding(dp(12f), dp(8f), dp(12f), dp(8f))
             maxLines = 5
             visibility = View.GONE
         }
         topWrapper.addView(
             questionBox,
-            LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(6f)
-            }
+            LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(6f) }
         )
-        addView(topWrapper, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP))
+        addView(
+            topWrapper,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP)
+        )
 
-        // 4. 翻页轻提示
+        // ── 居中轻提示 ──
         toastView = TextView(context).apply {
-            textSize = 13f
+            textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-            background = pillBg("#CC0F172A", 20f)
-            setPadding(dp(16f), dp(8f), dp(16f), dp(8f))
+            setTextColor(cText)
+            background = panelBg(argb(cCard, 245), 20f, argb(cLine, 150))
+            setPadding(dp(14f), dp(7f), dp(14f), dp(7f))
             visibility = View.GONE
         }
-        addView(toastView, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        addView(
+            toastView,
+            LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER)
+        )
 
-        // 5. 底部工具栏
-        val bottomBar = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = pillBg("#EE18202C", 18f)
-            setPadding(dp(10f), dp(8f), dp(10f), dp(8f))
-        }
-        val toolScroll = HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled = false }
-        val toolRow = LinearLayout(context).apply {
+        // ── 底部单层紧凑工具坞 ──
+        val dockScroll = HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled = false }
+        val dockRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8f), dp(7f), dp(8f), dp(7f))
         }
         for (t in Tool.entries) {
             val btn = TextView(context).apply {
                 text = t.label
-                textSize = 12f
-                setPadding(dp(10f), dp(5f), dp(10f), dp(5f))
+                textSize = 11.5f
+                gravity = Gravity.CENTER
+                setPadding(dp(9f), dp(7f), dp(9f), dp(7f))
                 setOnClickListener {
                     tool = t
                     refreshUi()
                 }
             }
             toolButtons[t] = btn
-            toolRow.addView(
+            dockRow.addView(
                 btn,
-                LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                    marginEnd = dp(6f)
-                }
+                LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+                    .apply { marginEnd = dp(4f) }
             )
         }
-        toolScroll.addView(toolRow)
-        bottomBar.addView(toolScroll, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-
-        val actionRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(8f), 0, 0)
-        }
-        for (i in 0 until darkColors.size) {
+        dockRow.addView(divider(argb(cLine, 130)))
+        for (i in inkColors.indices) {
             val dot = View(context).apply {
                 setOnClickListener {
                     colorIdx = i
@@ -319,18 +293,17 @@ class ScratchpadOverlayView(
                 }
             }
             colorDots.add(dot)
-            actionRow.addView(
+            dockRow.addView(
                 dot,
-                LinearLayout.LayoutParams(dp(22f), dp(22f)).apply { marginEnd = dp(7f) }
+                LinearLayout.LayoutParams(dp(19f), dp(19f)).apply {
+                    marginStart = dp(3f)
+                    marginEnd = dp(3f)
+                }
             )
         }
+        dockRow.addView(divider(argb(cLine, 130)))
         for (i in widthsDp.indices) {
-            val wDot = TextView(context).apply {
-                text = when (i) {
-                    0 -> "细"
-                    1 -> "中"
-                    else -> "粗"
-                }
+            val w = TextView(context).apply {
                 textSize = 11f
                 gravity = Gravity.CENTER
                 setOnClickListener {
@@ -338,42 +311,48 @@ class ScratchpadOverlayView(
                     refreshUi()
                 }
             }
-            widthDots.add(wDot)
-            actionRow.addView(
-                wDot,
-                LinearLayout.LayoutParams(dp(24f), dp(24f)).apply { marginEnd = dp(4f) }
+            widthDots.add(w)
+            dockRow.addView(
+                w,
+                LinearLayout.LayoutParams(dp(24f), dp(24f)).apply {
+                    marginStart = dp(2f)
+                    marginEnd = dp(2f)
+                }
             )
         }
-        actionRow.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
-        actionRow.addView(smallBtn("撤销") {
+        dockRow.addView(divider(argb(cLine, 130)))
+        dockRow.addView(smallBtn("撤销", argb(cText, 255)) {
             if (currentPage().undo()) canvasView.invalidate()
         })
-        actionRow.addView(smallBtn("重做") {
+        dockRow.addView(smallBtn("重做", argb(cText, 255)) {
             if (currentPage().redo()) canvasView.invalidate()
         })
-        actionRow.addView(smallBtn("清空", "#FB7185") {
+        dockRow.addView(smallBtn("清空", argb(cError, 255)) {
             currentPage().clear()
             canvasView.invalidate()
         })
-        bottomBar.addView(actionRow, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        dockScroll.addView(dockRow)
 
-        bottomBar.addView(
-            TextView(context).apply {
-                text = "双指上下划或拖动右侧页码条可快速换页/新建页"
-                textSize = 10f
-                setTextColor(Color.parseColor("#94A3B8"))
-                setPadding(0, dp(4f), 0, 0)
-            }
+        val dock = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            background = panelBg(argb(cCard, 242), 16f, argb(cLine, 140))
+        }
+        dock.addView(
+            dockScroll,
+            LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         )
-
         addView(
-            bottomBar,
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM).apply {
-                leftMargin = dp(12f)
-                rightMargin = dp(12f)
-                bottomMargin = dp(14f)
-            }
+            dock,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM)
+                .apply {
+                    leftMargin = dp(12f)
+                    rightMargin = dp(12f)
+                    bottomMargin = dp(12f)
+                }
         )
+
+        // 保底引用，避免未使用告警；实际着色在 refreshUi 中按状态刷新
+        cFaint
 
         refreshUi()
     }
@@ -383,12 +362,13 @@ class ScratchpadOverlayView(
         questionBtn.text = if (showQuestion) "藏题" else "看题"
         questionBox.text = q
         questionBox.visibility = if (showQuestion && q.isNotBlank()) View.VISIBLE else View.GONE
+        questionBtn.visibility = if (q.isBlank()) View.GONE else View.VISIBLE
     }
 
     private fun prevPage() {
         if (pageIdx > 0) {
             pageIdx--
-            showToast("↑ 第 ${pageIdx + 1} / ${pages.size} 页")
+            showToast("第 ${pageIdx + 1} / ${pages.size} 页")
             refreshUi()
         } else {
             showToast("已是第 1 页")
@@ -398,7 +378,7 @@ class ScratchpadOverlayView(
     private fun nextPage(autoCreate: Boolean) {
         if (pageIdx < pages.lastIndex) {
             pageIdx++
-            showToast("↓ 第 ${pageIdx + 1} / ${pages.size} 页")
+            showToast("第 ${pageIdx + 1} / ${pages.size} 页")
             refreshUi()
         } else if (autoCreate && pages.size < 20) {
             pages.add(Page())
@@ -425,62 +405,100 @@ class ScratchpadOverlayView(
         toastView.text = msg
         toastView.visibility = View.VISIBLE
         removeCallbacks(hideToastRunnable)
-        postDelayed(hideToastRunnable, 1200L)
+        postDelayed(hideToastRunnable, 1100L)
     }
 
     private fun refreshUi() {
-        pageLabel.text = "第 ${pageIdx + 1}/${pages.size} 页"
-        edgeLabel.text = "▲\n${pageIdx + 1}/${pages.size}\n▼"
+        val cText = focus(palette.text)
+        val cHaze = focus(palette.haze)
+        val cAccent = focus(palette.accent)
+
+        pageLabel.text = "${pageIdx + 1}/${pages.size}"
         paperBtn.text = paper.label
+
         for ((t, btn) in toolButtons) {
             val sel = t == tool
-            btn.setTextColor(if (sel) Color.parseColor("#38BDF8") else Color.parseColor("#E2E8F0"))
+            btn.setTextColor(if (sel) cAccent else cHaze)
             btn.background = if (sel) {
                 GradientDrawable().apply {
                     cornerRadius = dpf(10f)
-                    setColor(Color.parseColor("#2E38BDF8"))
-                    setStroke(dp(1f), Color.parseColor("#A638BDF8"))
+                    setColor(argb(cAccent, 40))
+                    setStroke(dp(1f), argb(cAccent, 150))
                 }
-            } else null
+            } else {
+                null
+            }
         }
-        val palette = if (paper == Paper.LIGHT_GRID) lightColors else darkColors
         colorDots.forEachIndexed { idx, v ->
             val sel = idx == colorIdx
             v.background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(palette[idx])
-                setStroke(dp(if (sel) 2.5f else 1f), if (sel) Color.parseColor("#38BDF8") else Color.parseColor("#55FFFFFF"))
+                setColor(inkColors[idx])
+                setStroke(dp(if (sel) 2.4f else 1f), if (sel) cAccent else argb(cText, 70))
             }
         }
-        widthDots.forEachIndexed { idx, v ->
-            val tv = v as TextView
+        widthDots.forEachIndexed { idx, tv ->
             val sel = idx == widthIdx
-            tv.setTextColor(if (sel) Color.parseColor("#38BDF8") else Color.parseColor("#94A3B8"))
+            tv.text = when (idx) {
+                0 -> "细"
+                1 -> "中"
+                else -> "粗"
+            }
+            tv.setTextColor(if (sel) cAccent else cHaze)
             tv.background = if (sel) {
                 GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
-                    setColor(Color.parseColor("#2E38BDF8"))
+                    setColor(argb(cAccent, 40))
                 }
-            } else null
+            } else {
+                null
+            }
         }
         refreshQuestionBanner()
         canvasView.invalidate()
     }
 
-    private fun pillBg(hex: String, radiusDp: Float): GradientDrawable = GradientDrawable().apply {
-        cornerRadius = dpf(radiusDp)
-        setColor(Color.parseColor(hex))
-        setStroke(dp(1f), Color.parseColor("#33FFFFFF"))
+    private fun panelBg(color: Int, radiusDp: Float, strokeColor: Int): GradientDrawable =
+        GradientDrawable().apply {
+            cornerRadius = dpf(radiusDp)
+            setColor(color)
+            setStroke(dp(1f), strokeColor)
+        }
+
+    private fun divider(color: Int): View = View(context).apply {
+        setBackgroundColor(color)
+    }.also {
+        it.layoutParams = LinearLayout.LayoutParams(dp(1f), dp(18f)).apply {
+            marginStart = dp(6f)
+            marginEnd = dp(6f)
+        }
     }
 
-    private fun smallBtn(text: String, colorHex: String = "#F1F5F9", onClick: () -> Unit): TextView =
+    private fun smallBtn(text: String, color: Int, onClick: () -> Unit): TextView =
         TextView(context).apply {
             this.text = text
-            textSize = 12f
+            textSize = 12.5f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor(colorHex))
-            setPadding(dp(7f), dp(4f), dp(7f), dp(4f))
+            setTextColor(color)
+            gravity = Gravity.CENTER
+            setPadding(dp(8f), dp(6f), dp(8f), dp(6f))
             setOnClickListener { onClick() }
+        }
+
+    private fun chip(text: String, color: Int, borderColor: Int, onClick: () -> Unit): TextView =
+        TextView(context).apply {
+            this.text = text
+            textSize = 11.5f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(color)
+            gravity = Gravity.CENTER
+            setPadding(dp(9f), dp(5f), dp(9f), dp(5f))
+            setOnClickListener { onClick() }
+            background = GradientDrawable().apply {
+                cornerRadius = dpf(10f)
+                setColor(0x00000000)
+                setStroke(dp(1f), borderColor)
+            }
         }
 
     private inner class DrawingSurface(ctx: Context) : View(ctx) {
@@ -489,20 +507,14 @@ class ScratchpadOverlayView(
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
         }
-        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-        }
-        private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            strokeWidth = 1f
-        }
+        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 1f }
         private val eraserFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
-            color = Color.parseColor("#2A38BDF8")
         }
         private val eraserRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = dpf(1.5f)
-            color = Color.parseColor("#CC38BDF8")
         }
 
         private val liveXs = ArrayList<Float>(128)
@@ -527,17 +539,18 @@ class ScratchpadOverlayView(
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
+            val light = paperIsLight
             val bg = when (paper) {
-                Paper.TRANSLUCENT -> Color.parseColor("#BD0D131D")
-                Paper.DARK_GRID -> Color.parseColor("#F711161F")
-                Paper.LIGHT_GRID -> Color.parseColor("#FAFAFBF8")
+                Paper.TRANSLUCENT -> argb(focus(palette.bg), 230)
+                Paper.THEME -> focus(palette.bg)
+                Paper.PAPER -> argb(Color.parseColor("#FDFDF8"), 255)
             }
             canvas.drawColor(bg)
 
-            gridPaint.color = when (paper) {
-                Paper.TRANSLUCENT -> Color.parseColor("#16FFFFFF")
-                Paper.DARK_GRID -> Color.parseColor("#18FFFFFF")
-                Paper.LIGHT_GRID -> Color.parseColor("#1C334155")
+            gridPaint.color = if (light) {
+                argb(Color.parseColor("#64748B"), 33)
+            } else {
+                argb(focus(palette.line), 56)
             }
             val step = dpf(28f)
             var x = step
@@ -551,9 +564,7 @@ class ScratchpadOverlayView(
                 y += step
             }
 
-            for (item in currentPage().items) {
-                drawItem(canvas, item)
-            }
+            for (item in currentPage().items) drawItem(canvas, item)
 
             if (liveXs.isNotEmpty()) {
                 val c = activeColor()
@@ -567,12 +578,11 @@ class ScratchpadOverlayView(
                     canvas.drawPath(livePath, strokePaint)
                 }
             }
-
-            if (shapeActive) {
-                drawShape(canvas, tool, sx, sy, ex, ey, activeColor(), activeWidthPx())
-            }
-
+            if (shapeActive) drawShape(canvas, tool, sx, sy, ex, ey, activeColor(), activeWidthPx())
             if (eraserActive) {
+                val accent = focus(palette.accent)
+                eraserFillPaint.color = argb(accent, 40)
+                eraserRingPaint.color = argb(accent, 190)
                 canvas.drawCircle(erX, erY, eraserRadius, eraserFillPaint)
                 canvas.drawCircle(erX, erY, eraserRadius, eraserRingPaint)
             }
@@ -634,14 +644,13 @@ class ScratchpadOverlayView(
                         invalidate()
                         return true
                     }
-
                     when (tool) {
                         Tool.PEN -> {
                             var added = false
                             for (h in 0 until ev.historySize) {
-                                val hx = ev.getHistoricalX(h)
-                                val hy = ev.getHistoricalY(h)
-                                if (appendLivePoint(hx, hy)) added = true
+                                if (appendLivePoint(ev.getHistoricalX(h), ev.getHistoricalY(h))) {
+                                    added = true
+                                }
                             }
                             if (appendLivePoint(ev.x, ev.y)) added = true
                             if (added) {
@@ -667,20 +676,20 @@ class ScratchpadOverlayView(
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (!multiTouch) {
                         when (tool) {
-                            Tool.PEN -> {
-                                if (liveXs.isNotEmpty()) {
-                                    val xs = FloatArray(liveXs.size) { liveXs[it] }
-                                    val ys = FloatArray(liveYs.size) { liveYs[it] }
-                                    currentPage().commitAdd(Item.Stroke(xs, ys, activeColor(), activeWidthPx()))
-                                }
+                            Tool.PEN -> if (liveXs.isNotEmpty()) {
+                                val xs = FloatArray(liveXs.size) { liveXs[it] }
+                                val ys = FloatArray(liveYs.size) { liveYs[it] }
+                                currentPage().commitAdd(
+                                    Item.Stroke(xs, ys, activeColor(), activeWidthPx())
+                                )
                             }
                             Tool.ERASER -> Unit
-                            else -> {
-                                if (shapeActive && hypot(ex - sx, ey - sy) >= 4f) {
-                                    currentPage().commitAdd(
-                                        Item.Shape(tool, sx, sy, ex, ey, activeColor(), activeWidthPx())
+                            else -> if (shapeActive && hypot(ex - sx, ey - sy) >= 4f) {
+                                currentPage().commitAdd(
+                                    Item.Shape(
+                                        tool, sx, sy, ex, ey, activeColor(), activeWidthPx()
                                     )
-                                }
+                                )
                             }
                         }
                     }
@@ -740,10 +749,10 @@ class ScratchpadOverlayView(
 
         private fun eraseAt(x: Float, y: Float) {
             val page = currentPage()
-            val remaining = page.items.filterNot { hitTest(it, x, y, eraserRadius + it.widthPx * 0.5f) }
-            if (remaining.size != page.items.size) {
-                page.commitReplace(remaining)
+            val remaining = page.items.filterNot {
+                hitTest(it, x, y, eraserRadius + it.widthPx * 0.5f)
             }
+            if (remaining.size != page.items.size) page.commitReplace(remaining)
         }
 
         private fun drawItem(canvas: Canvas, item: Item) {
@@ -758,11 +767,23 @@ class ScratchpadOverlayView(
                         canvas.drawPath(item.path, strokePaint)
                     }
                 }
-                is Item.Shape -> drawShape(canvas, item.kind, item.x1, item.y1, item.x2, item.y2, item.color, item.widthPx)
+                is Item.Shape -> drawShape(
+                    canvas, item.kind, item.x1, item.y1, item.x2, item.y2,
+                    item.color, item.widthPx
+                )
             }
         }
 
-        private fun drawShape(canvas: Canvas, kind: Tool, x1: Float, y1: Float, x2: Float, y2: Float, color: Int, w: Float) {
+        private fun drawShape(
+            canvas: Canvas,
+            kind: Tool,
+            x1: Float,
+            y1: Float,
+            x2: Float,
+            y2: Float,
+            color: Int,
+            w: Float
+        ) {
             strokePaint.color = color
             strokePaint.strokeWidth = w
             when (kind) {
@@ -802,7 +823,7 @@ class ScratchpadOverlayView(
     }
 
     companion object {
-        private fun buildPath(xs: FloatArray, ys: FloatArray): Path {
+        fun buildPath(xs: FloatArray, ys: FloatArray): Path {
             val p = Path()
             if (xs.isEmpty()) return p
             p.moveTo(xs[0], ys[0])
@@ -821,14 +842,21 @@ class ScratchpadOverlayView(
             return p
         }
 
-        private fun hitTest(item: Item, px: Float, py: Float, threshold: Float): Boolean = when (item) {
+        fun hitTest(item: Item, px: Float, py: Float, threshold: Float): Boolean = when (item) {
             is Item.Stroke -> {
-                if (item.xs.isEmpty()) false
-                else if (item.xs.size == 1) hypot(px - item.xs[0], py - item.ys[0]) <= threshold
-                else {
+                if (item.xs.isEmpty()) {
+                    false
+                } else if (item.xs.size == 1) {
+                    hypot(px - item.xs[0], py - item.ys[0]) <= threshold
+                } else {
                     var hit = false
                     for (i in 1 until item.xs.size) {
-                        if (distSeg(px, py, item.xs[i - 1], item.ys[i - 1], item.xs[i], item.ys[i]) <= threshold) {
+                        if (distSeg(
+                                px, py,
+                                item.xs[i - 1], item.ys[i - 1],
+                                item.xs[i], item.ys[i]
+                            ) <= threshold
+                        ) {
                             hit = true
                             break
                         }
@@ -837,7 +865,8 @@ class ScratchpadOverlayView(
                 }
             }
             is Item.Shape -> when (item.kind) {
-                Tool.LINE, Tool.ARROW -> distSeg(px, py, item.x1, item.y1, item.x2, item.y2) <= threshold
+                Tool.LINE, Tool.ARROW ->
+                    distSeg(px, py, item.x1, item.y1, item.x2, item.y2) <= threshold
                 Tool.RECT -> {
                     val l = min(item.x1, item.x2)
                     val r = max(item.x1, item.x2)
@@ -853,8 +882,9 @@ class ScratchpadOverlayView(
                     val cy = (item.y1 + item.y2) * 0.5f
                     val rx = abs(item.x2 - item.x1) * 0.5f
                     val ry = abs(item.y2 - item.y1) * 0.5f
-                    if (rx < 2f || ry < 2f) hypot(px - cx, py - cy) <= threshold
-                    else {
+                    if (rx < 2f || ry < 2f) {
+                        hypot(px - cx, py - cy) <= threshold
+                    } else {
                         val d = hypot((px - cx) / rx, (py - cy) / ry)
                         abs(d - 1f) * ((rx + ry) * 0.5f) <= threshold
                     }
@@ -863,7 +893,11 @@ class ScratchpadOverlayView(
             }
         }
 
-        private fun distSeg(px: Float, py: Float, ax: Float, ay: Float, bx: Float, by: Float): Float {
+        fun distSeg(
+            px: Float, py: Float,
+            ax: Float, ay: Float,
+            bx: Float, by: Float
+        ): Float {
             val dx = bx - ax
             val dy = by - ay
             val lenSq = dx * dx + dy * dy

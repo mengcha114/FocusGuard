@@ -274,7 +274,7 @@ fun AppearancePanel() {
             SliderRow(
                 title = "玻璃模糊",
                 value = a.liquidBlur,
-                range = 0f..16f,
+                range = 0f..24f,
                 suffix = "dp",
                 onPreview = { v -> preview { it.copy(liquidBlur = v) } }
             ) { v -> set { it.copy(liquidBlur = v) } }
@@ -293,10 +293,10 @@ fun AppearancePanel() {
                 onPreview = { v -> preview { it.copy(liquidDepth = v) } }
             ) { v -> set { it.copy(liquidDepth = v) } }
             SliderRow(
-                title = "底栏透镜大小",
-                value = a.liquidLensSize,
-                range = 34f..54f,
-                suffix = "dp",
+                title = "底栏胶囊饱满度",
+                value = if (a.liquidLensSize < 80) 100 else a.liquidLensSize,
+                range = 85f..105f,
+                suffix = "%",
                 onPreview = { v -> preview { it.copy(liquidLensSize = v) } }
             ) { v -> set { it.copy(liquidLensSize = v) } }
             SliderRow(
@@ -628,10 +628,13 @@ private fun LiquidParamPreview(a: Appearance) {
         drawRect(Color.Transparent)
         drawContent()
     }
-    val t = com.focusguard.app.ui.theme.liquidTuning(a)
     val scheme = MaterialTheme.colorScheme
+    val isLight = scheme.background.luminance() > 0.5f
+    val t = com.focusguard.app.ui.theme.liquidTuning(a, isLight)
     val shape = RoundedCornerShape(18.dp)
-    val lensShape = RoundedCornerShape(percent = 50)
+    val capsuleShape = RoundedCornerShape(percent = 50)
+    val cardBase = if (isLight) Color.White else scheme.surface
+    val barBase = if (isLight) Color(0xFFFAFAFA) else Color(0xFF141821)
 
     Box(
         Modifier
@@ -639,7 +642,7 @@ private fun LiquidParamPreview(a: Appearance) {
             .height(112.dp)
             .clip(RoundedCornerShape(18.dp))
     ) {
-        // 背景层：高对比彩色棋盘，便于同时看清折射、色散、饱和度与亮度变化
+        // 背景层：高对比彩色棋盘，便于同时看清折射、模糊、不透明度与色散变化
         Box(
             Modifier
                 .matchParentSize()
@@ -652,9 +655,9 @@ private fun LiquidParamPreview(a: Appearance) {
                 for (r in 0 until rows) {
                     for (c in 0 until cols) {
                         val color = when {
-                            (r + c) % 2 == 0 -> Color(0xFF13202E)
-                            (r + c) % 4 == 1 -> Color(0xFF38BDF8)
-                            else -> Color(0xFFF2F6FA)
+                            (r + c) % 2 == 0 -> if (isLight) Color(0xFFDbeafe) else Color(0xFF13202E)
+                            (r + c) % 4 == 1 -> scheme.primary.copy(alpha = 0.65f)
+                            else -> if (isLight) Color(0xFFFFFFFF) else Color(0xFFF2F6FA)
                         }
                         drawRect(
                             color = color,
@@ -665,7 +668,7 @@ private fun LiquidParamPreview(a: Appearance) {
                 }
             }
         }
-        // 左侧：卡片玻璃预览；右侧：圆形透镜预览（直观反映透镜大小与色散）
+        // 左侧：卡片液态玻璃预览；右侧：底栏选中胶囊药丸预览（所见即所得）
         Row(
             modifier = Modifier
                 .matchParentSize()
@@ -696,13 +699,13 @@ private fun LiquidParamPreview(a: Appearance) {
                             }
                         },
                         highlight = if (t.highlight <= 0f || t.borderStrength <= 0f) {
-                            { null }
+                            null
                         } else {
                             {
                                 Highlight(
-                                    width = (0.15f + 0.35f * t.highlight * t.borderStrength).dp,
-                                    alpha = (0.08f + 0.48f * t.highlight * (0.35f + 0.65f * t.borderStrength))
-                                        .coerceAtMost(0.75f)
+                                    width = (0.25f + 0.35f * t.highlight * t.borderStrength).dp,
+                                    alpha = (0.16f + 0.52f * t.highlight * (0.4f + 0.6f * t.borderStrength))
+                                        .coerceAtMost(0.90f)
                                 )
                             }
                         },
@@ -711,9 +714,9 @@ private fun LiquidParamPreview(a: Appearance) {
                         } else {
                             {
                                 Shadow(
-                                    radius = (4f + 16f * t.depth).dp,
-                                    offset = DpOffset(0.dp, (1f + 5f * t.depth).dp),
-                                    alpha = 0.36f * t.depth
+                                    radius = (6f + 16f * t.depth).dp,
+                                    offset = DpOffset(0.dp, (2f + 4f * t.depth).dp),
+                                    alpha = (if (isLight) 0.16f else 0.32f) * t.depth
                                 )
                             }
                         },
@@ -722,59 +725,90 @@ private fun LiquidParamPreview(a: Appearance) {
                         } else {
                             {
                                 InnerShadow(
-                                    radius = (2f + 9f * t.depth).dp,
-                                    alpha = 0.42f * t.depth
+                                    radius = (3f + 8f * t.depth).dp,
+                                    alpha = 0.45f * t.depth
                                 )
                             }
                         },
                         onDrawSurface = {
-                            drawRect(scheme.surfaceVariant.copy(alpha = t.cardSurfaceAlpha))
+                            drawRect(cardBase.copy(alpha = t.cardSurfaceAlpha))
                         }
-                    )
-            )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "液态卡片",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = scheme.onSurface
+                )
+            }
+
+            val pillScale = t.pillScalePercent / 100f
             Box(
                 Modifier
-                    .size(t.lensSize)
+                    .width((76.dp * pillScale))
+                    .height((54.dp * pillScale.coerceIn(0.90f, 1.04f)))
                     .drawBackdrop(
                         backdrop = backdrop,
-                        shape = { lensShape },
+                        shape = { capsuleShape },
                         effects = {
                             vibrancy()
+                            if (t.blur > 0.dp) blur(t.blur.toPx())
                             if (t.saturation != 1f || t.brightness != 0f) {
                                 colorControls(brightness = t.brightness, saturation = t.saturation)
                             }
                             if (a.liquidRefraction > 0) {
-                                val maxH = t.lensSize * 0.56f
-                                val lh = (t.refractionHeight * 0.85f).coerceIn(8.dp, maxH)
-                                val la = (t.refractionAmount * 0.58f).coerceIn(4.dp, t.lensSize * 0.80f)
                                 lens(
-                                    lh.toPx(),
-                                    la.toPx(),
+                                    (t.refractionHeight * 0.5f).toPx(),
+                                    (t.refractionAmount * 0.6f).toPx(),
                                     depthEffect = t.depthEffect,
                                     chromaticAberration = t.dispersion
                                 )
                             }
                         },
                         highlight = if (t.highlight <= 0f || t.borderStrength <= 0f) {
-                            { null }
+                            null
                         } else {
                             {
                                 Highlight(
-                                    width = (0.14f + 0.26f * t.highlight * t.borderStrength).dp,
-                                    alpha = ((0.06f + 0.22f * t.highlight) * (0.35f + 0.65f * t.borderStrength))
-                                        .coerceIn(0f, 0.65f)
+                                    width = (0.25f + 0.30f * t.highlight * t.borderStrength).dp,
+                                    alpha = (0.22f + 0.50f * t.highlight * t.borderStrength)
+                                        .coerceIn(0f, 0.90f)
                                 )
                             }
                         },
                         shadow = if (t.depth <= 0f) null else {
-                            { Shadow(radius = (4f + 9f * t.depth).dp, alpha = 0.28f * t.depth) }
+                            { Shadow(radius = (8f + 12f * t.depth).dp, alpha = 0.24f * t.depth) }
                         },
-                        innerShadow = if (t.depth <= 0f) null else {
-                            { InnerShadow(radius = (2.5f + 4.5f * t.depth).dp, alpha = 0.26f * t.depth) }
-                        },
-                        onDrawSurface = { drawRect(Color.White.copy(alpha = 0.04f)) }
+                        onDrawSurface = {
+                            drawRect(barBase.copy(alpha = t.barSurfaceAlpha))
+                            drawRect(
+                                if (isLight) Color.White.copy(alpha = 0.50f)
+                                else Color.White.copy(alpha = 0.11f)
+                            )
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Icon(
+                        Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = scheme.primary,
+                        modifier = Modifier.size(18.dp)
                     )
-            )
+                    Text(
+                        "主页",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = scheme.primary
+                    )
+                }
+            }
         }
     }
 }

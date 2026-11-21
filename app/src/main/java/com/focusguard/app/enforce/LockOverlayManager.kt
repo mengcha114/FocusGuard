@@ -1737,6 +1737,7 @@ object LockOverlayManager {
         val openScratchpad: () -> Unit = {
             val view = scratchView ?: ScratchpadOverlayView(
                 context = context,
+                palette = p,
                 questionProvider = { challengeSession?.question?.question ?: session.question.question },
                 onClose = { scratchView?.visibility = View.GONE }
             ).also {

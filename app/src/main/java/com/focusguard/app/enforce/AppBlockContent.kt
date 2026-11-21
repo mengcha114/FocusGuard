@@ -112,7 +112,8 @@ fun AppBlockContent(
             visible = showQuiz && showScratchpad,
             state = scratchpadState,
             questionText = currentQuizQuestion,
-            onClose = { showScratchpad = false }
+            onClose = { showScratchpad = false },
+            palette = palette
         )
     }
 }

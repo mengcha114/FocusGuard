@@ -574,7 +574,8 @@ fun UnlockChallengeScreen(
             visible = showScratchpad,
             state = scratchpadState,
             questionText = if (validating) null else currentQuestion.question,
-            onClose = { showScratchpad = false }
+            onClose = { showScratchpad = false },
+            palette = palette
         )
     }
 }
