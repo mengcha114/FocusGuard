@@ -96,7 +96,7 @@ object LockOverlayManager {
             if (!isShowing) return
             try {
                 val now = System.currentTimeMillis()
-                if (now - lastBumpAt >= 1_200L) {
+                if (now - lastBumpAt >= 1_500L) {
                     val foreign = com.focusguard.app.access.GuardAccessibilityService
                         .instance?.foreignOverlayPackages().orEmpty()
                     if (foreign.isNotEmpty()) {
@@ -107,7 +107,7 @@ object LockOverlayManager {
             } catch (e: Exception) {
                 Log.w(TAG, "外来悬浮窗检测失败：${e.message}")
             }
-            uiHandler.postDelayed(this, 1_000L)
+            uiHandler.postDelayed(this, 1_500L)
         }
     }
 

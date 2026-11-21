@@ -222,6 +222,24 @@ class GuardAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // 先把事件自带的包名记进缓存（纯内存操作，绝不触发 Binder 往返）
+        try {
+            if (event != null && event.windowId != 0) {
+                val pkg = event.packageName?.toString()
+                if (!pkg.isNullOrBlank()) {
+                    windowPkgCache[event.windowId] = pkg
+                    if (pkg != packageName &&
+                        !pkg.contains("systemui") &&
+                        !pkg.contains("launcher") &&
+                        !pkg.contains("keyguard")
+                    ) {
+                        lastForeignPkg = pkg
+                        lastForeignAt = System.currentTimeMillis()
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        }
         if (event == null) return
 
         // 应用封锁与「实时窗口包名」跟锁机状态无关，必须在锁机早退之前处理：
@@ -667,7 +685,7 @@ class GuardAccessibilityService : AccessibilityService() {
             windows?.any { w ->
                 w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
                     w.isFocused &&
-                    w.root?.packageName?.toString() == "com.android.systemui"
+                    windowPkgCache[w.id]?.contains("systemui") == true
             } ?: false
         } catch (e: Exception) {
             false
@@ -693,9 +711,8 @@ class GuardAccessibilityService : AccessibilityService() {
                         AccessibilityWindowInfo.TYPE_SPLIT_SCREEN_DIVIDER -> "DIV"
                         else -> "T${w.type}"
                     }
-                    val pkg = runCatching {
-                        w.root?.packageName?.toString()
-                    }.getOrNull() ?: "?"
+                    // 不再访问 w.root（跨进程阻塞源），只用缓存
+                    val pkg = windowPkgCache[w.id] ?: "?"
                     "$t:$pkg"
                 }
                 ?.joinToString(",")
@@ -934,6 +951,20 @@ class GuardAccessibilityService : AccessibilityService() {
     @Volatile private var topOverlayView: android.view.View? = null
 
     /**
+     * windowId → 包名 缓存。
+     *
+     * `AccessibilityWindowInfo.root` 是**跨进程取窗口根节点**，其它应用卡住时
+     * 会同步阻塞调用线程；在无障碍回调（主线程）里对每个窗口都取一次，
+     * 就是「主线程卡顿 254 秒 → 被系统判无响应」的根因。
+     * 这里改为只用事件里本就带有的 `event.packageName`（纯本地字段，零阻塞）。
+     */
+    private val windowPkgCache = java.util.concurrent.ConcurrentHashMap<Int, String>()
+
+    /** 最近一次「不属于我们也不是系统底座」的窗口包名（用于识别外来悬浮窗）。 */
+    @Volatile private var lastForeignPkg: String? = null
+    @Volatile private var lastForeignAt: Long = 0L
+
+    /**
      * 把锁机全屏窗口挂到无障碍覆盖层。
      *
      * 普通悬浮窗是 TYPE_APPLICATION_OVERLAY，**同类型后加的窗口会压在我们上面**
@@ -978,27 +1009,16 @@ class GuardAccessibilityService : AccessibilityService() {
      * 因此这里把系统类窗口里不属于我们、也不属于系统底座（SystemUI/桌面/输入法/
      * 键盘等）的包名挑出来，交给上层做「重新置顶 + 顶置守卫」处理。
      */
-    fun foreignOverlayPackages(): List<String> = try {
-        val self = packageName
-        windows.orEmpty()
-            .filter { w ->
-                w.isVisible &&
-                    (w.type == AccessibilityWindowInfo.TYPE_SYSTEM ||
-                        w.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY)
-            }
-            .mapNotNull { w -> runCatching { w.root?.packageName?.toString() }.getOrNull() }
-            .filter { pkg ->
-                pkg.isNotBlank() &&
-                    pkg != self &&
-                    !pkg.startsWith("com.android.systemui") &&
-                    !pkg.contains("systemui") &&
-                    !pkg.contains("launcher") &&
-                    !pkg.contains("keyguard")
-            }
-            .distinct()
-    } catch (e: Exception) {
-        Log.w(TAG, "列举外来悬浮窗失败：${e.message}")
-        emptyList()
+    /**
+     * 列出「可能盖在我们上面」的外来窗口所属包名。
+     *
+     * 只用事件缓存，**不访问 window.root**（那是跨进程阻塞源，曾导致主线程卡 254s）。
+     * 5 秒内的外来窗口视为仍在屏幕上。
+     */
+    fun foreignOverlayPackages(): List<String> {
+        val pkg = lastForeignPkg ?: return emptyList()
+        if (System.currentTimeMillis() - lastForeignAt > 5_000L) return emptyList()
+        return listOf(pkg)
     }
 
     /** 当前是否已用无障碍覆盖层承载锁机主体。 */
