@@ -606,7 +606,7 @@ class GuardAccessibilityService : AccessibilityService() {
             val fullW = dm.widthPixels
             val fullH = dm.heightPixels
             windows.any { window ->
-                val owner = runCatching { windowindowPkgCache[w.id] }.getOrNull()
+                val owner = runCatching { windowPkgCache[window.id] }.getOrNull()
                 if (owner != pkg) return@any false
                 val bounds = android.graphics.Rect()
                 window.getBoundsInScreen(bounds)
@@ -620,7 +620,7 @@ class GuardAccessibilityService : AccessibilityService() {
     /** [pkg] 当前拥有的窗口数：>1 说明它处于画中画/分屏（全屏应用只有一个活动窗口）。 */
     private fun windowCountOf(pkg: String): Int = try {
         windows.count { window ->
-            runCatching { windowindowPkgCache[w.id] }.getOrNull() == pkg
+            runCatching { windowPkgCache[window.id] }.getOrNull() == pkg
         }
     } catch (e: Exception) {
         0
