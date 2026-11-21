@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -39,6 +40,9 @@ import androidx.compose.ui.platform.LocalContext
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -59,10 +63,44 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
+/**
+ * 自绘橡皮图标。
+ *
+ * Material 的 `Icons.Filled.AutoFixNormal` 是「带星光的魔棒」（auto_fix），
+ * 视觉上会被认成魔棒而不是橡皮；扩展图标集里也没有 ink_eraser，
+ * 因此这里用倾斜橡皮块 + 底面擦除线的形状自绘一个。
+ */
+private val EraserIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Eraser",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        // 倾斜的橡皮块主体（比画笔更粗壮，便于区分）
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(13.99f, 3.92f)
+            lineTo(19.08f, 9.01f)
+            lineTo(12.01f, 16.08f)
+            lineTo(6.92f, 10.99f)
+            close()
+        }
+        // 底面擦除线
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(3.6f, 19.2f)
+            lineTo(20.4f, 19.2f)
+            lineTo(20.4f, 20.7f)
+            lineTo(3.6f, 20.7f)
+            close()
+        }
+    }.build()
+}
+
 /** 草稿纸工具类型。 */
 enum class ScratchTool(val label: String, val icon: ImageVector) {
     PEN("画笔", Icons.Default.Edit),
-    ERASER("橡皮", Icons.Default.AutoFixNormal),
+    ERASER("橡皮", EraserIcon),
     LINE("直线", Icons.Default.HorizontalRule),
     RECT("矩形", Icons.Default.CropSquare),
     OVAL("圆形", Icons.Default.RadioButtonUnchecked),
@@ -812,9 +850,9 @@ private fun liquidPanel(
         backdrop = backdrop,
         shape = { shape },
         effects = {
-            com.kyant.backdrop.effects.vibrancy()
-            com.kyant.backdrop.effects.blur(7.dp.toPx())
-            com.kyant.backdrop.effects.lens(
+            vibrancy()
+            blur(7.dp.toPx())
+            lens(
                 16.dp.toPx(),
                 34.dp.toPx(),
                 depthEffect = true,
