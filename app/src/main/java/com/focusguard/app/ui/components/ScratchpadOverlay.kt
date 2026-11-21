@@ -187,6 +187,8 @@ class ScratchpadState {
     var paperStyle by mutableStateOf(ScratchPaperStyle.TRANSLUCENT)
     var colorIndex by mutableIntStateOf(0)
     var widthIndex by mutableIntStateOf(1)
+    /** 橡皮尺寸档位：0=小(12dp) 1=中(24dp) 2=大(40dp)。 */
+    var eraserSizeIndex by mutableIntStateOf(1)
     var showQuestion by mutableStateOf(false)
     var brushPanelOpen by mutableStateOf(false)
     var pageToast by mutableStateOf<String?>(null)
@@ -312,7 +314,8 @@ fun ScratchpadOverlay(
         val activeStrokePx = with(density) {
             widthDps[state.widthIndex.coerceIn(0, widthDps.lastIndex)].dp.toPx()
         }
-        val eraserRadiusPx = with(density) { 18.dp.toPx() }
+        val eraserDp = listOf(12f, 24f, 40f)[state.eraserSizeIndex.coerceIn(0, 2)]
+        val eraserRadiusPx = with(density) { eraserDp.dp.toPx() }
         val swipeThresholdPx = with(density) { 56.dp.toPx() }
         val minStepPx = with(density) { 2.2.dp.toPx() }
         val panelRadius = 16.dp
@@ -371,6 +374,7 @@ fun ScratchpadOverlay(
                             var startZoom = zoom
                             var startPan = pan
                             var startCentroid = Offset.Zero
+                            var lastSpread = 0f
 
                             val livePts = ArrayList<Offset>(64)
                             val erased = HashSet<ScratchItem>()
@@ -423,12 +427,21 @@ fun ScratchpadOverlay(
                                     }
                                     val spread = spreadOf(pressed)
                                     val centroid = centroidOf(pressed)
-                                    val ratio = if (startSpread > 1f) spread / startSpread else 1f
-                                    if (!zoomMode && abs(ratio - 1f) > 0.04f) zoomMode = true
+                                    // 去掉缩放死区：双指径向距离一有变化就立刻缩放，避免起手发涩
+                                    if (!zoomMode && startSpread > 1f &&
+                                        abs(spread - startSpread) > 0.5f
+                                    ) zoomMode = true
                                     if (zoomMode) {
-                                        // 双指捏合：缩放（0.8x–6x）+ 跟随双指中心平移
-                                        zoom = (startZoom * ratio).coerceIn(0.8f, 6f)
-                                        pan = startPan + (centroid - startCentroid)
+                                        // 以手势中心为锚点做**增量**缩放：手指按住的那一点保持不动
+                                        val base = if (lastSpread > 1f) lastSpread else startSpread
+                                        val ratio = if (base > 1f) spread / base else 1f
+                                        val newZoom = (zoom * ratio).coerceIn(0.8f, 6f)
+                                        val c = Offset(size.width / 2f, size.height / 2f)
+                                        if (zoom > 0.01f) {
+                                            pan = centroid - c - (centroid - c - pan) * (newZoom / zoom)
+                                        }
+                                        zoom = newZoom
+                                        lastSpread = spread
                                         eraserCursor = null
                                     } else if (!swipeFired && startZoom <= 1.05f) {
                                         // 未缩放时：双指上下划换页
@@ -779,8 +792,19 @@ fun ScratchpadOverlay(
                         )
                     }
                     DockDivider(uiLine)
-                    widthDps.forEachIndexed { idx, w ->
-                        val sel = state.widthIndex == idx
+                    // 橡皮模式下调的是「橡皮大小」三档，其余工具调笔宽三档
+                    val sizeDps = if (state.tool == ScratchTool.ERASER) {
+                        listOf(12f, 24f, 40f)
+                    } else {
+                        widthDps
+                    }
+                    val sizeSelIndex = if (state.tool == ScratchTool.ERASER) {
+                        state.eraserSizeIndex
+                    } else {
+                        state.widthIndex
+                    }
+                    sizeDps.forEachIndexed { idx, w ->
+                        val sel = sizeSelIndex == idx
                         Box(
                             modifier = Modifier
                                 .padding(horizontal = 2.dp)
@@ -789,12 +813,19 @@ fun ScratchpadOverlay(
                                 .background(
                                     if (sel) uiAccent.copy(alpha = 0.16f) else Color.Transparent
                                 )
-                                .clickable { state.widthIndex = idx },
+                                .clickable {
+                                    if (state.tool == ScratchTool.ERASER) {
+                                        state.eraserSizeIndex = idx
+                                    } else {
+                                        state.widthIndex = idx
+                                    }
+                                },
                             contentAlignment = Alignment.Center
                         ) {
                             Box(
+                                // 三档圆点在 24dp 控件内按比例显示，大档会被压到 22dp
                                 modifier = Modifier
-                                    .size((w + 3f).dp)
+                                    .size(if (w >= 40f) 22.dp else (w + 3f).dp)
                                     .clip(CircleShape)
                                     .background(if (sel) uiAccent else uiHaze)
                             )

@@ -146,18 +146,37 @@ object LockTopGuard {
 
     /** 后台线程：真正执行限制动作。 */
     private fun upgrade(app: Context, pkg: String, assistant: Boolean) {
+        // 顺序很重要：先让「悬浮窗真正消失」，再防它复活。
+        // setPackagesSuspended 只是挂起（不可再启动），不会杀已运行进程 ——
+        // 只用它就会出现「日志说已冻结、画面还在」的假成功。
+        // Dhizuku=Device Owner（DPM：挂起/隐藏），Shizuku=shell（am/pm/appops），两者能力不同。
+
+        // ① Shizuku shell：am force-stop，唯一能立刻杀进程的通道
+        if (com.focusguard.app.enhance.ShizukuEnhancer.forceStop(pkg)) {
+            if (com.focusguard.app.enhance.ShizukuEnhancer.isRunning(pkg) == false) {
+                report(app, pkg, "已强停(Shizuku)：进程结束，悬浮窗已消失")
+                return
+            }
+            Log.w(TAG, "am force-stop 已发出但 $pkg 仍在运行，继续尝试其它通道")
+        }
+
+        // ② Dhizuku（Device Owner）：隐藏会让系统回收进程
+        if (runCatching { DhizukuEnhancer.setApplicationHidden(app, setOf(pkg), true) }
+                .getOrDefault(false)
+        ) {
+            if (com.focusguard.app.enhance.ShizukuEnhancer.isRunning(pkg) != true) {
+                hiddenByUs.add(pkg)
+                report(app, pkg, "已隐藏(Dhizuku)：应用已从系统移除，锁机结束自动恢复")
+                return
+            }
+            Log.w(TAG, "setApplicationHidden 已调用但 $pkg 仍在运行")
+        }
+
+        // ③ 挂起：只保证「不会再启动」，单独使用不再谎报「已冻结」
         val frozen = runCatching { LockPolicies.suspendBlock(app, pkg) }.getOrDefault(false)
         if (frozen) {
             frozenByUs.add(pkg)
-            report(app, pkg, if (assistant) "语音助手已冻结（锁机期间禁止呼出）" else "盖在锁机页上方，已冻结")
-            return
-        }
-        if (assistant &&
-            runCatching { DhizukuEnhancer.setApplicationHidden(app, setOf(pkg), true) }
-                .getOrDefault(false)
-        ) {
-            hiddenByUs.add(pkg)
-            report(app, pkg, "语音助手已隐藏（锁机期间禁止呼出）")
+            report(app, pkg, "已挂起(Dhizuku)：无法再启动；若悬浮窗仍在，交给遮盖补丁遮挡")
             return
         }
         val now = System.currentTimeMillis()

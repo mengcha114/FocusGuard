@@ -276,6 +276,24 @@ object ShizukuEnhancer {
     fun collapseStatusBar(): Boolean = isReady() && runCommand("cmd", "statusbar", "collapse")
 
     /** 冂结 / 解冂结指定应用（`pm suspend`）。只用于用户在应用管控中标记的娱乐 App。 */
+    /**
+     * 立即强停应用（shell `am force-stop`）。
+     *
+     * 这是「让悬浮窗当场消失」唯一可靠的通道：Dhizuku 的 setPackagesSuspended
+     * 只是挂起（不可再启动），**不会杀掉已经在运行的进程**，窗口会留在屏幕上。
+     */
+    fun forceStop(pkg: String): Boolean {
+        if (pkg.isBlank() || !isReady()) return false
+        return runCommand("am", "force-stop", pkg)
+    }
+
+    /** 进程是否还在（shell `pidof`）。返回 null 表示无法判断（Shizuku 不可用）。 */
+    fun isRunning(pkg: String): Boolean? {
+        if (pkg.isBlank() || !isReady()) return null
+        val out = runForOutput("pidof", pkg, timeoutMs = 1_500) ?: return null
+        return out.trim().isNotEmpty()
+    }
+
     fun suspendPackages(packages: Collection<String>, suspended: Boolean): Boolean {
         if (!isReady() || packages.isEmpty()) return false
         val verb = if (suspended) "suspend" else "unsuspend"
