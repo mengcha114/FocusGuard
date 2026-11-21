@@ -79,36 +79,60 @@ object LockOverlayManager {
     /** 本次是否由无障碍覆盖层承载（决定用哪种方式移除）。 */
     @Volatile private var attachedViaA11y = false
 
+    /**
+     * 上次尝试挂无障碍覆盖层时的服务实例。
+     *
+     * 只在「无障碍服务换了一次连接」（新的 onServiceConnected）时重试一次升级：
+     * 同一个实例挂不上就是挂不上，反复 remove + addView 只会让锁机页不停闪烁。
+     */
+    private var a11yTriedInstance: Any? = null
+
+    /** 锁机页顶部模式胶囊的文本视图：让用户/客服一眼看出当前用哪种窗口承载锁机。 */
+    private var modeBadgeText: TextView? = null
+
     /** 上次把锁机层重新提到最前的时刻（节流，避免频繁重建窗口抢焦点）。 */
     private var lastBumpAt = 0L
+
+    /** 上一次扫描到的外来悬浮窗包集合（只在集合变化时重建窗口，避免固定 1.5s 一次闪烁）。 */
+    private var lastForeignKey = ""
 
     /**
      * 外来悬浮窗看门狗。
      *
      * 国产 ROM 对 TYPE_ACCESSIBILITY_OVERLAY / TYPE_APPLICATION_OVERLAY 的层级处理
      * 各不相同，单靠窗口类型压不住所有悬浮窗（语音助手、加速球、聊天小气泡）。
-     * 这里每秒检查一次：只要发现别的应用有覆盖层窗口，就把锁机窗口
-     * **remove + re-add** 一次——同类型窗口按加入顺序排 z-order，
-     * 重新加入即可重新回到最前，从而把对方压回去。
+     * 这里每 1.5s 检查一次：确认有别的应用覆盖层窗口时，优先把锁机窗口
+     * **升级/重挂到无障碍覆盖层**（层级 31 > 应用悬浮窗 12），必要时再
+     * remove + re-add 一次抢回同一层级里的最前位置。
      */
     private val overlayWatchdog = object : Runnable {
         override fun run() {
-            if (!isShowing) return
             try {
-                val now = System.currentTimeMillis()
-                if (now - lastBumpAt >= 1_500L) {
-                    val foreign = com.focusguard.app.access.GuardAccessibilityService
-                        .instance?.foreignOverlayPackages().orEmpty()
-                    if (foreign.isNotEmpty()) {
-                        lastBumpAt = now
-                        bumpToTop(foreign)
-                    }
-                }
+                if (isShowing) checkForeignOverlays()
             } catch (e: Exception) {
                 Log.w(TAG, "外来悬浮窗检测失败：${e.message}")
             }
+            // 无条件续约：被 hide / 答题模式吃掉一次也不能让看门狗永久停摆
             uiHandler.postDelayed(this, 1_500L)
         }
+    }
+
+    /** 探一次外来覆盖层；确认有东西盖在锁机页上方时才动手。 */
+    private fun checkForeignOverlays() {
+        val foreign = com.focusguard.app.access.GuardAccessibilityService
+            .instance?.foreignOverlayPackages().orEmpty()
+        if (foreign.isEmpty()) {
+            lastForeignKey = ""
+            return
+        }
+        val key = foreign.sorted().joinToString(",")
+        val now = System.currentTimeMillis()
+        // 重建窗口会让锁机页闪一下，所以只在「包集合变了」或「同一批包已顶过 30s
+        // 仍然压着」时才动手。真正的长期对手交给顶置守卫（冻结/强行停止）解决。
+        if (key == lastForeignKey && now - lastBumpAt < 30_000L) return
+        lastForeignKey = key
+        lastBumpAt = now
+        bumpToTop(foreign)
     }
 
     /** 把锁机窗口重新加入窗口管理器，抢回最前层级；顺带交给顶置守卫处理来源应用。 */
@@ -117,17 +141,27 @@ object LockOverlayManager {
             try {
                 val root = overlayRoot ?: return@post
                 val wm = windowManager ?: return@post
-                val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
-                if (attachedViaA11y && a11y != null) {
-                    a11y.detachTopOverlay()
-                    attachedViaA11y = a11y.attachTopOverlay(root, buildLayoutParams())
-                    if (!attachedViaA11y) wm.addView(root, buildLayoutParams())
+                if (!attachedViaA11y && upgradeToA11yIfPossible(root)) {
+                    // 已升级为无障碍覆盖层：它的层级本身就高于应用悬浮窗
+                    Log.d(TAG, "检测到外来悬浮窗 $foreign，锁机层已升级为无障碍覆盖层")
+                } else if (attachedViaA11y) {
+                    // 无障碍覆盖层承载：只能用无障碍服务自己的 WindowManager 重挂
+                    val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
+                    if (a11y != null && a11y.hasTopOverlay) {
+                        attachedViaA11y = a11y.attachTopOverlay(root, buildLayoutParams())
+                        if (!attachedViaA11y) {
+                            // 重挂失败 = 锁机页此刻不在屏幕上（露桌），立刻用普通悬浮窗兜底
+                            runCatching { wm.addView(root, buildLayoutParams()) }
+                        }
+                        Log.d(TAG, "检测到外来悬浮窗 $foreign，无障碍覆盖层已重挂（成功=$attachedViaA11y）")
+                    }
                 } else {
                     wm.removeViewImmediate(root)
                     wm.addView(root, buildLayoutParams())
+                    Log.d(TAG, "检测到外来悬浮窗 $foreign，已把锁机层重新置顶（普通悬浮窗）")
                 }
+                refreshModeBadge()
                 root.requestFocus()
-                Log.d(TAG, "检测到外来悬浮窗 ${foreign}，已把锁机层重新置顶")
             } catch (e: Exception) {
                 Log.w(TAG, "锁机层重新置顶失败：${e.message}")
             }
@@ -141,6 +175,44 @@ object LockOverlayManager {
             } catch (e: Exception) {
                 Log.w(TAG, "顶置守卫处理失败：${e.message}")
             }
+        }
+    }
+
+    /**
+     * 把当前用 TYPE_APPLICATION_OVERLAY 承载的锁机窗口升级为无障碍覆盖层（主线程）。
+     *
+     * 无障碍服务可能在锁机开始**之后**才连上（被 ROM 杀掉后重启、用户刚授权、
+     * 首次锁机时服务尚未 onServiceConnected）。此前这种情况会一直停留在低层级的
+     * 普通悬浮窗上，直到下一次重建窗口——这正是"改了无障碍覆盖层却没效果"的
+     * 一个真实成因：窗口根本不在无障碍层。
+     *
+     * 每个服务实例只尝试一次：同实例挂不上再试也没用，反复重建只会闪烁。
+     */
+    private fun upgradeToA11yIfPossible(root: View): Boolean {
+        if (attachedViaA11y) return false
+        val a11y = com.focusguard.app.access.GuardAccessibilityService.instance ?: return false
+        if (a11y === a11yTriedInstance) return false
+        a11yTriedInstance = a11y
+        val wm = windowManager ?: return false
+        Log.i(TAG, "无障碍服务已连接，尝试把锁机窗口升级到无障碍覆盖层")
+        return try {
+            wm.removeViewImmediate(root)
+            attachedViaA11y = a11y.attachTopOverlay(root, buildLayoutParams())
+            if (!attachedViaA11y) {
+                // 升级失败时必须立刻兜底，否则这段时间锁机页是空的（露桌）
+                wm.addView(root, buildLayoutParams())
+                Log.w(TAG, "升级无障碍覆盖层失败，已回退普通悬浮窗")
+            } else {
+                Log.i(TAG, "锁机窗口已升级为无障碍覆盖层（层级高于所有应用悬浮窗）")
+            }
+            refreshModeBadge()
+            attachedViaA11y
+        } catch (e: Exception) {
+            Log.w(TAG, "升级无障碍覆盖层异常：${e.message}")
+            if (!root.isAttachedToWindow) {
+                runCatching { wm.addView(root, buildLayoutParams()) }
+            }
+            attachedViaA11y
         }
     }
     private var timeText: TextView? = null
@@ -504,9 +576,28 @@ object LockOverlayManager {
             } else {
                 root.addView(buildContent(appContext, lockState, onStartChallenge, onRequestPause))
             }
-            // 优先挂到无障碍覆盖层：层级高于其它应用悬浮窗，顽固悬浮窗压不住
+            // 优先挂到无障碍覆盖层：层级高于其它应用悬浮窗（AOSP 里 31 > 12）。
+            // 必须把「成功 / 失败回退 / 服务未连接」三种情况分别记下来：
+            // 失败回退时锁机页就只是普通悬浮窗，任何后加的应用悬浮窗都能盖住它。
             val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
-            attachedViaA11y = a11y != null && a11y.attachTopOverlay(root, buildLayoutParams())
+            if (a11y == null) {
+                attachedViaA11y = false
+                Log.i(
+                    TAG,
+                    "无障碍服务未连接：锁机窗口用 TYPE_APPLICATION_OVERLAY 承载，" +
+                        "其它应用后加的悬浮窗可以盖在它上面"
+                )
+            } else {
+                a11yTriedInstance = a11y
+                attachedViaA11y = a11y.attachTopOverlay(root, buildLayoutParams())
+                if (!attachedViaA11y) {
+                    Log.w(
+                        TAG,
+                        "无障碍覆盖层挂载失败，回退 TYPE_APPLICATION_OVERLAY" +
+                            "（外来悬浮窗可能盖住锁机页）"
+                    )
+                }
+            }
             if (!attachedViaA11y) {
                 wm.addView(root, buildLayoutParams())
             }
@@ -518,7 +609,12 @@ object LockOverlayManager {
             currentLockState = lockState
             isShowing = true
             startClock()
-            Log.d(TAG, "锁机覆盖层已显示（悬浮窗主体）")
+            refreshModeBadge()
+            Log.d(
+                TAG,
+                "锁机覆盖层已显示（悬浮窗主体，承载=" +
+                    (if (attachedViaA11y) "accessibility-overlay" else "application-overlay") + "）"
+            )
         } catch (e: Exception) {
             Log.e(TAG, "显示覆盖层失败：${e.message}")
             cleanupOnMain()
@@ -545,6 +641,9 @@ object LockOverlayManager {
             if (root.isAttachedToWindow) {
                 // 顺手把系统栏重新隐藏：部分 ROM 会在切换应用后重置
                 hideSystemBars(root)
+                // 无障碍服务可能在锁机中途才连上（被 ROM 重启 / 用户刚授权）：
+                // 窗口还挂着时补一次升级，否则会一直停在低层级的普通悬浮窗上。
+                upgradeToA11yIfPossible(root)
                 return@post
             }
             Log.w(TAG, "覆盖层已被系统回收，立即重建")
@@ -842,6 +941,16 @@ object LockOverlayManager {
         container.addView(wallDate, matchWrap())
 
         // ── 细节区分标识：悬浮窗专属模式胶囊 ─────────────────
+        // 文案直接暴露「当前锁机窗口挂在哪一层」：真机排查时不用连 logcat
+        // 就能看出无障碍覆盖层是否真的生效（普通悬浮窗会被外来悬浮窗盖住）。
+        val badgeLabel = TextView(context).apply {
+            text = guardModeLabel()
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+            letterSpacing = 0.05f
+        }
+        modeBadgeText = badgeLabel
         val overlayBadge = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -851,13 +960,7 @@ object LockOverlayManager {
                 setStroke(dp(context, 1), Color.parseColor(tint(p.accent, 0x66)))
             }
             setPadding(dp(context, 14), dp(context, 6), dp(context, 14), dp(context, 6))
-            addView(TextView(context).apply {
-                text = "🔒 普通模式守护"
-                textSize = 11f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
-                letterSpacing = 0.05f
-            })
+            addView(badgeLabel)
         }
         container.addView(
             overlayBadge,
@@ -1333,6 +1436,19 @@ object LockOverlayManager {
             LinearLayout.LayoutParams.WRAP_CONTENT
         )
 
+    /** 顶部模式胶囊文案：直接反映锁机窗口挂在哪一层（真机排查用）。 */
+    private fun guardModeLabel(): String =
+        if (attachedViaA11y) "🔒 无障碍守护 · 系统级置顶" else "🔒 普通模式守护"
+
+    /** 承载方式变化后刷新胶囊文案（窗口已挂载但视图可能还没创建）。 */
+    private fun refreshModeBadge() {
+        try {
+            modeBadgeText?.text = guardModeLabel()
+        } catch (e: Exception) {
+            Log.w(TAG, "刷新模式胶囊失败：${e.message}")
+        }
+    }
+
     private fun buildLayoutParams(): WindowManager.LayoutParams {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -1588,6 +1704,7 @@ object LockOverlayManager {
         statusText = null
         wallClockText = null
         wallDateText = null
+        modeBadgeText = null
 
         isChallengeMode = true
         val session = challengeSession ?: return
@@ -2813,6 +2930,7 @@ object LockOverlayManager {
     private fun cleanupOnMain() {
         clockRunnable?.let { uiHandler.removeCallbacks(it) }
         clockRunnable = null
+        uiHandler.removeCallbacks(overlayWatchdog)
         currentLockState = null
         lastPauseCallback = null
         try {
@@ -2822,20 +2940,25 @@ object LockOverlayManager {
             if (root != null && wm != null) {
                 if (attachedViaA11y && a11y != null) {
                     a11y.detachTopOverlay()
-                } else {
+                } else if (root.isAttachedToWindow) {
+                    // 已经在别处（或随无障碍服务销毁）被移除时不要再 remove，会抛
+                    // "View not attached to window manager" 把后面的清理全跳过。
                     wm.removeViewImmediate(root)
                 }
             }
-            attachedViaA11y = false
         } catch (e: Exception) {
             Log.w(TAG, "移除覆盖层视图失败：${e.message}")
         }
+        attachedViaA11y = false
+        a11yTriedInstance = null
         overlayRoot = null
         windowManager = null
         timeText = null
         statusText = null
         wallClockText = null
         wallDateText = null
+        modeBadgeText = null
+        lastForeignKey = ""
         isShowing = false
         // 注意：isFriendUnlockMode / friendUnlock* 故意**不清空**——窗口被 ROM
         // 回收后 verifyAttached → show → attachWindow 靠它们恢复朋友验证界面

@@ -381,11 +381,13 @@ class GuardAccessibilityService : AccessibilityService() {
             }
         }
 
-        // 陌生人守卫：焦点窗口不是我们自己（有人盖在锁机页上方，如语音助手）→
+        // 陌生人守卫：事件来源不是我们自己（有人盖在锁机页上方，如语音助手）→
         // 交给 LockTopGuard 计数与升级处理（白名单/冷却/熔断都在里面）；
         // 普通的顶回仍由下面的既有逻辑负责。
         runCatching {
-            val above = rootInActiveWindow?.packageName?.toString().orEmpty()
+            // 只读事件自带的包名（纯本地字段）：rootInActiveWindow 与 window.root
+            // 同属跨进程阻塞调用，无障碍回调在主线程，绝不能在这里碰。
+            val above = event.packageName?.toString().orEmpty()
             // 应用切前台 ⇒ 通知监控服务「过 5.5 秒检测一次」（等用户真正打开内容）
             if (above.isNotBlank()) {
                 com.focusguard.app.service.MonitorService.notifyForeground(this, above)
@@ -460,30 +462,53 @@ class GuardAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 当前活动窗口的包名（来自无障碍，作为前台识别的第二来源）。
+     * 当前活动窗口的包名 —— 尽量实时，但**主线程上绝不阻塞**。
      *
-     * 用途：UsageStats 有时拿不到前台应用（权限被撤、数据瞬时为空、刚切换应用），
-     * 此前那种情况下隐私保护会因为「包名为空」而被跳过，可能把银行/支付界面
-     * 的文字与截图发出去。这里补一个来源，两者都不确定时由检测管线直接跳过本轮。
-     */
-    /**
-     * 当前活动窗口的包名 —— **只读实时窗口，绝不用缓存/陈旧值**。
-     *
-     * 显示封锁页这种会打断用户的操作只能用这个：[currentWindowPackage] 允许用上次
+     * 显示封锁页这种会打断用户的操作优先用这个：[currentWindowPackage] 允许用上次
      * 窗口事件兜底，用户退回桌面后的几秒内它仍报「在封锁应用里」，表现为偶发弹一下
      * 封锁页（用户报告的缺陷）。隐私判定方向相反（多判一次敏感是安全的），那边继续用它。
+     *
+     * 注意：主线程上只能用「焦点窗口 id + 事件缓存」，拿不到时返回 null（不猜），
+     * 真正的 rootInActiveWindow 只在工作线程调用；否则其它应用卡死时主线程会被
+     * 同步卡住（实测 254 秒 ANR）。
      */
-    fun liveWindowPackage(): String? = try {
-        rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }
+    fun liveWindowPackage(): String? = liveWindowPackageNoBlock()
+
+    fun currentWindowPackage(): String? =
+        liveWindowPackageNoBlock() ?: lastWindowPackage
+
+    /**
+     * 「当前活动窗口包名」的非阻塞实现。
+     *
+     * 这条路径会被 [onAccessibilityEvent] 在**主线程**调用，因此绝不能直接读
+     * `rootInActiveWindow`（跨进程阻塞，其它应用卡死时会同步卡住主线程 → ANR）。
+     * 主线程改为：实时窗口列表里取焦点窗口 id → 用事件早已缓存好的
+     * windowId→包名 映射；工作线程才允许走 rootInActiveWindow。
+     */
+    private fun liveWindowPackageNoBlock(): String? = try {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }
+        } else {
+            val focusedId = windows?.firstOrNull { it.isFocused }?.id
+            val cached = focusedId?.let { windowPkgCache[it] }
+            cached?.takeIf { it.isNotBlank() }
+        }
     } catch (e: Exception) {
         null
     }
 
-    fun currentWindowPackage(): String? = try {
-        rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }
-            ?: lastWindowPackage
-    } catch (e: Exception) {
-        lastWindowPackage
+    /**
+     * 用户是否仍停留在 [pkg]（主线程安全，不碰 window.root / rootInActiveWindow）。
+     *
+     * 用于封锁页「补发」前的自检：退回桌面后不要再把封锁页盖上来。
+     * 优先用焦点窗口 id 的事件缓存；拿不到时退回最近一次窗口状态事件
+     * （3 秒内的才算数，避免用陈旧包名误判成"还在应用里"）。
+     */
+    private fun isStillOnPackage(pkg: String): Boolean {
+        val live = liveWindowPackageNoBlock()
+        if (live != null) return live == pkg
+        return lastWindowPackage == pkg &&
+            System.currentTimeMillis() - lastWindowPackageAt < 3_000L
     }
 
     /** 最近一次窗口事件时刻（判断窗口包名是否还新鲜）。 */
@@ -526,7 +551,7 @@ class GuardAccessibilityService : AccessibilityService() {
                 // 用户可能已经退回桌面：只有在仍处于该应用时才补发，
                 // 否则封锁页会盖在桌面上（比"晚一点才挡"更烦人）
                 if (token != burstToken) return@postDelayed
-                if (liveWindowPackage() != pkg) return@postDelayed
+                if (!isStillOnPackage(pkg)) return@postDelayed
                 if (runCatching { isBlockedNow(pkg) }.getOrDefault(false)) showAppBlock(pkg, eventAt)
             }, delayMs)
         }
@@ -974,6 +999,7 @@ class GuardAccessibilityService : AccessibilityService() {
         }
     @Volatile private var scanInFlight = false
     @Volatile private var scannedForeign: List<String> = emptyList()
+    @Volatile private var scannedFocusedPkg: String? = null
     @Volatile private var scannedAt = 0L
 
     /** 最近一次「不属于我们也不是系统底座」的窗口包名（用于识别外来悬浮窗）。 */
@@ -995,13 +1021,26 @@ class GuardAccessibilityService : AccessibilityService() {
         params: android.view.WindowManager.LayoutParams
     ): Boolean = try {
         detachTopOverlay()
-        params.type = android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-        getSystemService(android.view.WindowManager::class.java).addView(view, params)
+        // 复制一份再改 type：调用方挂载失败后还要拿原参数回退普通悬浮窗，
+        // 不能让它手里的 LayoutParams 被这里改成无障碍类型。
+        val overlayParams = android.view.WindowManager.LayoutParams().apply {
+            copyFrom(params)
+        }
+        overlayParams.type = android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+        getSystemService(android.view.WindowManager::class.java).addView(view, overlayParams)
         topOverlayView = view
-        Log.d(TAG, "锁机主体已挂到无障碍覆盖层（层级高于其它应用悬浮窗）")
+        Log.d(
+            TAG,
+            "锁机主体已挂到无障碍覆盖层（type=TYPE_ACCESSIBILITY_OVERLAY，" +
+                "层级 31 > TYPE_APPLICATION_OVERLAY 的 12）"
+        )
         true
     } catch (e: Exception) {
-        Log.w(TAG, "无障碍覆盖层挂载失败，回退普通悬浮窗：${e.message}")
+        Log.w(
+            TAG,
+            "无障碍覆盖层挂载失败，回退普通悬浮窗：" +
+                "${e.javaClass.simpleName}: ${e.message}"
+        )
         topOverlayView = null
         false
     }
@@ -1039,8 +1078,14 @@ class GuardAccessibilityService : AccessibilityService() {
                 try {
                     val self = packageName
                     val found = ArrayList<String>(4)
+                    // 焦点窗口也在这条线程上取：它同样要读 window.root（阻塞源）
+                    var focusedPkg: String? = null
                     windows.orEmpty().forEach { w ->
                         try {
+                            if (w.isFocused) {
+                                val fp = w.root?.packageName?.toString()
+                                if (!fp.isNullOrBlank()) focusedPkg = fp
+                            }
                             val t = w.type
                             if (t != AccessibilityWindowInfo.TYPE_SYSTEM &&
                                 t != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY
@@ -1054,6 +1099,7 @@ class GuardAccessibilityService : AccessibilityService() {
                         } catch (_: Throwable) {
                         }
                     }
+                    scannedFocusedPkg = focusedPkg
                     scannedForeign = found.distinct()
                     scannedAt = System.currentTimeMillis()
                 } catch (_: Throwable) {
@@ -1076,6 +1122,19 @@ class GuardAccessibilityService : AccessibilityService() {
         val age = System.currentTimeMillis() - scannedAt
         if (age > 3_000L) requestWindowScan()
         return if (age <= 6_000L) scannedForeign else emptyList()
+    }
+
+    /**
+     * 焦点窗口包名（**非阻塞**版）。
+     *
+     * 以前这里是 `windows.firstOrNull { it.isFocused }.root?.packageName`：
+     * `AccessibilityWindowInfo.root` 是跨进程调用，其它应用卡住时会把调用线程
+     * 同步卡死（实测主线程 254 秒 ANR）。现在只读 [windowScanExecutor] 的扫描
+     * 结果，最多旧 3 秒——对 300ms 一次的守护巡检完全够用。
+     */
+    fun focusedWindowPackageCached(): String? {
+        if (System.currentTimeMillis() - scannedAt > 1_000L) requestWindowScan()
+        return scannedFocusedPkg
     }
 
     /** 当前是否已用无障碍覆盖层承载锁机主体。 */

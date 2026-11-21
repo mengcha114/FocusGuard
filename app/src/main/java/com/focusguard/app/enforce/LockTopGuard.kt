@@ -194,13 +194,14 @@ object LockTopGuard {
         failUntil = 0L
     }
 
-    /** 当前焦点窗口的包名（无障碍服务在跑时可用）——用来判断"谁盖在锁机页上方"。 */
-    fun focusedWindowPackage(): String? = runCatching {
-        com.focusguard.app.access.GuardAccessibilityService.instance
-            ?.windows
-            ?.firstOrNull { it.isFocused }
-            ?.root?.packageName?.toString()
-    }.getOrNull()
+    /**
+     * 当前焦点窗口的包名（无障碍服务在跑时可用）——用来判断"谁盖在锁机页上方"。
+     *
+     * 只读无障碍服务后台扫描线程的结果缓存：`AccessibilityWindowInfo.root` 是
+     * 跨进程阻塞调用，这里（会被守护巡检 / 主线程调到）绝不能自己去读。
+     */
+    fun focusedWindowPackage(): String? =
+        com.focusguard.app.access.GuardAccessibilityService.instance?.focusedWindowPackageCached()
 
     private fun report(context: Context, pkg: String, reason: String) {
         runCatching {

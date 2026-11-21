@@ -194,6 +194,59 @@ class LockGuardService : Service() {
     private var lastLockReassertAt = 0L
     private var lastBlockReassertAt = 0L
 
+    /** 外来覆盖层「持续存在」计时：包名 → 首次看到的时刻（消失即清）。 */
+    private val foreignOverlaySince = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** 每个外来包上一次交给顶置守卫的时刻（避免每 300ms 刷一次 strike）。 */
+    private val foreignOverlayHandledAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private var lastForeignOverlayScanAt = 0L
+
+    /** 外来覆盖层要持续存在这么久才升级处置（避开一闪而过的 toast）。 */
+    private val foreignOverlayEscalateMs = 10_000L
+    private val foreignOverlayRetryMs = 10_000L
+
+    /**
+     * 非焦点型外来悬浮窗的「持续存在」检测。
+     *
+     * 加速球 / 聊天气泡 / 语音助手常驻条这类 TYPE_APPLICATION_OVERLAY 窗口
+     * **不会拿到焦点**，只看焦点窗口（[com.focusguard.app.enforce.LockTopGuard.focusedWindowPackage]）
+     * 永远发现不了；而锁机页由 Activity 承载时（Dhizuku + LockTask），也没有
+     * 悬浮窗看门狗在扫描。这里补上这条链路：用无障碍的窗口清单找出外来覆盖层，
+     * 同一个包**连续存在 10 秒**才交给顶置守卫升级处置（toast 只有 2~3 秒，不会误伤）。
+     */
+    private fun scanSustainedForeignOverlays() {
+        // 悬浮窗自己承载锁机时由 LockOverlayManager 的看门狗处理，避免重复计数
+        if (LockOverlayManager.isShowing) {
+            foreignOverlaySince.clear()
+            return
+        }
+        // 答题 / 朋友验证期间不能动手：输入法也是系统类窗口，误冻结会让人答不了题
+        if (LockOverlayManager.isChallengeMode ||
+            LockScreenActivity.friendUnlockActive ||
+            UnlockChallengeActivity.active
+        ) {
+            foreignOverlaySince.clear()
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastForeignOverlayScanAt < 1_000L) return
+        lastForeignOverlayScanAt = now
+        val pkgs = com.focusguard.app.access.GuardAccessibilityService.instance
+            ?.foreignOverlayPackages().orEmpty()
+        val alive = pkgs.toSet()
+        foreignOverlaySince.keys.retainAll(alive)
+        foreignOverlayHandledAt.keys.retainAll(alive)
+        pkgs.forEach { pkg ->
+            val since = foreignOverlaySince.getOrPut(pkg) { now }
+            if (now - since < foreignOverlayEscalateMs) return@forEach
+            if (now - (foreignOverlayHandledAt[pkg] ?: 0L) < foreignOverlayRetryMs) return@forEach
+            foreignOverlayHandledAt[pkg] = now
+            Log.d(TAG, "外来覆盖层 $pkg 已持续 ${(now - since) / 1000}s，交给顶置守卫处置")
+            com.focusguard.app.enforce.LockTopGuard.onForeignAboveLock(this, pkg)
+        }
+    }
+
     /** 封锁页节流：比锁机置顶的 1 秒短得多——「打开即挡」等不起 1 秒。 */
     private val blockReassertCooldownMs = 250L
     private var tickCount = 0
@@ -858,6 +911,11 @@ class LockGuardService : Service() {
                     com.focusguard.app.enforce.LockTopGuard.onForeignAboveLock(this, above)
                 }
             }
+
+            // 非焦点型悬浮窗（加速球/气泡/助手常驻条）不会抢焦点，上面那条只覆盖
+            // 「抢走焦点」的情况；这里再补一次窗口清单扫描（Activity / LockTask
+            // 承载锁机时尤其需要，那条路径没有悬浮窗看门狗）。
+            runCatching { scanSustainedForeignOverlays() }
 
             // ── 悬浮窗内答题模式：完全放行（v3.0.0） ────────
             // 答题 UI 就画在悬浮窗里，窗口本身即防线。此时不做任何
