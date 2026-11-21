@@ -328,6 +328,31 @@ fun AppearancePanel() {
                 title = "边缘色散",
                 checked = a.liquidDispersion
             ) { on -> set { it.copy(liquidDispersion = on) } }
+            // 参数被拉到极值时（折射量 36dp + 模糊 17dp + 不透明度 0.15）整个卡片会糊成胶状，
+            // 提供一个一键回到推荐组合的入口，不用逐项猜
+            TextButton(
+                onClick = {
+                    set {
+                        it.copy(
+                            liquidRefractionHeight = 24,
+                            liquidRefraction = 65,
+                            liquidBlur = 10,
+                            liquidHighlight = 65,
+                            liquidDepth = 45,
+                            liquidSaturation = 110,
+                            liquidBrightness = 0,
+                            liquidLensSize = 100,
+                            barOpacity = 78,
+                            cardOpacity = 78
+                        )
+                    }
+                },
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Icon(Icons.Default.RestartAlt, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("恢复推荐液态参数", fontSize = 12.sp)
+            }
         }
         SliderRow(
             title = "描边强度",
@@ -584,7 +609,9 @@ private fun SliderRow(
     onPreview: ((Int) -> Unit)? = null,
     onCommit: (Int) -> Unit
 ) {
-    var local by remember { mutableFloatStateOf(value.toFloat()) }
+    var local by remember {
+        mutableFloatStateOf(value.coerceIn(range.start, range.endInclusive))
+    }
     var dragging by remember { mutableStateOf(false) }
     var lastEmitted by remember { mutableIntStateOf(value) }
     LaunchedEffect(value) {

@@ -137,9 +137,11 @@ data class Appearance(
                 glow = p.getBoolean("glow", legacy.getBoolean("bg_blur_enabled", true)),
                 gradientStyle = p.getInt("gradient_style", d.gradientStyle),
                 cardBorder = p.getInt("card_border", d.cardBorder),
+                // 折射高度范围后来收窄到 8..28（原 8..40），旧存档可能越界，
+                // 读入时夹紧，否则滑块会显示 40dp 但实际只生效 28dp
                 liquidRefractionHeight = p.getInt(
                     "liquid_refraction_height", d.liquidRefractionHeight
-                ),
+                ).coerceIn(8, 28),
                 liquidRefraction = p.getInt("liquid_refraction", d.liquidRefraction),
                 liquidBlur = p.getInt("liquid_blur", d.liquidBlur),
                 // 旧版曾存过 34–54 的圆形透镜 dp，平滑迁移回 85–105% 胶囊饱满度
