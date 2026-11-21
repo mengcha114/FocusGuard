@@ -21,8 +21,8 @@ android {
             "ALLOW_SCREEN_CAPTURE",
             (providers.gradleProperty("allowScreenCapture").orNull ?: "false")
         )
-        versionCode = 216
-        versionName = "3.12.33"
+        versionCode = 217
+        versionName = "3.12.34"
     }
 
     // 固定签名：CI 从 GitHub Secrets 恢复同一 PKCS12，密钥不进入公开仓库；

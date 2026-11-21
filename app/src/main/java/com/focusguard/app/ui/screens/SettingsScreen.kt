@@ -898,6 +898,65 @@ fun SettingsScreen(
         SettingsGroupHeader("系统与调试")
 
 
+        // ── 悬浮窗豁免（白名单，修改需答题）───────────────────────
+        run {
+            var verifyOpen by remember { mutableStateOf(false) }
+            var pickerOpen by remember { mutableStateOf(false) }
+            var count by remember { mutableStateOf(settings.overlayWhitelist.size) }
+            SettingsSection(
+                title = "悬浮窗豁免",
+                icon = Icons.Default.Shield,
+                defaultExpanded = false,
+                summary = "锁机期间允许弹悬浮窗的应用（修改需答题）"
+            ) {
+                Text(
+                    "锁机期间，盖在锁机页上方的应用会被立即冻结。若某些应用必须保留悬浮窗，可加入豁免；放宽约束需要先答题。",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "当前豁免 $count 个应用",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { verifyOpen = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = com.focusguard.app.ui.theme.cardContainer())
+                ) {
+                    Icon(Icons.Default.Shield, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("管理豁免应用", fontSize = 15.sp)
+                }
+            }
+            if (verifyOpen) {
+                com.focusguard.app.ui.components.VerifyDialog(
+                    title = "修改悬浮窗豁免需要答题",
+                    description = "豁免名单会让应用在锁机期间仍能弹出悬浮窗，属于放宽约束，需要先答对一道题。",
+                    confirmText = "验证并修改",
+                    onPassed = {
+                        verifyOpen = false
+                        pickerOpen = true
+                    },
+                    onCancel = { verifyOpen = false }
+                )
+            }
+            if (pickerOpen) {
+                com.focusguard.app.ui.components.OverlayWhitelistDialog(
+                    initial = settings.overlayWhitelist,
+                    onDismiss = { pickerOpen = false },
+                    onConfirm = { picked ->
+                        settings.setOverlayWhitelist(picked)
+                        count = picked.size
+                        pickerOpen = false
+                    }
+                )
+            }
+        }
+
         // ── 调试与导出 ────────────────────────────────────────────
         SettingsSection(
             title = "调试",

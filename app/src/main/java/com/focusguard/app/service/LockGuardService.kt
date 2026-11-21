@@ -203,8 +203,9 @@ class LockGuardService : Service() {
     private var lastForeignOverlayScanAt = 0L
 
     /** 外来覆盖层要持续存在这么久才升级处置（避开一闪而过的 toast）。 */
-    private val foreignOverlayEscalateMs = 10_000L
-    private val foreignOverlayRetryMs = 10_000L
+    // 锁机期间不该有任何东西能弹出来：检测到就立刻处理（原来 10s 空窗太容易被分心）
+    private val foreignOverlayEscalateMs = 1_500L
+    private val foreignOverlayRetryMs = 3_000L
 
     /**
      * 非焦点型外来悬浮窗的「持续存在」检测。

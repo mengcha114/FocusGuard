@@ -31,7 +31,8 @@ object LockTopGuard {
     private const val TAG = "LockTopGuard"
 
     /** 同一个包要被顶回几次才升级为冻结。 */
-    private const val REASSERT_STRIKES = 2
+    // 锁机期间"什么都不让干"：盖上来第一次就处理，不再给第二次机会
+    private const val REASSERT_STRIKES = 1
 
     /** 同一个包的动作冷却。 */
     private const val PER_PKG_COOLDOWN_MS = 3_000L
@@ -88,6 +89,8 @@ object LockTopGuard {
     fun isProtected(context: Context, pkg: String): Boolean {
         if (pkg.isBlank()) return true
         if (pkg == context.packageName) return true
+        // 用户答题后加入的豁免名单：锁机期间允许它弹悬浮窗
+        if (pkg in com.focusguard.app.data.Settings(context).overlayWhitelist) return true
         if (pkg in NEVER) return true
         if (SYSTEM_UI_HINTS.any { pkg.contains(it, ignoreCase = true) }) return true
         // 输入法：答题要用键盘，正在打字时被冻掉等于锁死解锁流程

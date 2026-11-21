@@ -160,6 +160,7 @@ gacha
         private const val KEY_TOKEN_SAVING_ENABLED = "token_saving_enabled"
         // 一次性迁移标记：保证「省 Token 默认关闭」对老用户也生效一次
         private const val KEY_TOKEN_SAVING_RESET_DONE = "token_saving_reset_done"
+        private const val KEY_OVERLAY_WHITELIST = "overlay_whitelist"
         private const val KEY_SCREEN_HASH_DEDUP = "screen_hash_dedup"
         private const val KEY_SCREEN_TEXT_PREFILTER = "screen_text_prefilter"
         private const val KEY_DECISION_CACHE_ENABLED = "decision_cache_enabled"
@@ -538,6 +539,14 @@ gacha
      * Token 节约总开关。关闭后每次检测都直接调用视觉大模型，
      * 不做任何本地过滤。默认关闭（用户要求：省 token 系列默认关）。
      */
+    /** 悬浮窗豁免白名单：锁机期间这些应用仍允许弹出悬浮窗（修改需答题）。 */
+    val overlayWhitelist: Set<String>
+        get() = prefs.getStringSet(KEY_OVERLAY_WHITELIST, emptySet())?.toSet().orEmpty()
+
+    fun setOverlayWhitelist(pkgs: Set<String>) {
+        prefs.edit().putStringSet(KEY_OVERLAY_WHITELIST, pkgs).apply()
+    }
+
     var tokenSavingEnabled: Boolean
         get() = prefs.getBoolean(KEY_TOKEN_SAVING_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_TOKEN_SAVING_ENABLED, value).apply()
