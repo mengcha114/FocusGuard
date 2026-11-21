@@ -64,9 +64,12 @@ fun UnlockChallengeScreen(
 
     // 当前题目与「已答对几题」持久化在 LockState：退出答题页（甚至进程被杀）后重进，
     // 仍是同一道题、进度继续累计（用户反馈：退出重进会换题、连对进度会丢）
+    // 记录是不是从存档恢复来的：恢复的题已经校验过一次，
+    // 退出重进不该再跑一遍 AI 筛选（用户反馈：退出再进会重新筛选）
+    val restoredQuestion = remember { lockState.restoreChallengeQuestion() }
     var currentQuestion by remember {
         mutableStateOf(
-            lockState.restoreChallengeQuestion() ?: generator.generate(difficulty).also {
+            restoredQuestion ?: generator.generate(difficulty).also {
                 lockState.saveChallengeQuestion(it)
             }
         )
@@ -98,6 +101,12 @@ fun UnlockChallengeScreen(
     // 出题后用已配置的 AI 校验难度/学段：不通过就重筛（最多 3 次），之后一律放行（不卡答题）
     var validating by remember { mutableStateOf(true) }
     LaunchedEffect(currentQuestion) {
+        // 存档恢复的题直接放行，不再重新筛选
+        if (restoredQuestion != null && currentQuestion == restoredQuestion) {
+            secondsLeft = currentQuestion.timeLimitSec
+            validating = false
+            return@LaunchedEffect
+        }
         validating = true
         var q = currentQuestion
         var tries = 0
@@ -116,6 +125,10 @@ fun UnlockChallengeScreen(
     }
 
     fun nextQuestion() {
+        // 换题就翻篇：清掉上一题的草稿，避免串题
+        com.focusguard.app.ui.components.ScratchpadHolder.state?.let {
+            com.focusguard.app.ui.components.clearScratchpad(it)
+        }
         userAnswer = ""
         feedbackMessage = null
         currentQuestion = generator.generate(difficulty)

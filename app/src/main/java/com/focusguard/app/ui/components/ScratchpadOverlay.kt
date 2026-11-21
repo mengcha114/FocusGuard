@@ -252,7 +252,27 @@ class ScratchpadState {
 }
 
 @Composable
-fun rememberScratchpadState(): ScratchpadState = remember { ScratchpadState() }
+/**
+ * 草稿纸状态的进程级持有者。
+ *
+ * 之前用 `remember { ScratchpadState() }`，关掉草稿纸再打开时组合被销毁重建，
+ * 画的内容就全没了（用户反馈：退出再进就清空）。这里把实例挂在进程上，
+ * 只在「换题 / 解锁」时显式清空。
+ */
+object ScratchpadHolder {
+    var state: ScratchpadState? = null
+}
+
+fun rememberScratchpadState(): ScratchpadState = remember {
+    ScratchpadHolder.state ?: ScratchpadState().also { ScratchpadHolder.state = it }
+}
+
+/** 清空草稿（换题时调用）。 */
+fun clearScratchpad(state: ScratchpadState) {
+    state.pages.clear()
+    state.pages.add(ScratchPageState())
+    state.currentPageIndex = 0
+}
 
 /**
  * 答题草稿纸浮层（与 FocusGuard 主题令牌完全统一）。
