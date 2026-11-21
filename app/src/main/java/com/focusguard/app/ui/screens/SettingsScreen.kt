@@ -131,7 +131,25 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("设置", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            Text("设置", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Spacer(Modifier.weight(1f))
+            TextButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(
+                                context,
+                                com.focusguard.app.ui.screens.PermissionsActivity::class.java
+                            )
+                        )
+                    }
+                }
+            ) { Text("权限设置", fontSize = 13.sp) }
+        }
         // 版本号就放在标题下：排查"改了但没效果"时第一眼就能确认装的是哪一版
         Text(
             text = "专注卫士 v" + com.focusguard.app.BuildConfig.VERSION_NAME +
