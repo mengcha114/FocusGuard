@@ -36,6 +36,8 @@ data class Appearance(
     val liquidBlur: Int = 10,
     /** 底栏选中胶囊饱满度（85–105%）。 */
     val liquidLensSize: Int = 100,
+    /** 液态底栏不透明度（40–100，独立于卡片）。 */
+    val barOpacity: Int = 78,
     /** 液态玻璃高光强度（0–100，边缘亮线/顶部反光）。 */
     val liquidHighlight: Int = 60,
     /** 立体感：外阴影 + 内阴影 + 顶亮底暗（0–100）。 */
@@ -141,6 +143,7 @@ data class Appearance(
                 liquidRefraction = p.getInt("liquid_refraction", d.liquidRefraction),
                 liquidBlur = p.getInt("liquid_blur", d.liquidBlur),
                 // 旧版曾存过 34–54 的圆形透镜 dp，平滑迁移回 85–105% 胶囊饱满度
+                barOpacity = p.getInt("bar_opacity", d.barOpacity),
                 liquidLensSize = p.getInt("liquid_lens_size", d.liquidLensSize).let { raw ->
                     if (raw < 80) 100 else raw.coerceIn(85, 105)
                 },
@@ -184,6 +187,7 @@ data class Appearance(
                 .putInt("liquid_refraction", a.liquidRefraction)
                 .putInt("liquid_blur", a.liquidBlur)
                 .putInt("liquid_lens_size", a.liquidLensSize)
+                .putInt("bar_opacity", a.barOpacity)
                 .putInt("liquid_highlight", a.liquidHighlight)
                 .putInt("liquid_depth", a.liquidDepth)
                 .putBoolean("liquid_depth_effect", a.liquidDepthEffect)

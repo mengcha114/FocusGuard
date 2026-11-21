@@ -45,8 +45,7 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.vector.*
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -65,35 +64,28 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * 自绘橡皮图标。
+ * 橡皮图标：直接采用 Material Symbols 官方 `ink_eraser` 的矢量路径。
  *
- * Material 的 `Icons.Filled.AutoFixNormal` 是「带星光的魔棒」（auto_fix），
- * 视觉上会被认成魔棒而不是橡皮；扩展图标集里也没有 ink_eraser，
- * 因此这里用倾斜橡皮块 + 底面擦除线的形状自绘一个。
+ * 之前是自己用多边形拼的，观感粗糙、也不够像橡皮；
+ * 这里改用官方路径（原 viewBox 为 `0 -960 960 960`，用 group 平移回 0..960 坐标系）。
  */
 private val EraserIcon: ImageVector by lazy {
     ImageVector.Builder(
-        name = "Eraser",
+        name = "InkEraser",
         defaultWidth = 24.dp,
         defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
+        viewportWidth = 960f,
+        viewportHeight = 960f
     ).apply {
-        // 倾斜的橡皮块主体（比画笔更粗壮，便于区分）
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(13.99f, 3.92f)
-            lineTo(19.08f, 9.01f)
-            lineTo(12.01f, 16.08f)
-            lineTo(6.92f, 10.99f)
-            close()
-        }
-        // 底面擦除线
-        path(fill = SolidColor(Color.Black)) {
-            moveTo(3.6f, 19.2f)
-            lineTo(20.4f, 19.2f)
-            lineTo(20.4f, 20.7f)
-            lineTo(3.6f, 20.7f)
-            close()
+        group(translationY = 960f) {
+            addPath(
+                pathData = addPathNodes(
+                    "M678-220h203v60H618l60-60Zm-499 60-81-84q-18-17-17.5-41.5T97-327l458-498" +
+                        "q16-17 40.57-17 24.56 0 41.43 17l205 215q17 17 18 42t-16 42L503-160H179Z" +
+                        "m301-60 324-352-207-217-455 503 64 66h274Zm0-260Z"
+                ),
+                fill = SolidColor(Color.Black)
+            )
         }
     }.build()
 }

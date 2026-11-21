@@ -293,6 +293,13 @@ fun AppearancePanel() {
                 onPreview = { v -> preview { it.copy(liquidDepth = v) } }
             ) { v -> set { it.copy(liquidDepth = v) } }
             SliderRow(
+                title = "底栏不透明度",
+                value = a.barOpacity,
+                range = 40f..100f,
+                suffix = "%",
+                onPreview = { v -> preview { it.copy(barOpacity = v) } }
+            ) { v -> set { it.copy(barOpacity = v) } }
+            SliderRow(
                 title = "底栏胶囊饱满度",
                 value = if (a.liquidLensSize < 80) 100 else a.liquidLensSize,
                 range = 85f..105f,
