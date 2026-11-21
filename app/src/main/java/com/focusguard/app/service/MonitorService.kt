@@ -363,6 +363,11 @@ class MonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 入口兜底：本服务由 startForegroundService 拉起时，必须在 5 秒内调用
+        // startForeground，否则系统抛 RemoteServiceException
+        // （Context.startForegroundService() did not then call Service.startForeground()）
+        // 直接杀进程。任何 action 分支都可能提前 return，所以先在这里保底一次。
+        if (!isForeground) startForegroundSafely(withProjection = false)
         when (intent?.action) {
             ACTION_START -> {
                 val resultCode = intent.getIntExtra("resultCode", 0)
@@ -479,7 +484,29 @@ class MonitorService : Service() {
      * 表现为「前台化静默失败、守护起不来」。所以 API 29+ 一律显式传类型：
      * 没有投影就只报 `dataSync`。
      */
+    /** 是否已经成功前台化（避免重复申报，也用于 onStartCommand 兜底）。 */
+    @Volatile private var isForeground = false
+
+    /** 极简通知：buildNotification 失败时的兜底，保证 startForeground 一定能调成。 */
+    private fun minimalNotification(): android.app.Notification =
+        Notification.Builder(this, FocusGuardApp.CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_shield)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText("守护服务运行中")
+            .setOngoing(true)
+            .build()
+
     private fun startForegroundSafely(withProjection: Boolean): Boolean {
+        if (isForeground && !withProjection) return true
+        // 通知构建本身也可能抛（渠道异常等），兜底用极简通知，
+        // 绝不能让「通知没造出来」导致 startForeground 没被调用 → 5 秒后进程被杀
+        val notification = runCatching { buildNotification(null) }
+            .getOrElse { runCatching { minimalNotification() }.getOrNull() }
+        if (notification == null) {
+            Log.e(TAG, "通知构建失败，无法前台化")
+            runCatching { stopSelf() }
+            return false
+        }
         val ok = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val type = if (withProjection) {
@@ -488,17 +515,32 @@ class MonitorService : Service() {
                 } else {
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                 }
-                startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null), type)
+                startForeground(FocusGuardApp.NOTIFICATION_ID, notification, type)
             } else {
-                startForeground(FocusGuardApp.NOTIFICATION_ID, buildNotification(null))
+                startForeground(FocusGuardApp.NOTIFICATION_ID, notification)
             }
             true
         }.getOrDefault(false)
-        if (!ok) {
-            Log.w(TAG, "前台化失败（类型校验或权限不足），停止服务避免 5 秒后被杀进程")
-            runCatching { stopSelf() }
+        if (ok) {
+            isForeground = true
+            return true
         }
-        return ok
+        // 类型被系统拒绝时，退回「不带类型」再试一次（Android 10 上仍然可用）。
+        // 这一次是保命：只要 5 秒内没调过 startForeground，系统会抛
+        // RemoteServiceException 直接杀进程。
+        val fallback = runCatching {
+            @Suppress("DEPRECATION")
+            startForeground(FocusGuardApp.NOTIFICATION_ID, notification)
+            true
+        }.getOrDefault(false)
+        if (fallback) {
+            isForeground = true
+            Log.w(TAG, "按类型前台化被拒，已退回无类型前台化")
+            return true
+        }
+        Log.w(TAG, "前台化失败（类型校验或权限不足），停止服务避免 5 秒后被杀进程")
+        runCatching { stopSelf() }
+        return false
     }
 
     private fun startMonitoring(resultCode: Int, data: Intent?) {
@@ -1121,6 +1163,13 @@ class MonitorService : Service() {
      */
     private fun enforceWithAlert(outcome: DetectionOutcome): String {
         val delaySeconds = if (settings.aiAlertEnabled) settings.aiAlertDelaySeconds else 0
+        // 留痕：用户反馈「没弹窗就锁机」时，靠这行区分是「提醒被关/宽限为0」
+        // 还是「走了定时锁机等不经提醒的路径」
+        Log.d(
+            TAG,
+            "执法路径：提醒开关=${settings.aiAlertEnabled} 宽限=${delaySeconds}s " +
+                "来源=${outcome.source} 判定=${outcome.classification} 原因=${outcome.reason}"
+        )
 
         if (delaySeconds <= 0) {
             AlertNotifier.alertEntertainment(

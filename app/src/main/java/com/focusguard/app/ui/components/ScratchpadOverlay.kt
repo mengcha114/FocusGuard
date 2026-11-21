@@ -776,22 +776,7 @@ fun ScratchpadOverlay(
                             selected = state.tool == tool,
                             accent = uiAccent,
                             haze = uiHaze,
-                            onClick = {
-                                val now = System.currentTimeMillis()
-                                val isDouble = state.lastToolTapIndex == tool.ordinal &&
-                                    now - state.lastToolTapAt < 400L
-                                if (isDouble) {
-                                    // 双击：在同一个工具上单击两次 → 展开/收起尺寸
-                                    state.tool = tool
-                                    state.sizePickerTool =
-                                        if (state.sizePickerTool == tool) null else tool
-                                } else {
-                                    state.tool = tool
-                                    state.sizePickerTool = null
-                                }
-                                state.lastToolTapIndex = tool.ordinal
-                                state.lastToolTapAt = now
-                            }
+                            onClick = { state.tool = tool }
                         )
                         Spacer(Modifier.width(4.dp))
                     }
@@ -817,9 +802,8 @@ fun ScratchpadOverlay(
                                 }
                         )
                     }
-                    // 尺寸三档默认收起：双击画笔/橡皮才展开，避免和颜色点混在一起
-                    // （用户反馈：直接铺在工具坞里分不清，且要横向滑动）
-                    if (state.sizePickerTool == state.tool) {
+                    // 尺寸三档常驻显示（用户反馈：收起来后「按钮就没了」）。
+                    // 用分隔线 + 与颜色点不同的形态区分，不再依赖双击。
                     DockDivider(uiLine)
                     // 橡皮模式下调的是「橡皮大小」三档，其余工具调笔宽三档
                     val sizeDps = if (state.tool == ScratchTool.ERASER) {
@@ -870,7 +854,6 @@ fun ScratchpadOverlay(
                                     .background(if (sel) uiAccent else uiHaze)
                             )
                         }
-                    }
                     }
                     DockDivider(uiLine)
                     IconAction(Icons.Default.Undo, "撤销", uiText, uiFaint, currentPage.canUndo) {
