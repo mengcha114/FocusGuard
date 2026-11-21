@@ -543,7 +543,23 @@ class MonitorService : Service() {
         return false
     }
 
+    /** 体检：悬浮窗权限是所有锁机形态的前提，丢了要立刻让用户知道。 */
+    private fun checkOverlayPermission() {
+        if (android.provider.Settings.canDrawOverlays(this)) return
+        val a11y = com.focusguard.app.access.GuardAccessibilityService.instance != null
+        if (a11y) return
+        Log.e(TAG, "悬浮窗权限缺失且无障碍未连接：锁机将无法显示")
+        runCatching {
+            AlertNotifier.alertEntertainment(
+                context = this,
+                title = "⚠️ 缺少悬浮窗权限",
+                message = "锁机会显示不出来。请在设置里开启「显示在其他应用上层」。"
+            )
+        }
+    }
+
     private fun startMonitoring(resultCode: Int, data: Intent?) {
+        checkOverlayPermission()
         // 截屏来源优先级：无障碍截图 ＞ 投影。
         // 常驻投影会让系统/部分 ROM 把通知正文隐藏（用户实测），所以只要无障碍可用就不用投影。
         // 无障碍截图是 Android 11（API 30）才有的能力；
@@ -1285,6 +1301,27 @@ class MonitorService : Service() {
         if (settings.enforcementMode != Settings.EnforcementMode.WARN &&
             settings.enforcementMode != Settings.EnforcementMode.APP_BLOCK
         ) {
+            // ── 安全闸门：锁机界面显示不出来时，绝不进入锁机 ──────────────
+            // 悬浮窗权限被系统/ROM 关掉后，后台拉不起锁机页，但锁机状态照样会落，
+            // 结果就是「冻结了一堆应用、却没有解锁入口」，用户必须手动打开本应用
+            // 才能恢复 —— 实测过，这是最伤人的状态。
+            val hasOverlay = android.provider.Settings.canDrawOverlays(this)
+            val hasA11y = com.focusguard.app.access.GuardAccessibilityService.instance != null
+            if (!hasOverlay && !hasA11y) {
+                Log.e(
+                    TAG,
+                    "无法显示锁机界面（悬浮窗权限已关闭、无障碍未连接），" +
+                        "跳过本次锁机，避免冻结应用后没有解锁入口"
+                )
+                runCatching {
+                    AlertNotifier.alertEntertainment(
+                        context = this,
+                        title = "⚠️ 锁机无法显示，本次未执行",
+                        message = "「显示在其他应用上层」权限已被系统关闭。请到设置重新开启，否则锁机将无法生效。"
+                    )
+                }
+                return "NEED_PERMISSION"
+            }
             // 「执法瞬间锁屏」：先把屏幕灭掉，用户必须重新解锁设备才看到锁机界面
             if (com.focusguard.app.enhance.LockPolicies.isHardeningEnabled(
                     this, com.focusguard.app.enhance.LockPolicies.Hardening.LOCK_NOW
