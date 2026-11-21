@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -323,7 +324,9 @@ fun LogScreen() {
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(displayLogs, key = { it.timestamp }) { log ->
+                // key 里带上序号：日志是同毫秒批量写入的，只用 timestamp 会重复，
+                // LazyColumn 遇到重复 key 会抛「Key was already used」直接崩溃
+                itemsIndexed(displayLogs, key = { i, log -> "${log.timestamp}#$i" }) { _, log ->
                     LogEntryItem(log = log, context = context)
                 }
                 item { Spacer(Modifier.height(24.dp)) }
