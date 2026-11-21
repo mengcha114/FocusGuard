@@ -189,6 +189,11 @@ class ScratchpadState {
     var widthIndex by mutableIntStateOf(1)
     /** 橡皮尺寸档位：0=小(12dp) 1=中(24dp) 2=大(40dp)。 */
     var eraserSizeIndex by mutableIntStateOf(1)
+    /** 当前展开尺寸面板的工具（null=收起）。双击画笔/橡皮切换。 */
+    var sizePickerTool by mutableStateOf<ScratchTool?>(null)
+    /** 双击判定：上一次点击的工具序号与时刻。 */
+    var lastToolTapIndex by mutableIntStateOf(-1)
+    var lastToolTapAt by mutableLongStateOf(0L)
     var showQuestion by mutableStateOf(false)
     var brushPanelOpen by mutableStateOf(false)
     var pageToast by mutableStateOf<String?>(null)
@@ -375,6 +380,7 @@ fun ScratchpadOverlay(
                             var startPan = pan
                             var startCentroid = Offset.Zero
                             var lastSpread = 0f
+                            var lastCentroid = Offset.Zero
 
                             val livePts = ArrayList<Offset>(64)
                             val erased = HashSet<ScratchItem>()
@@ -424,6 +430,7 @@ fun ScratchpadOverlay(
                                         startZoom = zoom
                                         startPan = pan
                                         startCentroid = centroidOf(pressed)
+                                        lastCentroid = startCentroid
                                     }
                                     val spread = spreadOf(pressed)
                                     val centroid = centroidOf(pressed)
@@ -432,7 +439,9 @@ fun ScratchpadOverlay(
                                         abs(spread - startSpread) > 0.5f
                                     ) zoomMode = true
                                     if (zoomMode) {
-                                        // 以手势中心为锚点做**增量**缩放：手指按住的那一点保持不动
+                                        // 分两步：① 以手势中心为锚点增量缩放 ② 叠加双指整体位移
+                                        // 只做①会出现「捏合跟手、但整体拖动不动」——ratio≈1 时
+                                        // 锚点公式算出的 pan 不变，所以必须再叠加质心位移。
                                         val base = if (lastSpread > 1f) lastSpread else startSpread
                                         val ratio = if (base > 1f) spread / base else 1f
                                         val newZoom = (zoom * ratio).coerceIn(0.8f, 6f)
@@ -440,8 +449,10 @@ fun ScratchpadOverlay(
                                         if (zoom > 0.01f) {
                                             pan = centroid - c - (centroid - c - pan) * (newZoom / zoom)
                                         }
+                                        pan += centroid - lastCentroid
                                         zoom = newZoom
                                         lastSpread = spread
+                                        lastCentroid = centroid
                                         eraserCursor = null
                                     } else if (!swipeFired && startZoom <= 1.05f) {
                                         // 未缩放时：双指上下划换页
@@ -765,7 +776,22 @@ fun ScratchpadOverlay(
                             selected = state.tool == tool,
                             accent = uiAccent,
                             haze = uiHaze,
-                            onClick = { state.tool = tool }
+                            onClick = {
+                                val now = System.currentTimeMillis()
+                                val isDouble = state.lastToolTapIndex == tool.ordinal &&
+                                    now - state.lastToolTapAt < 400L
+                                if (isDouble) {
+                                    // 双击：在同一个工具上单击两次 → 展开/收起尺寸
+                                    state.tool = tool
+                                    state.sizePickerTool =
+                                        if (state.sizePickerTool == tool) null else tool
+                                } else {
+                                    state.tool = tool
+                                    state.sizePickerTool = null
+                                }
+                                state.lastToolTapIndex = tool.ordinal
+                                state.lastToolTapAt = now
+                            }
                         )
                         Spacer(Modifier.width(4.dp))
                     }
@@ -791,6 +817,9 @@ fun ScratchpadOverlay(
                                 }
                         )
                     }
+                    // 尺寸三档默认收起：双击画笔/橡皮才展开，避免和颜色点混在一起
+                    // （用户反馈：直接铺在工具坞里分不清，且要横向滑动）
+                    if (state.sizePickerTool == state.tool) {
                     DockDivider(uiLine)
                     // 橡皮模式下调的是「橡皮大小」三档，其余工具调笔宽三档
                     val sizeDps = if (state.tool == ScratchTool.ERASER) {
@@ -823,13 +852,25 @@ fun ScratchpadOverlay(
                             contentAlignment = Alignment.Center
                         ) {
                             Box(
-                                // 三档圆点在 24dp 控件内按比例显示，大档会被压到 22dp
+                                // 三档圆点必须**单调递增**：之前把大档压到 22dp，
+                                // 渲染成 15/27/22 → 看起来是「小 大 中」，顺序错乱。
                                 modifier = Modifier
-                                    .size(if (w >= 40f) 22.dp else (w + 3f).dp)
+                                    .size(
+                                        if (state.tool == ScratchTool.ERASER) {
+                                            when (idx) {
+                                                0 -> 10.dp
+                                                1 -> 16.dp
+                                                else -> 22.dp
+                                            }
+                                        } else {
+                                            (w + 3f).dp
+                                        }
+                                    )
                                     .clip(CircleShape)
                                     .background(if (sel) uiAccent else uiHaze)
                             )
                         }
+                    }
                     }
                     DockDivider(uiLine)
                     IconAction(Icons.Default.Undo, "撤销", uiText, uiFaint, currentPage.canUndo) {
