@@ -1041,7 +1041,6 @@ class GuardAccessibilityService : AccessibilityService() {
                     val found = ArrayList<String>(4)
                     windows.orEmpty().forEach { w ->
                         try {
-                            if (!w.isVisible) return@forEach
                             val t = w.type
                             if (t != AccessibilityWindowInfo.TYPE_SYSTEM &&
                                 t != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY
