@@ -128,8 +128,10 @@ class AppBlockActivity : ComponentActivity() {
         }
         // 同样不加 KEEP_SCREEN_ON：息屏是用户的权利（否则「封锁期间无法息屏」）。
         // 息屏后封锁页被系统回收也没关系——亮屏后守护会重新拉起它。
-        // 防截屏/录屏：封锁页不给外部相机/AI 看
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        // 防截屏/录屏：封锁页不给外部相机/AI 看（CI 测试版允许录屏）
+        if (!com.focusguard.app.util.ScreenCapturePolicy.allowCapture) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
 
         instance = this
         blockedPackage = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()

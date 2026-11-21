@@ -663,7 +663,7 @@ class MainActivity : ComponentActivity() {
                                     onTabSelected = { index -> go(liquidTabs[index].route) },
                                     refractionHeight = barTuning.refractionHeight,
                                     refractionAmount = barTuning.refractionAmount,
-                                    blurRadius = barTuning.blur,
+                                    blurRadius = barTuning.barBlur,
                                     surfaceAlpha = barTuning.barSurfaceAlpha,
                                     highlightStrength = barTuning.highlight,
                                     depth = barTuning.depth,
@@ -976,7 +976,9 @@ class MainActivity : ComponentActivity() {
      */
     private fun applyScreenshotBlock() {
         runCatching {
-            if (appSettings.blockScreenshots) {
+            if (appSettings.blockScreenshots &&
+                !com.focusguard.app.util.ScreenCapturePolicy.allowCapture
+            ) {
                 window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
             } else {
                 window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)

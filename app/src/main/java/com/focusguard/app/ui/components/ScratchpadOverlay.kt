@@ -32,6 +32,13 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.platform.LocalContext
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -279,6 +286,15 @@ fun ScratchpadOverlay(
         val minStepPx = with(density) { 2.2.dp.toPx() }
         val panelRadius = 16.dp
 
+        // 草稿纸自身的玻璃图层：记录纸面与笔迹，供顶栏/底栏浮层做真实折射
+        val scratchBackdrop = rememberLayerBackdrop()
+        val appCtx = LocalContext.current
+        val liquidOn = com.focusguard.app.ui.theme.AppearanceState.get(appCtx).cardStyle ==
+            com.focusguard.app.ui.theme.Appearance.CARD_LIQUID
+        // 画布缩放与平移（双指捏合缩放 / 双指拖动平移）
+        var zoom by remember { mutableFloatStateOf(1f) }
+        var pan by remember { mutableStateOf(Offset.Zero) }
+
         var activePoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
         var shapeStart by remember { mutableStateOf<Offset?>(null) }
         var shapeEnd by remember { mutableStateOf<Offset?>(null) }
@@ -298,19 +314,33 @@ fun ScratchpadOverlay(
                 .fillMaxSize()
                 .background(paperBg)
         ) {
-            // ── 画布：网格 + 历史笔迹 + 实时笔迹 + 双指上下划换页 ──
+            // ── 画布：网格 + 笔迹；双指捏合缩放/拖动，双指上下划翻页 ──
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
+                    .layerBackdrop(scratchBackdrop)
                     .pointerInput(state.currentPageIndex, state.tool, activeColor, activeStrokePx) {
+                        fun inv(p: Offset): Offset {
+                            val cx = size.width / 2f
+                            val cy = size.height / 2f
+                            return Offset(
+                                (p.x - pan.x - cx) / zoom + cx,
+                                (p.y - pan.y - cy) / zoom + cy
+                            )
+                        }
                         awaitEachGesture {
                             val firstDown = awaitFirstDown(requireUnconsumed = false)
                             firstDown.consume()
-                            val downPos = firstDown.position
+                            val downCanvas = inv(firstDown.position)
 
                             var multiTouch = false
-                            var swipeTriggered = false
-                            var twoFingerStartY = 0f
+                            var zoomMode = false
+                            var swipeFired = false
+                            var startSpread = 0f
+                            var startZoom = zoom
+                            var startPan = pan
+                            var startCentroid = Offset.Zero
+
                             val livePts = ArrayList<Offset>(64)
                             val erased = HashSet<ScratchItem>()
 
@@ -323,12 +353,14 @@ fun ScratchpadOverlay(
 
                             when (state.tool) {
                                 ScratchTool.PEN -> {
-                                    livePts.add(downPos)
+                                    livePts.add(downCanvas)
                                     activePoints = livePts.toList()
                                 }
                                 ScratchTool.ERASER -> {
-                                    eraserCursor = downPos
-                                    collectErased(currentPage.items, downPos, eraserRadiusPx, erased)
+                                    eraserCursor = downCanvas
+                                    collectErased(
+                                        currentPage.items, downCanvas, eraserRadiusPx / zoom, erased
+                                    )
                                     if (erased.isNotEmpty()) {
                                         currentPage.commitReplace(
                                             currentPage.items.filterNot { it in erased }
@@ -337,8 +369,8 @@ fun ScratchpadOverlay(
                                     }
                                 }
                                 else -> {
-                                    shapeStart = downPos
-                                    shapeEnd = downPos
+                                    shapeStart = downCanvas
+                                    shapeEnd = downCanvas
                                 }
                             }
 
@@ -353,15 +385,31 @@ fun ScratchpadOverlay(
                                     if (!multiTouch) {
                                         multiTouch = true
                                         resetDraft()
-                                        twoFingerStartY =
-                                            pressed.map { it.position.y }.average().toFloat()
+                                        startSpread = spreadOf(pressed)
+                                        startZoom = zoom
+                                        startPan = pan
+                                        startCentroid = centroidOf(pressed)
                                     }
-                                    val dy = pressed.map { it.position.y }.average().toFloat() -
-                                        twoFingerStartY
-                                    if (!swipeTriggered && abs(dy) >= swipeThresholdPx) {
-                                        swipeTriggered = true
-                                        if (dy < 0f) state.goNextPage(autoCreate = true)
-                                        else state.goPrevPage()
+                                    val spread = spreadOf(pressed)
+                                    val centroid = centroidOf(pressed)
+                                    val ratio = if (startSpread > 1f) spread / startSpread else 1f
+                                    if (!zoomMode && abs(ratio - 1f) > 0.04f) zoomMode = true
+                                    if (zoomMode) {
+                                        // 双指捏合：缩放（0.8x–6x）+ 跟随双指中心平移
+                                        zoom = (startZoom * ratio).coerceIn(0.8f, 6f)
+                                        pan = startPan + (centroid - startCentroid)
+                                        eraserCursor = null
+                                    } else if (!swipeFired && startZoom <= 1.05f) {
+                                        // 未缩放时：双指上下划换页
+                                        val dy = centroid.y - startCentroid.y
+                                        if (abs(dy) >= swipeThresholdPx) {
+                                            swipeFired = true
+                                            if (dy < 0f) {
+                                                state.goNextPage(autoCreate = true)
+                                            } else {
+                                                state.goPrevPage()
+                                            }
+                                        }
                                     }
                                     event.changes.forEach { it.consume() }
                                     continue
@@ -376,7 +424,7 @@ fun ScratchpadOverlay(
                                     ScratchTool.PEN -> {
                                         var added = false
                                         for (hist in change.historical) {
-                                            val p = hist.position
+                                            val p = inv(hist.position)
                                             val last = livePts.lastOrNull()
                                             if (last == null ||
                                                 hypot(p.x - last.x, p.y - last.y) >= minStepPx
@@ -385,7 +433,7 @@ fun ScratchpadOverlay(
                                                 added = true
                                             }
                                         }
-                                        val cur = change.position
+                                        val cur = inv(change.position)
                                         val last = livePts.lastOrNull()
                                         if (last == null ||
                                             hypot(cur.x - last.x, cur.y - last.y) >= minStepPx
@@ -396,9 +444,11 @@ fun ScratchpadOverlay(
                                         if (added) activePoints = livePts.toList()
                                     }
                                     ScratchTool.ERASER -> {
-                                        val cur = change.position
+                                        val cur = inv(change.position)
                                         eraserCursor = cur
-                                        collectErased(currentPage.items, cur, eraserRadiusPx, erased)
+                                        collectErased(
+                                            currentPage.items, cur, eraserRadiusPx / zoom, erased
+                                        )
                                         if (erased.isNotEmpty()) {
                                             currentPage.commitReplace(
                                                 currentPage.items.filterNot { it in erased }
@@ -406,7 +456,7 @@ fun ScratchpadOverlay(
                                             erased.clear()
                                         }
                                     }
-                                    else -> shapeEnd = change.position
+                                    else -> shapeEnd = inv(change.position)
                                 }
                             }
 
@@ -423,16 +473,16 @@ fun ScratchpadOverlay(
                                     }
                                     ScratchTool.ERASER -> Unit
                                     else -> {
-                                        val s = shapeStart
-                                        val e = shapeEnd
-                                        if (s != null && e != null &&
-                                            hypot(e.x - s.x, e.y - s.y) >= 4f
+                                        val sp = shapeStart
+                                        val ep = shapeEnd
+                                        if (sp != null && ep != null &&
+                                            hypot(ep.x - sp.x, ep.y - sp.y) >= 4f
                                         ) {
                                             currentPage.commitAdd(
                                                 ScratchItem.Shape(
                                                     kind = state.tool,
-                                                    start = s,
-                                                    end = e,
+                                                    start = sp,
+                                                    end = ep,
                                                     colorValue = activeColor.value,
                                                     strokeWidthPx = activeStrokePx
                                                 )
@@ -445,40 +495,49 @@ fun ScratchpadOverlay(
                         }
                     }
             ) {
-                val step = 28.dp.toPx()
-                var x = step
-                while (x < size.width) {
-                    drawLine(gridColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1f)
-                    x += step
-                }
-                var y = step
-                while (y < size.height) {
-                    drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
-                    y += step
-                }
-                for (item in currentPage.items) drawScratchItem(item)
-                if (activePoints.isNotEmpty()) {
-                    drawLiveFreehand(activePoints, activeColor, activeStrokePx)
-                }
-                val s = shapeStart
-                val e = shapeEnd
-                if (s != null && e != null &&
-                    state.tool != ScratchTool.PEN && state.tool != ScratchTool.ERASER
-                ) {
-                    drawGeometry(state.tool, s, e, activeColor.copy(alpha = 0.85f), activeStrokePx)
-                }
-                eraserCursor?.let { pos ->
-                    drawCircle(
-                        color = uiAccent.copy(alpha = 0.16f),
-                        radius = eraserRadiusPx,
-                        center = pos
-                    )
-                    drawCircle(
-                        color = uiAccent.copy(alpha = 0.75f),
-                        radius = eraserRadiusPx,
-                        center = pos,
-                        style = Stroke(width = 1.5.dp.toPx())
-                    )
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                withTransform({
+                    translate(pan.x, pan.y)
+                    scale(zoom, zoom, Offset(cx, cy))
+                }) {
+                    val step = 28.dp.toPx()
+                    var gx = step
+                    while (gx < size.width) {
+                        drawLine(gridColor, Offset(gx, 0f), Offset(gx, size.height), strokeWidth = 1f)
+                        gx += step
+                    }
+                    var gy = step
+                    while (gy < size.height) {
+                        drawLine(gridColor, Offset(0f, gy), Offset(size.width, gy), strokeWidth = 1f)
+                        gy += step
+                    }
+                    for (item in currentPage.items) drawScratchItem(item)
+                    if (activePoints.isNotEmpty()) {
+                        drawLiveFreehand(activePoints, activeColor, activeStrokePx)
+                    }
+                    val ds = shapeStart
+                    val de = shapeEnd
+                    if (ds != null && de != null &&
+                        state.tool != ScratchTool.PEN && state.tool != ScratchTool.ERASER
+                    ) {
+                        drawGeometry(
+                            state.tool, ds, de, activeColor.copy(alpha = 0.85f), activeStrokePx
+                        )
+                    }
+                    eraserCursor?.let { pos ->
+                        drawCircle(
+                            color = uiAccent.copy(alpha = 0.16f),
+                            radius = eraserRadiusPx / zoom,
+                            center = pos
+                        )
+                        drawCircle(
+                            color = uiAccent.copy(alpha = 0.75f),
+                            radius = eraserRadiusPx / zoom,
+                            center = pos,
+                            style = Stroke(width = 1.5.dp.toPx() / zoom)
+                        )
+                    }
                 }
             }
 
@@ -491,10 +550,11 @@ fun ScratchpadOverlay(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Surface(
-                    shape = RoundedCornerShape(panelRadius),
-                    color = uiCard.copy(alpha = 0.94f),
-                    border = BorderStroke(1.dp, uiLine.copy(alpha = 0.55f))
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(panelRadius))
+                        .then(liquidPanel(scratchBackdrop, panelRadius, uiCard, liquidOn))
+                        .border(1.dp, uiLine.copy(alpha = 0.55f), RoundedCornerShape(panelRadius))
                 ) {
                     Row(
                         modifier = Modifier
@@ -577,16 +637,30 @@ fun ScratchpadOverlay(
                                     all[(state.paperStyle.ordinal + 1) % all.size]
                             }
                         )
+                        if (zoom != 1f || pan != Offset.Zero) {
+                            Spacer(Modifier.width(6.dp))
+                            CactusChip(
+                                label = "×" + String.format("%.1f", zoom),
+                                selected = true,
+                                accent = uiAccent,
+                                haze = uiHaze,
+                                onClick = {
+                                    zoom = 1f
+                                    pan = Offset.Zero
+                                }
+                            )
+                        }
                         Spacer(Modifier.width(4.dp))
                     }
                 }
 
                 if (state.showQuestion && !questionText.isNullOrBlank()) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = uiCard.copy(alpha = 0.94f),
-                        border = BorderStroke(1.dp, uiLine.copy(alpha = 0.55f)),
-                        modifier = Modifier.fillMaxWidth()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .then(liquidPanel(scratchBackdrop, 12.dp, uiCard, liquidOn))
+                            .border(1.dp, uiLine.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
                     ) {
                         Text(
                             text = questionText,
@@ -624,15 +698,15 @@ fun ScratchpadOverlay(
             }
 
             // ── 底部单层紧凑工具坞 ──
-            Surface(
-                shape = RoundedCornerShape(panelRadius),
-                color = uiCard.copy(alpha = 0.94f),
-                border = BorderStroke(1.dp, uiLine.copy(alpha = 0.55f)),
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
                     .padding(horizontal = 12.dp, vertical = 10.dp)
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(panelRadius))
+                    .then(liquidPanel(scratchBackdrop, panelRadius, uiCard, liquidOn))
+                    .border(1.dp, uiLine.copy(alpha = 0.55f), RoundedCornerShape(panelRadius))
             ) {
                 Row(
                     modifier = Modifier
@@ -723,6 +797,54 @@ fun ScratchpadOverlay(
             }
         }
     }
+}
+
+/** 草稿纸浮层的液态玻璃材质；未开启液态模式时退回实心卡片底。 */
+private fun liquidPanel(
+    backdrop: com.kyant.backdrop.Backdrop,
+    radius: androidx.compose.ui.unit.Dp,
+    tint: Color,
+    enabled: Boolean
+): Modifier {
+    if (!enabled) return Modifier.background(tint.copy(alpha = 0.94f))
+    val shape = RoundedCornerShape(radius)
+    return Modifier.drawBackdrop(
+        backdrop = backdrop,
+        shape = { shape },
+        effects = {
+            com.kyant.backdrop.effects.vibrancy()
+            com.kyant.backdrop.effects.blur(7.dp.toPx())
+            com.kyant.backdrop.effects.lens(
+                16.dp.toPx(),
+                34.dp.toPx(),
+                depthEffect = true,
+                chromaticAberration = true
+            )
+        },
+        highlight = { com.kyant.backdrop.highlight.Highlight(width = 0.7.dp, alpha = 0.62f) },
+        shadow = { com.kyant.backdrop.shadow.Shadow(radius = 18.dp, alpha = 0.22f) },
+        onDrawSurface = { drawRect(tint.copy(alpha = 0.16f)) }
+    )
+}
+
+private fun spreadOf(
+    changes: List<androidx.compose.ui.input.pointer.PointerInputChange>
+): Float {
+    if (changes.size < 2) return 0f
+    return (changes[0].position - changes[1].position).getDistance()
+}
+
+private fun centroidOf(
+    changes: List<androidx.compose.ui.input.pointer.PointerInputChange>
+): Offset {
+    var sx = 0f
+    var sy = 0f
+    for (c in changes) {
+        sx += c.position.x
+        sy += c.position.y
+    }
+    val n = changes.size.coerceAtLeast(1)
+    return Offset(sx / n, sy / n)
 }
 
 @Composable

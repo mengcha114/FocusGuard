@@ -94,8 +94,10 @@ class AlertActivity : ComponentActivity() {
                         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
                 )
             }
-            // 防截屏/录屏
-            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            // 防截屏/录屏（CI 测试版允许录屏便于演示）
+            if (!com.focusguard.app.util.ScreenCapturePolicy.allowCapture) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "设置窗口标志失败：${e.message}")
         }

@@ -29,9 +29,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
@@ -90,7 +96,9 @@ fun Modifier.glassSurface(
     val blurDp = blurRadius ?: t.blur
     val refHeight = refractionHeight ?: t.refractionHeight
     val refAmount = refractionAmount ?: t.refractionAmount
-    val effectiveAlpha = maxOf(t.cardSurfaceAlpha, surfaceAlpha ?: 0f)
+    // 统一以「卡片不透明度」设置为准，保证首页卡片与设置页预览完全一致；
+    // 各页面历史上写死的 surfaceAlpha 仅作占位保留，不再覆盖用户设置。
+    val effectiveAlpha = t.cardSurfaceAlpha
     val surfaceBase = if (isLight) Color(0xFFFAFAFA) else tint
     return this.drawBackdrop(
         backdrop = backdrop,
@@ -115,9 +123,9 @@ fun Modifier.glassSurface(
         } else {
             {
                 com.kyant.backdrop.highlight.Highlight(
-                    width = (0.25f + 0.35f * t.highlight * t.borderStrength).dp,
-                    alpha = (0.16f + 0.52f * t.highlight * (0.4f + 0.6f * t.borderStrength))
-                        .coerceAtMost(0.90f)
+                    width = (0.4f + 0.5f * t.highlight * t.borderStrength).dp,
+                    alpha = (0.30f + 0.65f * t.highlight * (0.4f + 0.6f * t.borderStrength))
+                        .coerceAtMost(0.95f)
                 )
             }
         },
@@ -218,6 +226,7 @@ private fun Color.compositeOver(background: Color): Color {
 /** 液态玻璃一组可调参数（统一从外观设置换算，对齐 Kyant0 官方光学标准）。 */
 internal data class LiquidTuning(
     val blur: Dp,
+    val barBlur: Dp,
     val refractionHeight: Dp,
     val refractionAmount: Dp,
     val highlight: Float,
@@ -235,23 +244,20 @@ internal data class LiquidTuning(
 internal fun liquidTuning(a: Appearance, isLight: Boolean = false): LiquidTuning {
     val h = a.liquidRefractionHeight.coerceIn(8, 40).dp
     val border = a.cardBorder.coerceIn(0, 100) / 100f
-    // 40%..100% 归一化到 0f..1f：
-    // 40% 为清透玻璃（~0.32），默认 78% 为温润磨砂玻璃（浅色 ~0.66 / 深色 ~0.56），100% 为厚瓷玻璃（~0.86）
-    val opacityNorm = (a.cardOpacity.coerceIn(40, 100) - 40f) / 60f
-    val cardAlpha = if (isLight) {
-        0.34f + opacityNorm * 0.50f
-    } else {
-        0.28f + opacityNorm * 0.48f
-    }
-    val barAlpha = if (isLight) {
-        0.42f + opacityNorm * 0.46f
-    } else {
-        0.36f + opacityNorm * 0.46f
-    }
+    // 液态玻璃的核心是「中心高度通透 + 边缘强折射弯折 + 锐利棱光」。
+    // 表面涂层必须很薄，否则白雾会盖住折射/色散，看起来就变成普通毛玻璃。
+    // 40%(0.02) → 默认 78%(约 0.22) → 100%(0.52)，用二次曲线让中段变化更明显。
+    val n = (a.cardOpacity.coerceIn(40, 100) - 40f) / 60f
+    val n2 = n * n
+    val cardAlpha = if (isLight) 0.02f + n2 * 0.50f else 0.02f + n2 * 0.46f
+    val barAlpha = if (isLight) 0.06f + n2 * 0.60f else 0.05f + n2 * 0.58f
     return LiquidTuning(
-        blur = a.liquidBlur.coerceIn(0, 24).dp,
+        // 卡片模糊刻意压低：模糊会抹掉折射细节，官方 ControlCenter 卡片甚至是 0 模糊
+        blur = (a.liquidBlur.coerceIn(0, 24) * 0.55f).dp,
+        barBlur = (a.liquidBlur.coerceIn(0, 24) * 0.95f).dp,
         refractionHeight = h,
-        refractionAmount = h * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.0f),
+        // 官方对话框/控制中心用 lens(24dp, 48dp)，即折射量约为高度的 2 倍，这里跟到 2.8 让弯折更明显
+        refractionAmount = h * (a.liquidRefraction.coerceIn(0, 100) / 100f * 2.8f),
         highlight = if (border <= 0f || a.liquidHighlight <= 0) {
             0f
         } else {
@@ -316,9 +322,9 @@ fun Modifier.inkCard(
                     } else {
                         {
                             com.kyant.backdrop.highlight.Highlight(
-                                width = (0.25f + 0.35f * t.highlight * t.borderStrength).dp,
-                                alpha = (0.16f + 0.52f * t.highlight * (0.4f + 0.6f * t.borderStrength))
-                                    .coerceAtMost(0.90f)
+                                width = (0.4f + 0.5f * t.highlight * t.borderStrength).dp,
+                                alpha = (0.30f + 0.65f * t.highlight * (0.4f + 0.6f * t.borderStrength))
+                                    .coerceAtMost(0.95f)
                             )
                         }
                     },
@@ -636,18 +642,47 @@ fun animationsEnabled(): Boolean {
 }
 
 /**
- * 按压回弹：按下缩到 [pressedScale]，松手弹簧回弹。
+ * 液态弹性按压：按下压扁到 [pressedScale]，松手用低阻尼弹簧回弹并轻微过冲，
+ * 形成液体那种「捏一下弹回来」的手感。不消费事件，可叠加在任意 clickable/Button 上。
+ */
+fun Modifier.liquidPress(
+    enabled: Boolean = true,
+    pressedScale: Float = 0.93f
+): Modifier = composed {
+    val anim = remember { Animatable(1f) }
+    val scope = rememberCoroutineScope()
+    val bouncy = spring<Float>(dampingRatio = 0.32f, stiffness = Spring.StiffnessMedium)
+    this
+        .graphicsLayer {
+            scaleX = anim.value
+            scaleY = anim.value
+        }
+        .pointerInput(enabled, pressedScale) {
+            if (!enabled) return@pointerInput
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                scope.launch {
+                    anim.animateTo(pressedScale, spring(0.9f, 1200f))
+                }
+                waitForUpOrCancellation()
+                scope.launch { anim.animateTo(1f, bouncy) }
+            }
+        }
+}
+
+/**
+ * 按压回弹：按下缩到 [pressedScale]，松手弹簧回弹（低阻尼，带轻微过冲的弹性）。
  * 传入与 clickable / Button 共用的 [interactionSource] 才能感知按压。
  */
 fun Modifier.pressScale(
     interactionSource: MutableInteractionSource,
-    pressedScale: Float = 0.96f
+    pressedScale: Float = 0.94f
 ): Modifier = composed {
     val pressed by interactionSource.collectIsPressedAsState()
     val on = animationsEnabled()
     val scale by animateFloatAsState(
         targetValue = if (pressed && on) pressedScale else 1f,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),
+        animationSpec = spring(dampingRatio = 0.32f, stiffness = Spring.StiffnessMedium),
         label = "pressScale"
     )
     graphicsLayer {

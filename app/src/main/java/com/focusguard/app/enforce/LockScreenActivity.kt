@@ -403,7 +403,10 @@ class LockScreenActivity : ComponentActivity() {
             //  锁机开始时点亮一次屏幕（setTurnScreenOn），此后不阻止系统息屏；
             //  息屏期间也不许任何自愈路径重新拉起界面（见 util/ScreenState）。
             // 防截屏/录屏：锁机页不进入系统截屏、第三方录屏与最近任务缩略图
-            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            // （CI 测试版允许录屏，便于演示）
+            if (!com.focusguard.app.util.ScreenCapturePolicy.allowCapture) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "设置窗口标志失败：${e.message}")
         }

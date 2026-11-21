@@ -181,7 +181,10 @@ class UnlockChallengeActivity : ComponentActivity() {
         // 旧注释说"绝不能加"是因为担心输入法附着闪退——现在答题 UI 是自绘键盘、
         // 不依赖系统输入法，该前提已不成立。
         try {
-            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            // CI 测试版允许录屏，正式版禁止
+            if (!com.focusguard.app.util.ScreenCapturePolicy.allowCapture) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "设置防截屏标志失败：${e.message}")
         }

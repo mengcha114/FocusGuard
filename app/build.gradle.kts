@@ -13,8 +13,16 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 200
-        versionName = "3.12.17"
+
+        // 录屏/截屏策略：CI 对分支构建传 -PallowScreenCapture=true（测试版允许录屏演示），
+        // 打 tag 的正式版不传该参数 → 默认 false → 禁止录屏与截屏。
+        buildConfigField(
+            "boolean",
+            "ALLOW_SCREEN_CAPTURE",
+            (providers.gradleProperty("allowScreenCapture").orNull ?: "false")
+        )
+        versionCode = 201
+        versionName = "3.12.18"
     }
 
     // 固定签名：CI 从 GitHub Secrets 恢复同一 PKCS12，密钥不进入公开仓库；

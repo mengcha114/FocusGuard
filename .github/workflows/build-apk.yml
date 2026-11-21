@@ -75,7 +75,8 @@ jobs:
       # 发布与测试通道都用 release 变体：
       # debug 包 debuggable=true、未压缩混淆，不能作为对外分发的安装包。
       - name: 构建 Release APK
-        run: ./gradlew assembleRelease --no-daemon
+        # 分支构建（CI 测试版）允许录屏/截屏，方便演示；打 tag 的正式版禁止录屏/截屏
+        run: ./gradlew assembleRelease --no-daemon ${{ !startsWith(github.ref, 'refs/tags/v') && '-PallowScreenCapture=true' || '' }}
 
       - name: 上传 APK 产物（学段版 / 通用版）
         uses: actions/upload-artifact@v4
