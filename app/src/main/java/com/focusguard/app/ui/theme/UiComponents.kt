@@ -256,7 +256,9 @@ internal fun liquidTuning(a: Appearance, isLight: Boolean = false): LiquidTuning
     // 表面厚度取官方区间（0.4~0.6 之间）：太薄会在亮背景上"消失"只剩描边，
     // 太厚又变成毛玻璃。默认 78% ≈ 0.42（浅色）/ 0.36（深色）。
     val cardAlpha = if (isLight) 0.10f + n * 0.50f else 0.08f + n * 0.44f
-    val barAlpha = if (isLight) 0.14f + n * 0.46f else 0.12f + n * 0.44f
+    // 底栏单独给更高的基底：它横跨在滚动内容上，太透会显得"糊"、字也压不住。
+    // 卡片仍保持通透（边缘折射要能看见），两者不再共用同一条曲线。
+    val barAlpha = if (isLight) 0.34f + n * 0.40f else 0.32f + n * 0.40f
     return LiquidTuning(
         blur = (a.liquidBlur.coerceIn(0, 24) * 0.70f).dp,
         barBlur = (a.liquidBlur.coerceIn(0, 24) * 1.00f).dp,
