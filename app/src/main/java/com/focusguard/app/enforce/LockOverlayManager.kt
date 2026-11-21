@@ -78,6 +78,71 @@ object LockOverlayManager {
     private var overlayRoot: FrameLayout? = null
     /** 本次是否由无障碍覆盖层承载（决定用哪种方式移除）。 */
     @Volatile private var attachedViaA11y = false
+
+    /** 上次把锁机层重新提到最前的时刻（节流，避免频繁重建窗口抢焦点）。 */
+    private var lastBumpAt = 0L
+
+    /**
+     * 外来悬浮窗看门狗。
+     *
+     * 国产 ROM 对 TYPE_ACCESSIBILITY_OVERLAY / TYPE_APPLICATION_OVERLAY 的层级处理
+     * 各不相同，单靠窗口类型压不住所有悬浮窗（语音助手、加速球、聊天小气泡）。
+     * 这里每秒检查一次：只要发现别的应用有覆盖层窗口，就把锁机窗口
+     * **remove + re-add** 一次——同类型窗口按加入顺序排 z-order，
+     * 重新加入即可重新回到最前，从而把对方压回去。
+     */
+    private val overlayWatchdog = object : Runnable {
+        override fun run() {
+            if (!isShowing) return
+            try {
+                val now = System.currentTimeMillis()
+                if (now - lastBumpAt >= 1_200L) {
+                    val foreign = com.focusguard.app.access.GuardAccessibilityService
+                        .instance?.foreignOverlayPackages().orEmpty()
+                    if (foreign.isNotEmpty()) {
+                        lastBumpAt = now
+                        bumpToTop(foreign)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "外来悬浮窗检测失败：${e.message}")
+            }
+            uiHandler.postDelayed(this, 1_000L)
+        }
+    }
+
+    /** 把锁机窗口重新加入窗口管理器，抢回最前层级；顺带交给顶置守卫处理来源应用。 */
+    private fun bumpToTop(foreign: List<String>) {
+        uiHandler.post {
+            try {
+                val root = overlayRoot ?: return@post
+                val wm = windowManager ?: return@post
+                val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
+                if (attachedViaA11y && a11y != null) {
+                    a11y.detachTopOverlay()
+                    attachedViaA11y = a11y.attachTopOverlay(root, buildLayoutParams())
+                    if (!attachedViaA11y) wm.addView(root, buildLayoutParams())
+                } else {
+                    wm.removeViewImmediate(root)
+                    wm.addView(root, buildLayoutParams())
+                }
+                root.requestFocus()
+                Log.d(TAG, "检测到外来悬浮窗 ${foreign}，已把锁机层重新置顶")
+            } catch (e: Exception) {
+                Log.w(TAG, "锁机层重新置顶失败：${e.message}")
+            }
+            // 交给既有顶置守卫：连续出现的会升级为冻结 / 强行停止
+            try {
+                val ctx = lastContext ?: return@post
+                foreign.forEach { pkg ->
+                    com.focusguard.app.enforce.LockTopGuard
+                        .onForeignAboveLock(ctx, pkg)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "顶置守卫处理失败：${e.message}")
+            }
+        }
+    }
     private var timeText: TextView? = null
     private var statusText: TextView? = null
     private var currentLockState: LockState? = null
@@ -1446,7 +1511,9 @@ object LockOverlayManager {
         }
         clockRunnable = runnable
         uiHandler.post(runnable)
-    }
+            uiHandler.removeCallbacks(overlayWatchdog)
+        uiHandler.postDelayed(overlayWatchdog, 1_000L)
+        }
 
     // ══════════════════════════════════════════════════════
     // 悬浮窗内答题模式
@@ -1516,6 +1583,7 @@ object LockOverlayManager {
         // 锁机时钟停掉（答题界面没有倒计时视图）
         clockRunnable?.let { uiHandler.removeCallbacks(it) }
         clockRunnable = null
+        uiHandler.removeCallbacks(overlayWatchdog)
         timeText = null
         statusText = null
         wallClockText = null

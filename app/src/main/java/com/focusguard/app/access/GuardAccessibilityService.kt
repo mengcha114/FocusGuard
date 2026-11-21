@@ -971,6 +971,36 @@ class GuardAccessibilityService : AccessibilityService() {
         topOverlayView = null
     }
 
+    /**
+     * 列出「可能盖在我们上面」的外来悬浮窗所属包名。
+     *
+     * 无障碍把普通应用的 TYPE_APPLICATION_OVERLAY 统一上报成 TYPE_SYSTEM，
+     * 因此这里把系统类窗口里不属于我们、也不属于系统底座（SystemUI/桌面/输入法/
+     * 键盘等）的包名挑出来，交给上层做「重新置顶 + 顶置守卫」处理。
+     */
+    fun foreignOverlayPackages(): List<String> = try {
+        val self = packageName
+        windows.orEmpty()
+            .filter { w ->
+                w.isVisible &&
+                    (w.type == AccessibilityWindowInfo.TYPE_SYSTEM ||
+                        w.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY)
+            }
+            .mapNotNull { w -> runCatching { w.root?.packageName?.toString() }.getOrNull() }
+            .filter { pkg ->
+                pkg.isNotBlank() &&
+                    pkg != self &&
+                    !pkg.startsWith("com.android.systemui") &&
+                    !pkg.contains("systemui") &&
+                    !pkg.contains("launcher") &&
+                    !pkg.contains("keyguard")
+            }
+            .distinct()
+    } catch (e: Exception) {
+        Log.w(TAG, "列举外来悬浮窗失败：${e.message}")
+        emptyList()
+    }
+
     /** 当前是否已用无障碍覆盖层承载锁机主体。 */
     val hasTopOverlay: Boolean get() = topOverlayView != null
 
