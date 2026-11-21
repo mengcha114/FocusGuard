@@ -697,7 +697,12 @@ class MainActivity : ComponentActivity() {
                                 }
                             } else {
                             NavigationBar(
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                // 跟随「底栏不透明度」设置：40%→0.76 / 78%→0.91 / 100%→1.0
+                                // 原来写死 0.92，用户调了液态底栏透明度后切到普通模式会失效
+                                containerColor = MaterialTheme.colorScheme.surface.copy(
+                                    alpha = 0.60f + 0.40f *
+                                        (liquidAppearance.barOpacity.coerceIn(40, 100) / 100f)
+                                ),
                                 tonalElevation = 0.dp
                             ) {
                                 NavigationBarItem(

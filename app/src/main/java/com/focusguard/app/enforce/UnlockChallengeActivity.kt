@@ -212,11 +212,17 @@ class UnlockChallengeActivity : ComponentActivity() {
             }
         }
 
+        // 背景跟随当前主题调色板：原来写死 #121212，浅色主题下进答题页会先闪一下黑
+        val themeBg = com.focusguard.app.ui.theme.FocusColors
+            .paletteForLockScreen(
+                com.focusguard.app.data.Settings(this).themeMode,
+                this
+            ).bg
         setContent {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF121212))
+                    .background(themeBg)
             ) {
                 UnlockChallengeScreen(
                     requiredCorrect = requiredCorrect,
