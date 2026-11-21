@@ -119,8 +119,10 @@ object LockOverlayManager {
 
     /** 探一次外来覆盖层；确认有东西盖在锁机页上方时才动手。 */
     private fun checkForeignOverlays() {
-        val foreign = com.focusguard.app.access.GuardAccessibilityService
-            .instance?.foreignOverlayPackages().orEmpty()
+        val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
+        // 遮盖补丁：不依赖谁抢到 z-order，直接把外来悬浮窗那块盖掉
+        runCatching { a11y?.syncForeignPatches(isShowing) }
+        val foreign = a11y?.foreignOverlayPackages().orEmpty()
         if (foreign.isEmpty()) {
             lastForeignKey = ""
             return
@@ -1628,6 +1630,9 @@ object LockOverlayManager {
         clockRunnable = runnable
         uiHandler.post(runnable)
             uiHandler.removeCallbacks(overlayWatchdog)
+        runCatching {
+            com.focusguard.app.access.GuardAccessibilityService.instance?.syncForeignPatches(false)
+        }
         uiHandler.postDelayed(overlayWatchdog, 1_000L)
         }
 

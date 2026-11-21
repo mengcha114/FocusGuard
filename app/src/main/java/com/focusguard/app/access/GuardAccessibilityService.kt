@@ -999,6 +999,10 @@ class GuardAccessibilityService : AccessibilityService() {
         }
     @Volatile private var scanInFlight = false
     @Volatile private var scannedForeign: List<String> = emptyList()
+    /** 外来覆盖层的屏幕矩形（同一次扫描里取，供遮盖补丁使用）。 */
+    @Volatile private var scannedRects: List<android.graphics.Rect> = emptyList()
+    /** 遮盖补丁窗口：bounds-key -> View */
+    private val patchViews = java.util.HashMap<String, android.view.View>()
     @Volatile private var scannedFocusedPkg: String? = null
     @Volatile private var scannedAt = 0L
 
@@ -1078,6 +1082,7 @@ class GuardAccessibilityService : AccessibilityService() {
                 try {
                     val self = packageName
                     val found = ArrayList<String>(4)
+                    val rects = ArrayList<android.graphics.Rect>(4)
                     // 焦点窗口也在这条线程上取：它同样要读 window.root（阻塞源）
                     var focusedPkg: String? = null
                     windows.orEmpty().forEach { w ->
@@ -1096,11 +1101,16 @@ class GuardAccessibilityService : AccessibilityService() {
                                 pkg.contains("keyguard")
                             ) return@forEach
                             found.add(pkg)
+                            // 顺便记下它的屏幕矩形（getBoundsInScreen 只是本地字段，不阻塞）
+                            val rc = android.graphics.Rect()
+                            w.getBoundsInScreen(rc)
+                            if (rc.width() > 8 && rc.height() > 8) rects.add(rc)
                         } catch (_: Throwable) {
                         }
                     }
                     scannedFocusedPkg = focusedPkg
                     scannedForeign = found.distinct()
+                    scannedRects = rects
                     scannedAt = System.currentTimeMillis()
                 } catch (_: Throwable) {
                 } finally {
@@ -1135,6 +1145,67 @@ class GuardAccessibilityService : AccessibilityService() {
     fun focusedWindowPackageCached(): String? {
         if (System.currentTimeMillis() - scannedAt > 1_000L) requestWindowScan()
         return scannedFocusedPkg
+    }
+
+    /**
+     * 遮盖补丁：在外来悬浮窗所在的矩形上盖一块 31 层的窗口。
+     *
+     * 为什么必须这么做：「重新置顶」只是抢一时的 z-order，对方一 re-add 又会上来，
+     * 所以用户会看到「有时有效、有时又被顶上来」。遮盖补丁位于
+     * TYPE_ACCESSIBILITY_OVERLAY(31) 层，而外来悬浮窗是(12)层，层级固定更高，
+     * 它再 re-add 也翻不到上面去；同时补丁本身可触摸，把那一块的点击也吃掉，
+     * 做到「看不见也点不到」。
+     *
+     * 必须在主线程调用（增删窗口）。
+     */
+    fun syncForeignPatches(active: Boolean) {
+        val wm = getSystemService(android.view.WindowManager::class.java) ?: return
+        if (!active) {
+            patchViews.values.forEach { v -> runCatching { wm.removeViewImmediate(v) } }
+            patchViews.clear()
+            return
+        }
+        val want = scannedRects.filter { it.width() > 8 && it.height() > 8 }
+        val wantKeys = want.map { "${it.left},${it.top},${it.right},${it.bottom}" }.toHashSet()
+        // 移除过期补丁
+        val iter = patchViews.keys.iterator()
+        while (iter.hasNext()) {
+            val k = iter.next()
+            if (k !in wantKeys) {
+                runCatching { patchViews[k]?.let { wm.removeViewImmediate(it) } }
+                iter.remove()
+            }
+        }
+        if (want.isEmpty()) return
+        // 补丁底色取锁机页背景色，视觉上像那块区域"被抹掉了"
+        val bg = runCatching {
+            com.focusguard.app.ui.theme.FocusColors.paletteForLockScreen(
+                com.focusguard.app.data.Settings(this).themeMode, this
+            ).bg
+        }.getOrNull()
+        val color = bg?.let { android.graphics.Color.argb(255, (it.red*255).toInt(), (it.green*255).toInt(), (it.blue*255).toInt()) }
+            ?: 0xFF0E1217.toInt()
+        for (r in want) {
+            val k = "${r.left},${r.top},${r.right},${r.bottom}"
+            if (patchViews.containsKey(k)) continue
+            val v = object : android.view.View(this) {
+                override fun onTouchEvent(event: android.view.MotionEvent): Boolean = true
+            }
+            v.setBackgroundColor(color)
+            val lp = android.view.WindowManager.LayoutParams(
+                r.width(), r.height(),
+                android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                android.graphics.PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                x = r.left
+                y = r.top
+            }
+            runCatching { wm.addView(v, lp) }.onSuccess { patchViews[k] = v }
+        }
     }
 
     /** 当前是否已用无障碍覆盖层承载锁机主体。 */
