@@ -76,6 +76,29 @@ object LockOverlayManager {
 
     private var windowManager: WindowManager? = null
     private var overlayRoot: FrameLayout? = null
+
+    /** 当前草稿纸窗口（独立窗口承载，看门狗重挂锁机页后要把它重新置顶）。 */
+    @Volatile private var scratchWindowView: View? = null
+
+    private fun scratchWindowParams(): WindowManager.LayoutParams =
+        WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+            },
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
+        }
     /** 本次是否由无障碍覆盖层承载（决定用哪种方式移除）。 */
     @Volatile private var attachedViaA11y = false
 
@@ -166,6 +189,21 @@ object LockOverlayManager {
                     Log.d(TAG, "检测到外来悬浮窗 $foreign，已把锁机层重新置顶（普通悬浮窗）")
                 }
                 refreshModeBadge()
+                // 锁机窗口刚被 remove+add 过，草稿纸会被压回下面；重新置顶
+                runCatching {
+                    val ctx2 = lastContext ?: return@runCatching
+                    scratchWindowView?.let { sv ->
+                        if (sv.isAttachedToWindow) {
+                            val wm2 = ctx2.getSystemService(android.view.WindowManager::class.java)
+                            runCatching { wm2?.removeViewImmediate(sv) }
+                            val a11y2 = com.focusguard.app.access.GuardAccessibilityService.instance
+                            val lp2 = scratchWindowParams()
+                            val ok = a11y2?.attachExtraOverlay(sv, lp2) == true ||
+                                runCatching { wm2?.addView(sv, lp2); true }.getOrDefault(false)
+                            Log.d(TAG, "看门狗重挂后草稿纸重新置顶：$ok")
+                        }
+                    }
+                }
                 root.requestFocus()
             } catch (e: Exception) {
                 Log.w(TAG, "锁机层重新置顶失败：${e.message}")
@@ -1985,6 +2023,7 @@ object LockOverlayManager {
                                 ?.removeViewImmediate(v)
                         }
                         scratchView = null
+                        scratchWindowView = null
                     }
                 }
             ).also {
@@ -1993,24 +2032,8 @@ object LockOverlayManager {
                 // 之前 addView 到 wrapper / rootView 都"点了没反应"（视图挂上去但不可见），
                 // 干脆用 WindowManager 单开一层，层级关系明确、不依赖父容器是否还在树里。
                 val wm = context.getSystemService(android.view.WindowManager::class.java)
-                val lp = android.view.WindowManager.LayoutParams(
-                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
-                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    } else {
-                        @Suppress("DEPRECATION")
-                        android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
-                    },
-                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                        android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                        android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-                    android.graphics.PixelFormat.TRANSLUCENT
-                ).apply {
-                    gravity = android.view.Gravity.TOP or android.view.Gravity.START
-                    x = 0
-                    y = 0
-                }
+                val lp = scratchWindowParams()
+                scratchWindowView = it
                 // 锁机主体可能已在 31 层：此时 12 层的窗口会被压在下面（看不见）
                 val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
                 val viaA11y = a11y?.attachExtraOverlay(it, lp) == true
@@ -2020,6 +2043,10 @@ object LockOverlayManager {
                 }
                 scratchViaA11y = viaA11y
                 Log.d(TAG, "草稿纸窗口挂载：$added（通道=${if (viaA11y) "31层无障碍" else "12层应用悬浮窗"}）")
+                if (!added) {
+                    // 兜底失败也要留痕，别静默
+                    Log.w(TAG, "草稿纸两种通道都挂载失败（31 层与 12 层）")
+                }
                 if (!added) {
                     // 兜底：退回加进当前根视图
                     val host = (scratchAnchor?.rootView as? android.view.ViewGroup) ?: wrapper

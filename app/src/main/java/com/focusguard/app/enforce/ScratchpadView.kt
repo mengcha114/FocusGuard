@@ -148,6 +148,17 @@ class ScratchpadOverlayView(
     fun resetViewport() = canvasView.resetViewport()
     private val hideToastRunnable = Runnable { toastView.visibility = View.GONE }
 
+    /** 草稿纸是独立窗口/全屏覆盖，返回键应当关掉它而不是什么都发生。 */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK &&
+            event.action == android.view.KeyEvent.ACTION_UP
+        ) {
+            onClose()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     private fun dp(v: Float): Int = (v * resources.displayMetrics.density).toInt()
     private fun dpf(v: Float): Float = v * resources.displayMetrics.density
     private fun argb(c: Int, alpha: Int): Int =
@@ -162,6 +173,11 @@ class ScratchpadOverlayView(
     init {
         isClickable = true
         isFocusable = true
+        // 自己是全屏草稿纸，别指望宿主传对尺寸（否则可能塌成 0 高、看起来"没反应"）
+        layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
 
         val cText = focus(palette.text)
         val cHaze = focus(palette.haze)
