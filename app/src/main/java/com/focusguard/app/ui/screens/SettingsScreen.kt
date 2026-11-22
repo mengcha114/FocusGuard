@@ -34,7 +34,8 @@ import com.focusguard.app.ui.theme.glassSurface
 @Composable
 fun SettingsScreen(
     onSave: () -> Unit,
-    onOpenTextKeywords: () -> Unit = {}
+    onOpenTextKeywords: () -> Unit = {},
+    onRequestPermission: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val settings = remember { Settings(context) }
@@ -129,7 +130,13 @@ fun SettingsScreen(
     // 内联在设置页里渲染可以完全绕开这条路径，同时天然继承当前主题。
     var showPermissions by remember { mutableStateOf(false) }
     if (showPermissions) {
-        com.focusguard.app.ui.screens.PermissionsScreen(onBack = { showPermissions = false })
+        // 直接用项目**原有**的权限页：它带 ON_RESUME 自动刷新、PermissionChecker
+        // 的双重判定，以及录屏/设备管理员等完整授权项。之前我另写了一份，
+        // 既重复又更弱（instance != null 判无障碍、返回后状态不刷新）。
+        com.focusguard.app.ui.screens.PermissionSetupScreen(
+            onFinish = { showPermissions = false },
+            onRequestPermission = onRequestPermission
+        )
         return
     }
 

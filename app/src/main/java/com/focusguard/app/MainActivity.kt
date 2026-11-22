@@ -886,7 +886,9 @@ class MainActivity : ComponentActivity() {
                                     onSave = { /* Save handled by screen */ },
                                     onOpenTextKeywords = {
                                         navController.navigate("text_keywords")
-                                    }
+                                    },
+                                    // 复用首次引导那套权限请求分发（含录屏/设备管理员）
+                                    onRequestPermission = { perm -> requestPermission(perm) }
                                 )
                             }
                             composable("text_keywords") {
