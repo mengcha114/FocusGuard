@@ -195,19 +195,19 @@ object LockPolicies {
         ),
         NO_UPDATE(
             "no_update", "禁止系统更新",
-            "锁机期间禁用系统更新，避免更新重启打断锁机", false
+            "锁机时禁用系统更新，避免更新重启打断锁机", false
         ),
         NO_UNINSTALL(
             "no_uninstall", "禁止卸载任何应用",
-            "锁机期间任何应用都卸不掉（包括你自己想删的）", false
+            "锁机时任何应用都卸不掉（包括你想删的）", false
         ),
         INPUT_LOCK(
             "input_lock", "输入法白名单",
-            "锁机期间只允许系统输入法，防第三方输入法自带的浏览器/面板绕过；只有小众输入法的机器慎用", false
+            "锁机时只允许系统输入法，防第三方输入法自带的浏览器绕过。小众输入法的机器慎用", false
         ),
         A11Y_LOCK(
             "a11y_lock", "无障碍白名单",
-            "锁机期间只允许本应用与系统无障碍服务运行，破解工具无法用无障碍自动点按来撤销 Shizuku 授权或关闭守护；需要 Dhizuku，且会暂时停用第三方无障碍服务。默认关", false
+            "锁机时只允许本应用与系统无障碍，第三方无障碍会被暂时停用。需要 Dhizuku。默认关", false
         ),
         SHIZUKU_LOCK(
             "shizuku_lock", "切断 shell 通道（Shizuku/调试）",
@@ -215,24 +215,24 @@ object LockPolicies {
         ),
         LOCK_NOW(
             "lock_now", "执法瞬间锁屏",
-            "AI 执法时先把屏幕灭掉，必须重新解锁设备才看到锁机界面", false, adminCapable = true
+            "AI 执法时先灭屏，需重新解锁设备才看到锁机界面", false, adminCapable = true
         ),
         CRACK_FREEZE(
             "crack_freeze", "冻结破解工具",
-            "锁机期间冻结「冰箱/小黑屋/Island/黑阈/Auto.js/自动点击器/多开分身/虚拟机/远程控制/修改器/游龙安全护盾」等能用来破解或自动答题的工具，并阻止卸载 Shizuku/Dhizuku；锁机开始后新出现的工具也会当场冻结，锁机结束自动解冻。默认开（需 Dhizuku 或 Shizuku）", true
+            "锁机时冻结冰箱/小黑屋/Island/Auto.js/自动点击器/分身/虚拟机/修改器/游龙等破解与自动答题工具，并阻止卸载 Shizuku/Dhizuku；锁机中新出现的也会冻，结束自动解冻。需 Dhizuku 或 Shizuku。默认开", true
         ),
         CRACK_HIDE(
             "crack_hide", "隐藏破解工具",
-            "比冻结更彻底：图标从桌面与搜索里消失；锁机结束自动恢复", false
+            "比冻结更彻底：图标从桌面与搜索里消失，锁机结束恢复", false
         ),
         KEYGUARD_LOCK(
             "keyguard_lock", "必须用密码解锁",
-            "锁机期间禁用指纹/人脸/智能锁（连蓝牙也不会自动解锁）：只能输密码，增加解锁成本；请先确认自己记得密码。默认关",
+            "锁机时禁用指纹/人脸/智能锁，只能输密码。请先确认记得密码。默认关",
             false, adminCapable = true
         ),
         CRACK_DETECT(
             "crack_detect", "破解环境检测（只留痕）",
-            "锁机期间检测 root / Xposed / 调试器并写入检测日志；不做拒绝解锁，避免误伤与死锁。默认关", false
+            "锁机时检测 root/Xposed/调试器并记日志，不阻止解锁。默认关", false
         )
     }
 
