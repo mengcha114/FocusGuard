@@ -63,7 +63,6 @@ class BootReceiver : BroadcastReceiver() {
 
         try {
             val lockState = LockState(app)
-            val usageRuleStore = UsageRuleStore.shared(app)
 
             // 0. 锁机仍在生效 → **最先**拉起锁机页：重启后用户最关心的就是它，
             //    服务启动/看门狗注册都是异步的，没必要排在前面等（此前排在最后，
@@ -96,7 +95,10 @@ class BootReceiver : BroadcastReceiver() {
             }
 
             // 1. 有锁机 / 硬封锁规则 / 「仅锁该软件」临时封锁 → 启动守护服务
-            val hasBlockRule = usageRuleStore.allRules().any { it.hardBlockMinutes != null }
+            // 放在锁机页已经挂出来之后再读规则：UsageRuleStore 首次会读盘，
+            // 别把它挡在「开机最快看到锁机页」的关键路径前面
+            val usageRuleStore = runCatching { UsageRuleStore.shared(app) }.getOrNull()
+            val hasBlockRule = usageRuleStore?.allRules()?.any { it.hardBlockMinutes != null } == true
             // 临时封锁（AI 执法下发）在重启后可能仍在有效期内，同样要守护；
             // 此前漏了这一项，重启后「仅锁该软件」直接失效。
             val hasTempBlock = runCatching {
