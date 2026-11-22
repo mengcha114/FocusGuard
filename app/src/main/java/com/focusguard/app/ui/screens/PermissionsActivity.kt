@@ -57,7 +57,16 @@ fun PermissionsScreen(onBack: () -> Unit) {
             else MaterialTheme.colorScheme.error
         )
 
-        items.forEach { item -> PermissionCard(item) { runCatching { item.open(context) }; refresh++ } }
+        items.forEach { item ->
+            PermissionCard(item) {
+                // 关键：跳系统设置前必须打「我们主动离开」标记，
+                // 否则 MainActivity.onUserLeaveHint 会把任务移掉 →
+                // 用户看到的就是"点一下闪退"，而且没有崩溃日志。
+                com.focusguard.app.util.LeaveGuard.markLeaving()
+                runCatching { item.open(context) }
+                refresh++
+            }
+        }
 
         // ── 增强能力：Shizuku / Dhizuku ─────────────────────
         Text(
@@ -86,17 +95,40 @@ fun PermissionsScreen(onBack: () -> Unit) {
             desc = "冻结/隐藏应用、系统级锁机。授权后必须重启应用才生效",
             actionText = "申请 Dhizuku 授权",
             onAction = {
-                // 用 Dhizuku 官方申请接口弹出授权对话框；之前只是启动它的 App，
-                // 用户看到的是"直接调用了软件"而不是授权页。
-                runCatching {
-                    com.focusguard.app.enhance.DhizukuEnhancer.requestPermission(context) { ok ->
-                        if (ok) refresh++
+                // Dhizuku 的 init/connect 是 Binder+ContentProvider 操作，
+                // 工程里明确规定「必须在后台线程，否则白屏 ANR」；
+                // 授权回调也可能在 Binder 线程，写 Compose 状态必须回主线程。
+                val main = android.os.Handler(android.os.Looper.getMainLooper())
+                Thread {
+                    val connected = runCatching {
+                        com.focusguard.app.enhance.DhizukuEnhancer.ensureReady(context)
+                    }.getOrDefault(false)
+                    if (!connected) {
+                        main.post {
+                            android.widget.Toast.makeText(
+                                context, "Dhizuku 未就绪：请先安装并激活它", android.widget.Toast.LENGTH_LONG
+                            ).show()
+                            openPkg(context, "com.rosan.dhizuku")
+                        }
+                        return@Thread
                     }
-                }.onFailure {
-                    // 没装 Dhizuku 时退回应用详情
-                    openPkg(context, "com.rosan.dhizuku")
-                }
-                refresh++
+                    main.post {
+                        runCatching {
+                            com.focusguard.app.enhance.DhizukuEnhancer.requestPermission(context) { ok ->
+                                main.post {
+                                    refresh++
+                                    if (ok) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "已授权，正在重置连接…授权后建议点「重启应用」",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            }
+                        }.onFailure { openPkg(context, "com.rosan.dhizuku") }
+                    }
+                }.start()
             },
             secondaryText = "重启应用",
             onSecondary = { restartApp(context) }
@@ -196,24 +228,34 @@ private fun EnhanceCard(
 
 /** 打开指定包；没装就跳到应用详情，避免点了没反应。 */
 private fun openPkg(context: Context, pkg: String) {
-    runCatching {
-        val launch = context.packageManager.getLaunchIntentForPackage(pkg)
-        val intent = launch ?: Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:$pkg")
-        )
-        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    val launch = runCatching { context.packageManager.getLaunchIntentForPackage(pkg) }.getOrNull()
+    val intent = launch ?: Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.parse("package:$pkg")
+    )
+    val ok = com.focusguard.app.util.LeaveGuard.open(context, intent)
+    if (!ok) {
+        android.widget.Toast.makeText(context, "打不开 $pkg（可能未安装）", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 
 /** 进程内重启界面 + 让 Dhizuku 连接缓存失效（与 MainActivity 里那套一致）。 */
 private fun restartApp(context: Context) {
+    // 锁机进行中不允许重启（否则等于给了一条绕过锁机的路）
+    val locked = runCatching {
+        com.focusguard.app.data.LockState(context).shouldBlockNow
+    }.getOrDefault(true)
+    if (locked) {
+        android.widget.Toast.makeText(context, "锁机进行中，结束后再重启", android.widget.Toast.LENGTH_SHORT).show()
+        return
+    }
     runCatching {
         com.focusguard.app.enhance.DhizukuEnhancer.resetForRetry()
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
             ?: return
-        context.startActivity(
-            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        com.focusguard.app.util.LeaveGuard.open(
+            context,
+            launch.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
         )
     }
 }
