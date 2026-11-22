@@ -86,6 +86,10 @@ fun PermissionsScreen(onBack: () -> Unit) {
                 openPkg(context, "moe.shizuku.privileged.api")
                 refresh++
             },
+            extraHint = runCatching {
+                if (com.focusguard.app.enhance.ShizukuEnhancer.isAvailable()) null
+                else "未检测到 Shizuku 服务。若你用的是第三方客户端（如 Shevery），需要它先在自己的应用里启动服务。"
+            }.getOrNull(),
             secondaryText = "打开 Shizuku",
             onSecondary = { openPkg(context, "moe.shizuku.privileged.api") }
         )
@@ -104,9 +108,15 @@ fun PermissionsScreen(onBack: () -> Unit) {
                         com.focusguard.app.enhance.DhizukuEnhancer.ensureReady(context)
                     }.getOrDefault(false)
                     if (!connected) {
+                        // 用 Enhancer 记录的真实原因，别硬编码"未安装"误导排查
+                        val why = com.focusguard.app.enhance.DhizukuEnhancer.lastError
+                            .ifBlank { "未知原因" }
+                        android.util.Log.w("PermissionsActivity", "Dhizuku 连接失败：$why")
                         main.post {
                             android.widget.Toast.makeText(
-                                context, "Dhizuku 未就绪：请先安装并激活它", android.widget.Toast.LENGTH_LONG
+                                context,
+                                "Dhizuku 连接失败：$why\n（若已激活，请在 Dhizuku「应用管理」里允许本应用）",
+                                android.widget.Toast.LENGTH_LONG
                             ).show()
                             openPkg(context, "com.rosan.dhizuku")
                         }
@@ -192,7 +202,8 @@ private fun EnhanceCard(
     actionText: String,
     onAction: () -> Unit,
     secondaryText: String,
-    onSecondary: () -> Unit
+    onSecondary: () -> Unit,
+    extraHint: String? = null
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -213,6 +224,10 @@ private fun EnhanceCard(
             }
             Spacer(Modifier.height(4.dp))
             Text(desc, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!extraHint.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(extraHint, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+            }
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onAction, shape = RoundedCornerShape(12.dp)) {
