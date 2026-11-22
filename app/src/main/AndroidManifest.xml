@@ -137,11 +137,6 @@
 
         <!-- 解锁挑战答题页（独立窗口，避免输入法触发锁机页顶回循环） -->
         <activity
-            android:name=".ui.screens.PermissionsActivity"
-            android:exported="false"
-            android:label="权限设置"
-            android:theme="@style/Theme.FocusGuard" />
-        <activity
             android:name=".enforce.UnlockChallengeActivity"
             android:exported="false"
             android:theme="@style/Theme.FocusGuard.Block"

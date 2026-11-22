@@ -467,6 +467,35 @@ private fun LogEntryItem(log: DetectionLog, context: Context) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f))
                     Spacer(Modifier.height(10.dp))
 
+                    // 崩溃堆栈很长，列表里看全了也没法选中复制，给一个复制按钮
+                    TextButton(
+                        onClick = {
+                            runCatching {
+                                val cm = context.getSystemService(
+                                    android.content.ClipboardManager::class.java
+                                )
+                                cm.setPrimaryClip(
+                                    android.content.ClipData.newPlainText(
+                                        "focusguard_log",
+                                        buildString {
+                                            append("时间：").append(log.getTimeFormatted()).append('\n')
+                                            append("判定：").append(label).append('\n')
+                                            append("置信度：").append((log.confidence * 100).toInt()).append("%\n")
+                                            append("来源：").append(log.source).append('\n')
+                                            append("动作：").append(log.action).append('\n')
+                                            append("应用：").append(log.appLabel).append('\n')
+                                            append("原因：\n").append(log.reason)
+                                        }
+                                    )
+                                )
+                                android.widget.Toast.makeText(
+                                    context, "已复制到剪贴板", android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)
+                    ) { Text("复制完整内容", fontSize = 12.sp) }
+
                     DetailRow("判定来源", sourceLabel)
                     if (log.appLabel.isNotBlank()) {
                         DetailRow("应用", log.appLabel)

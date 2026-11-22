@@ -19,7 +19,7 @@ object CrashRecorder {
 
     private const val TAG = "CrashRecorder"
     private const val FILE_NAME = "last_crash.txt"
-    private const val MAX_CHARS = 6000
+    private const val MAX_CHARS = 8000
 
     @Volatile private var installed = false
 
