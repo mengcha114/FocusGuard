@@ -1958,14 +1958,26 @@ object LockOverlayManager {
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
         }
-        var scratchView: ScratchpadOverlayView? = null
+        // 草稿纸直接用 Compose 版：与答题页完全同一套实现（缩放跟手、橡皮三档、
+        // 主题纸张、跨进出保留）。此前这里用的是另一份原生 View 实现，
+        // 两份分叉导致「悬浮窗里草稿纸不能用/和答题页不一样」。
+        var scratchView: View? = null
         val openScratchpad: () -> Unit = {
-            val view = scratchView ?: ScratchpadOverlayView(
-                context = context,
-                palette = p,
-                questionProvider = { challengeSession?.question?.question ?: session.question.question },
-                onClose = { scratchView?.visibility = View.GONE }
-            ).also {
+            val view = scratchView ?: com.focusguard.app.enforce.overlayComposeView(context) {
+                com.focusguard.app.ui.theme.FocusGuardTheme(
+                    themeMode = com.focusguard.app.ui.theme.ThemeState.mode,
+                    accentOverride = com.focusguard.app.ui.theme.ThemeState.accent
+                ) {
+                    com.focusguard.app.ui.components.ScratchpadOverlay(
+                        visible = true,
+                        state = com.focusguard.app.ui.components.rememberScratchpadState(),
+                        questionText = challengeSession?.question?.question
+                            ?: session.question.question,
+                        onClose = { scratchView?.visibility = View.GONE },
+                        palette = p
+                    )
+                }
+            }.also {
                 scratchView = it
                 wrapper.addView(
                     it,
@@ -1975,7 +1987,6 @@ object LockOverlayManager {
                     )
                 )
             }
-            view.refreshQuestionBanner()
             view.visibility = View.VISIBLE
             view.bringToFront()
         }
