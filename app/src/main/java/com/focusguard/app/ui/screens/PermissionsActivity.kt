@@ -70,9 +70,10 @@ fun PermissionsScreen(onBack: () -> Unit) {
             title = "Shizuku",
             granted = runCatching { com.focusguard.app.enhance.ShizukuEnhancer.isReady() }.getOrNull(),
             desc = "强停应用、授权 appops 等 shell 操作",
-            actionText = "授权 Shizuku",
+            actionText = "打开 Shizuku 授权",
             onAction = {
-                runCatching { com.focusguard.app.enhance.ShizukuEnhancer.requestPermission() }
+                // 只负责把用户送到 Shizuku 里启动服务；授权弹窗由 Shizuku 应用自己给，
+                // 这里直接调 requestPermission 在某些状态下会崩（实测闪退）。
                 openPkg(context, "moe.shizuku.privileged.api")
                 refresh++
             },
@@ -83,9 +84,18 @@ fun PermissionsScreen(onBack: () -> Unit) {
             title = "Dhizuku（设备所有者）",
             granted = runCatching { com.focusguard.app.enhance.DhizukuEnhancer.isReady() }.getOrNull(),
             desc = "冻结/隐藏应用、系统级锁机。授权后必须重启应用才生效",
-            actionText = "打开 Dhizuku 授权",
+            actionText = "申请 Dhizuku 授权",
             onAction = {
-                openPkg(context, "com.rosan.dhizuku")
+                // 用 Dhizuku 官方申请接口弹出授权对话框；之前只是启动它的 App，
+                // 用户看到的是"直接调用了软件"而不是授权页。
+                runCatching {
+                    com.focusguard.app.enhance.DhizukuEnhancer.requestPermission(context) { ok ->
+                        if (ok) refresh++
+                    }
+                }.onFailure {
+                    // 没装 Dhizuku 时退回应用详情
+                    openPkg(context, "com.rosan.dhizuku")
+                }
                 refresh++
             },
             secondaryText = "重启应用",

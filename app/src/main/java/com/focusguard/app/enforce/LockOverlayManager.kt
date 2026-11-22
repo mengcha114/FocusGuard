@@ -1968,18 +1968,55 @@ object LockOverlayManager {
                 context = context,
                 palette = p,
                 questionProvider = { challengeSession?.question?.question ?: session.question.question },
-                onClose = { scratchView?.visibility = View.GONE }
+                onClose = {
+                    val v = scratchView
+                    if (v != null) {
+                        runCatching {
+                            context.getSystemService(android.view.WindowManager::class.java)
+                                ?.removeViewImmediate(v)
+                        }.onFailure { v.visibility = View.GONE }
+                        scratchView = null
+                    }
+                }
             ).also {
                 scratchView = it
-                val host = (scratchAnchor?.rootView as? android.view.ViewGroup) ?: wrapper
-                host.addView(
-                    it,
-                    FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT
-                    )
-                )
-                Log.d(TAG, "草稿纸已挂载到 ${host.javaClass.simpleName}")
+                // 独立窗口而不是加进锁机窗口的视图树：
+                // 之前 addView 到 wrapper / rootView 都"点了没反应"（视图挂上去但不可见），
+                // 干脆用 WindowManager 单开一层，层级关系明确、不依赖父容器是否还在树里。
+                val wm = context.getSystemService(android.view.WindowManager::class.java)
+                val lp = android.view.WindowManager.LayoutParams(
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    } else {
+                        @Suppress("DEPRECATION")
+                        android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                    },
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                        android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                    android.graphics.PixelFormat.TRANSLUCENT
+                ).apply {
+                    gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                    x = 0
+                    y = 0
+                }
+                val added = runCatching { wm?.addView(it, lp); true }.getOrDefault(false)
+                Log.d(TAG, "草稿纸独立窗口挂载：$added")
+                if (!added) {
+                    // 兜底：退回加进当前根视图
+                    val host = (scratchAnchor?.rootView as? android.view.ViewGroup) ?: wrapper
+                    runCatching {
+                        host.addView(
+                            it,
+                            FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT
+                            )
+                        )
+                    }
+                }
             }
             view.refreshQuestionBanner()
             // 重新打开时复位缩放，否则会停在上次的放大倍数
