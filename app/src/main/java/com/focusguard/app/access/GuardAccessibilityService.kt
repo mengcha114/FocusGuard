@@ -276,20 +276,29 @@ class GuardAccessibilityService : AccessibilityService() {
             val host = event.packageName?.toString().orEmpty()
             if (com.focusguard.app.enforce.ForceStopHelper.isAppDetailHost(host)) {
                 val target = com.focusguard.app.enforce.ForceStopHelper.armedPackage()
-                val clicked = runCatching {
-                    windows.firstNotNullOfOrNull { w ->
-                        val owner = windowPkgCache[w.id] ?: return@firstNotNullOfOrNull null
-                        if (com.focusguard.app.enforce.ForceStopHelper.isAppDetailHost(owner)) {
-                            if (com.focusguard.app.enforce.ForceStopHelper.clickForceStop(w.root)) true else null
-                        } else {
-                            null
+                // 读 w.root + 遍历节点是阻塞调用，必须离开主线程
+                runBlockingAction("代点强行停止") {
+                    val clicked = runCatching {
+                        windows.firstNotNullOfOrNull { w ->
+                            val owner = windowPkgCache[w.id] ?: return@firstNotNullOfOrNull null
+                            if (com.focusguard.app.enforce.ForceStopHelper.isAppDetailHost(owner)) {
+                                if (com.focusguard.app.enforce.ForceStopHelper.clickForceStop(w.root)) {
+                                    true
+                                } else {
+                                    null
+                                }
+                            } else {
+                                null
+                            }
                         }
-                    } ?: false
-                }.getOrDefault(false)
-                if (clicked) {
-                    Log.d(TAG, "已代点强行停止：$target")
-                    // 把「应用信息」页收掉：否则用户回到桌面时会看到它（封锁页仍盖在最上层）
-                    runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
+                    }.getOrDefault(false)
+                    if (clicked) {
+                        Log.d(TAG, "已代点强行停止：$target")
+                        // 收掉「应用信息」页；全局动作回主线程
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
+                        }
+                    }
                 }
             }
         }
@@ -298,11 +307,14 @@ class GuardAccessibilityService : AccessibilityService() {
         if (com.focusguard.app.enforce.ProjectionConsent.isArmed()) {
             val consentPkg = event.packageName?.toString().orEmpty()
             if (com.focusguard.app.enforce.ProjectionConsent.isConsentHost(consentPkg)) {
-                val clicked = runCatching {
-                    com.focusguard.app.enforce.ProjectionConsent
-                        .clickPositive(rootInActiveWindow)
-                }.getOrDefault(false)
-                if (clicked) Log.d(TAG, "已自动点击屏幕录制授权弹窗")
+                // rootInActiveWindow 同样是阻塞调用，移出主线程
+                runBlockingAction("代点录屏授权") {
+                    val clicked = runCatching {
+                        com.focusguard.app.enforce.ProjectionConsent
+                            .clickPositive(rootInActiveWindow)
+                    }.getOrDefault(false)
+                    if (clicked) Log.d(TAG, "已自动点击屏幕录制授权弹窗")
+                }
             }
         }
 
@@ -998,10 +1010,47 @@ class GuardAccessibilityService : AccessibilityService() {
      * 但它又确实是唯一能拿到「别的应用窗口属于哪个包」的途径。
      * 折中：把扫描整个丢到这条独立线程上执行，主线程只读扫描结果。
      */
-    private val windowScanExecutor = java.util.concurrent.Executors
+    /**
+     * 阻塞型无障碍操作线程。
+     *
+     * `window.root` / `rootInActiveWindow` 都是跨进程调用，别的应用卡死时会同步卡住
+     * 调用线程（同文件注释记录过实测 254 秒 ANR）。所以代点「强行停止」「屏幕录制授权」
+     * 这类需要读节点的操作一律丢到这条线程，绝不留在无障碍回调（主线程）里。
+     */
+    private val actionExecutor = java.util.concurrent.Executors
+        .newSingleThreadExecutor { r ->
+            Thread(r, "a11y-blocking-action").apply { isDaemon = true }
+        }
+    @Volatile private var actionInFlight = false
+
+    private fun runBlockingAction(what: String, block: () -> Unit) {
+        if (actionInFlight) return
+        actionInFlight = true
+        try {
+            actionExecutor.execute {
+                try {
+                    block()
+                } catch (_: Throwable) {
+                } finally {
+                    actionInFlight = false
+                }
+            }
+        } catch (_: Throwable) {
+            actionInFlight = false
+            Log.w(TAG, "阻塞操作提交失败：$what")
+        }
+    }
+
+    private fun newScanExecutor() = java.util.concurrent.Executors
         .newSingleThreadExecutor { r ->
             Thread(r, "a11y-window-scan").apply { isDaemon = true }
         }
+
+    /** 可重建：某次扫描被别的应用 `root` 卡死时，整条线程会被永久占住，必须能换一条。 */
+    @Volatile private var windowScanExecutor = newScanExecutor()
+    @Volatile private var scanStartedAt = 0L
+    /** 超过这个时间就当扫描卡死，重建线程（单线程 executor 卡住等于检测永久失效）。 */
+    private val scanTimeoutMs = 8_000L
     @Volatile private var scanInFlight = false
     @Volatile private var scannedForeign: List<String> = emptyList()
     /** 外来覆盖层的屏幕矩形（同一次扫描里取，供遮盖补丁使用）。 */
@@ -1112,8 +1161,22 @@ class GuardAccessibilityService : AccessibilityService() {
      * 扫描在进行中时直接跳过，避免堆积。
      */
     private fun requestWindowScan() {
-        if (scanInFlight) return
+        if (scanInFlight) {
+            val started = scanStartedAt
+            if (started != 0L && System.currentTimeMillis() - started > scanTimeoutMs) {
+                // 单线程 executor 被阻塞调用占死时，scanInFlight 永远不会复位，
+                // 后续所有扫描都会被静默跳过 → 外来悬浮窗检测（看门狗/补丁/顶置）全部失效。
+                Log.w(TAG, "窗口扫描超时 ${scanTimeoutMs}ms，重建扫描线程")
+                runCatching { windowScanExecutor.shutdownNow() }
+                windowScanExecutor = newScanExecutor()
+                scanInFlight = false
+                scanStartedAt = 0L
+            } else {
+                return
+            }
+        }
         scanInFlight = true
+        scanStartedAt = System.currentTimeMillis()
         try {
             windowScanExecutor.execute {
                 try {
@@ -1164,6 +1227,7 @@ class GuardAccessibilityService : AccessibilityService() {
                 } catch (_: Throwable) {
                 } finally {
                     scanInFlight = false
+                    scanStartedAt = 0L
                 }
             }
         } catch (_: Throwable) {
