@@ -80,6 +80,26 @@ object LockOverlayManager {
     /** 当前草稿纸窗口（独立窗口承载，看门狗重挂锁机页后要把它重新置顶）。 */
     @Volatile private var scratchWindowView: View? = null
 
+    /**
+     * 统一移除草稿纸窗口。
+     *
+     * 它是个独立的 WindowManager 窗口，不属于锁机窗口的视图树，
+     * 所以 cleanup/旋转/重进答题都必须显式移除，否则会残留在屏幕上
+     * （半透明画布盖住桌面），而且旧实例还持有全部笔迹，内存只增不减。
+     */
+    private fun removeScratchWindow() {
+        val v = scratchWindowView ?: return
+        runCatching {
+            com.focusguard.app.access.GuardAccessibilityService.instance?.removeExtraOverlay(v)
+        }
+        runCatching {
+            lastContext?.getSystemService(android.view.WindowManager::class.java)
+                ?.removeViewImmediate(v)
+        }
+        scratchWindowView = null
+        Log.d(TAG, "草稿纸窗口已移除")
+    }
+
     private fun scratchWindowParams(): WindowManager.LayoutParams =
         WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -1696,6 +1716,7 @@ object LockOverlayManager {
         clockRunnable = runnable
         uiHandler.post(runnable)
             uiHandler.removeCallbacks(overlayWatchdog)
+        removeScratchWindow()
         runCatching {
             com.focusguard.app.access.GuardAccessibilityService.instance?.syncForeignPatches(false)
         }
@@ -1779,6 +1800,8 @@ object LockOverlayManager {
 
         isChallengeMode = true
         val session = challengeSession ?: return
+        // 重建前先清掉上一轮可能残留的草稿纸窗口（独立窗口不会随 root 一起移除）
+        removeScratchWindow()
         root.removeAllViews()
         // 防御：构建失败（异常）时回退锁机主界面，绝不把用户锁死在空白里
         val challengeView = try {
