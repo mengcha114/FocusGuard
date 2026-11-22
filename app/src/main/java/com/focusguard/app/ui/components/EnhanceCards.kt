@@ -583,13 +583,34 @@ fun ShizukuStatusCard() {
         )
         if (!adminActive) {
             OutlinedButton(onClick = {
-                runCatching {
-                    com.focusguard.app.util.LeaveGuard.markLeaving()
+                if (com.focusguard.app.enhance.AdminEnhancer.isActive(context)) {
+                    android.widget.Toast.makeText(
+                        context, "已经是设备管理员了", android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    return@OutlinedButton
+                }
+                com.focusguard.app.util.LeaveGuard.markLeaving()
+                val ok = runCatching {
                     context.startActivity(
                         com.focusguard.app.enhance.AdminEnhancer
                             .activationIntent(context)
-                            .apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                     )
+                    true
+                }.getOrDefault(false)
+                if (!ok) {
+                    // 有些 ROM 不响应 ACTION_ADD_DEVICE_ADMIN，退回系统「设备管理器应用」页
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                    android.widget.Toast.makeText(
+                        context,
+                        "系统未响应激活请求，已跳到安全设置，请手动进入「设备管理器应用」",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
                 }
             }) { Text("申请设备管理员") }
         }

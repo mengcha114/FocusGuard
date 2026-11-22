@@ -211,7 +211,7 @@ object LockPolicies {
         ),
         SHIZUKU_LOCK(
             "shizuku_lock", "切断 shell 通道（Shizuku/调试）",
-            "游龙这类工具自带无线调试配对（Stellar），不需要 Shizuku 也能拿到 shell，一条 am force-stop 就能破锁且系统不会自动拉起。锁机开始时关闭 USB/无线调试、清掉它已跑起来的 shell 守护进程并挂起 Shizuku；锁机结束自动恢复开关。需要 Dhizuku，会暂时停用依赖 Shizuku/无线调试的应用。默认开", true
+            "锁机时关闭 USB/无线调试、停掉已起的 shell 守护进程并挂起 Shizuku，锁机结束自动恢复。需要 Dhizuku，期间依赖 Shizuku/无线调试的应用会暂时不可用。默认开", true
         ),
         LOCK_NOW(
             "lock_now", "执法瞬间锁屏",
