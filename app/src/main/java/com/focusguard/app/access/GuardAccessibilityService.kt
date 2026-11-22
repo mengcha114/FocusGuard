@@ -1109,7 +1109,19 @@ class GuardAccessibilityService : AccessibilityService() {
                             // 顺便记下它的屏幕矩形（getBoundsInScreen 只是本地字段，不阻塞）
                             val rc = android.graphics.Rect()
                             w.getBoundsInScreen(rc)
-                            if (rc.width() > 8 && rc.height() > 8) rects.add(rc)
+                            // 补丁矩形还要更严：状态栏/导航栏/输入法这类系统条一旦被盖上，
+                            // 就会在屏幕边缘出现白边（用户截图里的左右两条白边正是它）。
+                            val dm = resources.displayMetrics
+                            val sw = dm.widthPixels
+                            val sh = dm.heightPixels
+                            val wRatio = rc.width().toFloat() / sw
+                            val hRatio = rc.height().toFloat() / sh
+                            val thinBar = hRatio < 0.09f || wRatio < 0.16f   // 状态栏/导航条/侧条
+                            val almostFull = wRatio > 0.92f && hRatio > 0.92f // 全屏系统窗口
+                            val isIme = pkg.contains("inputmethod", true) || pkg.contains("ime", true)
+                            if (!thinBar && !almostFull && !isIme &&
+                                rc.width() > 8 && rc.height() > 8
+                            ) rects.add(rc)
                         } catch (_: Throwable) {
                         }
                     }
@@ -1188,8 +1200,16 @@ class GuardAccessibilityService : AccessibilityService() {
                 com.focusguard.app.data.Settings(this).themeMode, this
             ).bg
         }.getOrNull()
-        val color = bg?.let { android.graphics.Color.argb(255, (it.red*255).toInt(), (it.green*255).toInt(), (it.blue*255).toInt()) }
-            ?: 0xFF0E1217.toInt()
+        // 底色不用主题 bg（浅色主题下接近纯白，边缘看起来就是"白边"），
+        // 改用锁机页卡片底色并留一点透明，和卡片融为一体
+        val color = if (bg != null) {
+            android.graphics.Color.argb(
+                236,
+                ((bg.red + 0.03f).coerceIn(0f, 1f) * 255).toInt(),
+                ((bg.green + 0.03f).coerceIn(0f, 1f) * 255).toInt(),
+                ((bg.blue + 0.03f).coerceIn(0f, 1f) * 255).toInt()
+            )
+        } else 0xF20E1217.toInt()
         for (r in want) {
             val k = "${r.left},${r.top},${r.right},${r.bottom}"
             if (patchViews.containsKey(k)) continue
@@ -1209,7 +1229,10 @@ class GuardAccessibilityService : AccessibilityService() {
                 x = r.left
                 y = r.top
             }
-            runCatching { wm.addView(v, lp) }.onSuccess { patchViews[k] = v }
+            runCatching { wm.addView(v, lp) }.onSuccess {
+                patchViews[k] = v
+                Log.d(TAG, "遮盖补丁已加：$k")
+            }
         }
     }
 

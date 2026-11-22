@@ -139,7 +139,8 @@
         <activity
             android:name=".ui.screens.PermissionsActivity"
             android:exported="false"
-            android:label="权限设置" />
+            android:label="权限设置"
+            android:theme="@style/Theme.FocusGuard" />
         <activity
             android:name=".enforce.UnlockChallengeActivity"
             android:exported="false"

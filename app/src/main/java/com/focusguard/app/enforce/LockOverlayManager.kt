@@ -121,7 +121,10 @@ object LockOverlayManager {
     private fun checkForeignOverlays() {
         val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
         // 遮盖补丁：不依赖谁抢到 z-order，直接把外来悬浮窗那块盖掉
-        runCatching { a11y?.syncForeignPatches(isShowing) }
+        // 只有当锁机主体还不是无障碍覆盖层时才需要补丁：
+        // 我们已经在 31 层时本来就压着应用悬浮窗(12 层)，再多盖一层只会
+        // 误伤系统窗口、在屏幕边缘留下色块（用户看到的白边就是它）。
+        runCatching { a11y?.syncForeignPatches(isShowing && !attachedViaA11y) }
         val foreign = a11y?.foreignOverlayPackages().orEmpty()
         if (foreign.isEmpty()) {
             lastForeignKey = ""

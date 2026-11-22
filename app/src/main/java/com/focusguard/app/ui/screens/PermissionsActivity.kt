@@ -31,7 +31,31 @@ import androidx.compose.ui.unit.sp
 class PermissionsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { PermissionsScreen(onBack = { finish() }) }
+        // 整体兜底：这个页面要读一堆系统状态（AppOps / 通知 / Dhizuku 等），
+        // 任一项在个别 ROM 上抛异常就会整页闪退。这里捕获并写进检测日志，
+        // 下次能直接从日志看到原因，而不是只看到"闪退了"。
+        runCatching {
+            setContent {
+                com.focusguard.app.ui.theme.FocusGuardTheme {
+                    PermissionsScreen(onBack = { finish() })
+                }
+            }
+        }.onFailure { e ->
+            android.util.Log.e("PermissionsActivity", "权限页渲染失败", e)
+            runCatching {
+                com.focusguard.app.data.LogStore(applicationContext).addLog(
+                    com.focusguard.app.data.DetectionLog(
+                        classification = "NEUTRAL",
+                        confidence = 1f,
+                        reason = "权限页打开失败：${e.javaClass.simpleName}: ${e.message}",
+                        action = "NONE",
+                        source = "ERROR",
+                        appLabel = "权限设置"
+                    )
+                )
+            }
+            finish()
+        }
     }
 }
 
@@ -143,6 +167,21 @@ private fun PermissionCard(row: PermRow) {
 }
 
 private fun buildRows(
+    context: android.content.Context,
+    onChanged: () -> Unit
+): List<PermRow> = runCatching { buildRowsInner(context, onChanged) }.getOrElse { e ->
+    android.util.Log.w("PermissionsActivity", "读取权限状态失败：${e.message}")
+    listOf(
+        PermRow(
+            title = "权限状态读取失败",
+            desc = "${e.javaClass.simpleName}: ${e.message}",
+            granted = false,
+            action = null
+        )
+    )
+}
+
+private fun buildRowsInner(
     context: android.content.Context,
     onChanged: () -> Unit
 ): List<PermRow> {
@@ -264,7 +303,8 @@ private fun buildRows(
         )
     }
 
-    val shizuku = com.focusguard.app.enhance.ShizukuEnhancer.isReady()
+    val shizuku = runCatching { com.focusguard.app.enhance.ShizukuEnhancer.isReady() }
+        .getOrDefault(false)
     rows += PermRow(
         title = "Shizuku（shell 通道）",
         desc = "用于强停应用、授权 appops、改成自动时间等需要 shell 的操作。",
@@ -273,7 +313,8 @@ private fun buildRows(
         action = null
     )
 
-    val dhizuku = com.focusguard.app.enhance.DhizukuEnhancer.isReady()
+    val dhizuku = runCatching { com.focusguard.app.enhance.DhizukuEnhancer.isReady() }
+        .getOrDefault(false)
     rows += PermRow(
         title = "Dhizuku（设备所有者）",
         desc = "用于冻结/隐藏应用、LockTask 系统级锁机等设备所有者能力。",
