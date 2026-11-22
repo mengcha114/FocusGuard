@@ -291,7 +291,7 @@ class GuardAccessibilityService : AccessibilityService() {
                                 null
                             }
                         }
-                    }.getOrDefault(false)
+                    }.getOrDefault(false) == true
                     if (clicked) {
                         Log.d(TAG, "已代点强行停止：$target")
                         // 收掉「应用信息」页；全局动作回主线程
@@ -1049,6 +1049,16 @@ class GuardAccessibilityService : AccessibilityService() {
     /** 可重建：某次扫描被别的应用 `root` 卡死时，整条线程会被永久占住，必须能换一条。 */
     @Volatile private var windowScanExecutor = newScanExecutor()
     @Volatile private var scanStartedAt = 0L
+    /**
+     * 扫描代次。
+     *
+     * 超时重建线程后，旧任务解除阻塞时仍会跑 finally 并把 scanInFlight 清掉、
+     * 还会用**旧快照**覆写 scannedForeign/scannedRects。那会让新扫描被重复并发、
+     * 让下一次卡死永远无法自愈（scanStartedAt 被清零），甚至把陈旧结果当成新结果
+     * （看门狗据此误冻结应用 / 遮盖补丁盖错矩形）。
+     * 只有"当前代"的任务才允许发布结果与复位标志。
+     */
+    private val scanGen = java.util.concurrent.atomic.AtomicInteger(0)
     /** 超过这个时间就当扫描卡死，重建线程（单线程 executor 卡住等于检测永久失效）。 */
     private val scanTimeoutMs = 8_000L
     @Volatile private var scanInFlight = false
@@ -1169,6 +1179,8 @@ class GuardAccessibilityService : AccessibilityService() {
                 Log.w(TAG, "窗口扫描超时 ${scanTimeoutMs}ms，重建扫描线程")
                 runCatching { windowScanExecutor.shutdownNow() }
                 windowScanExecutor = newScanExecutor()
+                // 让旧任务彻底失效：它之后的 finally 不再能改状态
+                scanGen.incrementAndGet()
                 scanInFlight = false
                 scanStartedAt = 0L
             } else {
@@ -1177,6 +1189,7 @@ class GuardAccessibilityService : AccessibilityService() {
         }
         scanInFlight = true
         scanStartedAt = System.currentTimeMillis()
+        val myGen = scanGen.get()
         try {
             windowScanExecutor.execute {
                 try {
@@ -1220,14 +1233,20 @@ class GuardAccessibilityService : AccessibilityService() {
                         } catch (_: Throwable) {
                         }
                     }
-                    scannedFocusedPkg = focusedPkg
-                    scannedForeign = found.distinct()
-                    scannedRects = rects
-                    scannedAt = System.currentTimeMillis()
+                    // 只有当前代才能发布结果，避免幽灵任务写回陈旧数据
+                    if (scanGen.get() == myGen) {
+                        scannedFocusedPkg = focusedPkg
+                        scannedForeign = found.distinct()
+                        scannedRects = rects
+                        scannedAt = System.currentTimeMillis()
+                    }
                 } catch (_: Throwable) {
                 } finally {
-                    scanInFlight = false
-                    scanStartedAt = 0L
+                    // 幽灵任务（代次已被递增）不得复位标志，否则会让新扫描并发
+                    if (scanGen.get() == myGen) {
+                        scanInFlight = false
+                        scanStartedAt = 0L
+                    }
                 }
             }
         } catch (_: Throwable) {
