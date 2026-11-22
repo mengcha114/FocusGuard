@@ -81,6 +81,14 @@ object LockOverlayManager {
     @Volatile private var scratchWindowView: View? = null
 
     /**
+     * 打开草稿纸的回调。
+     *
+     * 答题页的「提交答案/换一题」那一排在另一个函数里构建，拿不到
+     * buildChallengeContent 的局部 lambda，所以用一个字段把它暴露出去。
+     */
+    @Volatile private var openScratchpadFn: (() -> Unit)? = null
+
+    /**
      * 统一移除草稿纸窗口。
      *
      * 它是个独立的 WindowManager 窗口，不属于锁机窗口的视图树，
@@ -1717,6 +1725,7 @@ object LockOverlayManager {
         uiHandler.post(runnable)
             uiHandler.removeCallbacks(overlayWatchdog)
         removeScratchWindow()
+        openScratchpadFn = null
         runCatching {
             com.focusguard.app.access.GuardAccessibilityService.instance?.syncForeignPatches(false)
         }
@@ -2087,6 +2096,8 @@ object LockOverlayManager {
             view.visibility = View.VISIBLE
             view.bringToFront()
         }
+        // 暴露给底部操作区（另一个函数）使用
+        openScratchpadFn = openScratchpad
 
         // ── 标题 + 草稿纸 + 进度 ──────────────────────────────
         container.addView(
@@ -2821,7 +2832,7 @@ object LockOverlayManager {
                         }
                         setOnClickListener {
                             Log.d(TAG, "点击草稿纸按钮")
-                            openScratchpad()
+                            openScratchpadFn?.invoke()
                         }
                     },
                     LinearLayout.LayoutParams(dp(context, 52), dp(context, 50)).apply {
