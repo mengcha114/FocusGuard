@@ -175,6 +175,8 @@ class FocusGuardApp : Application() {
         runCatching { installCrashHandler() }
         runCatching { com.focusguard.app.util.StartupTrace.mark(this, "app.crashHandler") }
         runCatching { createNotificationChannel() }
+        // 全局崩溃留痕：闪退后下次启动能在「检测日志」里看到堆栈
+        runCatching { com.focusguard.app.util.CrashRecorder.install(this) }
         // 防破解默认值迁移：老用户已开过防破解的，补上「锁机期间挂起 Shizuku」
         runCatching { com.focusguard.app.enhance.LockPolicies.migrateShizukuLock(this) }
         // 主线程卡顿探针：ANR 不会产生崩溃日志，靠它留下证据

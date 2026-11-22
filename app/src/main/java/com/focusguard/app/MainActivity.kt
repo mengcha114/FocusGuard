@@ -224,6 +224,22 @@ class MainActivity : ComponentActivity() {
         // 写入，后续启动不再重启，避免循环。
         migrateExistingDhizukuAuthorizationOnce()
 
+        // ── 上次崩溃留痕：写进检测日志，用户/开发者都能直接看到堆栈 ──
+        runCatching {
+            com.focusguard.app.util.CrashRecorder.takePending(this)?.let { stack ->
+                com.focusguard.app.data.LogStore(this).addLog(
+                    com.focusguard.app.data.DetectionLog(
+                        classification = "NEUTRAL",
+                        confidence = 1f,
+                        reason = "上次运行时崩溃（点开看堆栈）：\n$stack",
+                        action = "NONE",
+                        source = "ERROR",
+                        appLabel = ""
+                    )
+                )
+            }
+        }
+
         // ── 锁机状态检查（放在 setContent 之前）──────────
         // 用户通过切出等方式绕过锁机后再打开应用时，必须立刻回到锁机页。
         // 早期实现在这里没有任何处理，导致主界面与锁机页互相拉起 → 闪退。
