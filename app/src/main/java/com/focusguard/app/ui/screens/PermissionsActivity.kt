@@ -36,12 +36,12 @@ fun PermissionsScreen(onBack: () -> Unit) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "权限状态",
-                fontSize = 26.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -56,41 +56,155 @@ fun PermissionsScreen(onBack: () -> Unit) {
             color = if (missing == 0) MaterialTheme.colorScheme.tertiary
             else MaterialTheme.colorScheme.error
         )
-        Spacer(Modifier.height(6.dp))
 
-        items.forEach { item ->
-            Text(
-                item.title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Text(
-                when (item.granted) {
-                    true -> "已开启"
-                    false -> "未开启"
-                    null -> "状态未知"
-                } + " · " + item.desc,
-                fontSize = 11.sp,
-                color = if (item.granted == true) MaterialTheme.colorScheme.tertiary
-                else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (item.granted != true) {
-                TextButton(
-                    onClick = {
-                        runCatching { item.open(context) }
-                        refresh++
-                    },
-                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)
-                ) { Text("去开启", fontSize = 12.sp) }
-            }
-            Spacer(Modifier.height(4.dp))
-        }
+        items.forEach { item -> PermissionCard(item) { runCatching { item.open(context) }; refresh++ } }
 
-        Spacer(Modifier.height(8.dp))
+        // ── 增强能力：Shizuku / Dhizuku ─────────────────────
+        Text(
+            "增强能力（可选）",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        EnhanceCard(
+            title = "Shizuku",
+            granted = runCatching { com.focusguard.app.enhance.ShizukuEnhancer.isReady() }.getOrNull(),
+            desc = "强停应用、授权 appops 等 shell 操作",
+            actionText = "授权 Shizuku",
+            onAction = {
+                runCatching { com.focusguard.app.enhance.ShizukuEnhancer.requestPermission() }
+                openPkg(context, "moe.shizuku.privileged.api")
+                refresh++
+            },
+            secondaryText = "打开 Shizuku",
+            onSecondary = { openPkg(context, "moe.shizuku.privileged.api") }
+        )
+        EnhanceCard(
+            title = "Dhizuku（设备所有者）",
+            granted = runCatching { com.focusguard.app.enhance.DhizukuEnhancer.isReady() }.getOrNull(),
+            desc = "冻结/隐藏应用、系统级锁机。授权后必须重启应用才生效",
+            actionText = "打开 Dhizuku 授权",
+            onAction = {
+                openPkg(context, "com.rosan.dhizuku")
+                refresh++
+            },
+            secondaryText = "重启应用",
+            onSecondary = { restartApp(context) }
+        )
+        Text(
+            "Dhizuku 授权完成后请点「重启应用」：Dhizuku 的连接在进程启动时就建立，重启前不会生效。",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
         TextButton(onClick = { refresh++ }, modifier = Modifier.align(Alignment.End)) {
             Text("刷新", fontSize = 12.sp)
         }
+    }
+}
+
+@Composable
+private fun PermissionCard(item: PermItem, onOpen: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = com.focusguard.app.ui.theme.cardContainer(),
+        tonalElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(item.title, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    when (item.granted) {
+                        true -> "已开启"
+                        false -> "未开启"
+                        null -> "未知"
+                    },
+                    fontSize = 12.sp,
+                    color = if (item.granted == true) MaterialTheme.colorScheme.tertiary
+                    else MaterialTheme.colorScheme.error
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                item.desc,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (item.granted != true) {
+                TextButton(
+                    onClick = onOpen,
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp)
+                ) { Text("去开启", fontSize = 12.sp) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EnhanceCard(
+    title: String,
+    granted: Boolean?,
+    desc: String,
+    actionText: String,
+    onAction: () -> Unit,
+    secondaryText: String,
+    onSecondary: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = com.focusguard.app.ui.theme.cardContainer(),
+        tonalElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (granted == true) "已就绪" else if (granted == false) "未授权" else "未知",
+                    fontSize = 12.sp,
+                    color = if (granted == true) MaterialTheme.colorScheme.tertiary
+                    else MaterialTheme.colorScheme.error
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(desc, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onAction, shape = RoundedCornerShape(12.dp)) {
+                    Text(actionText, fontSize = 12.sp)
+                }
+                OutlinedButton(onClick = onSecondary, shape = RoundedCornerShape(12.dp)) {
+                    Text(secondaryText, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+/** 打开指定包；没装就跳到应用详情，避免点了没反应。 */
+private fun openPkg(context: Context, pkg: String) {
+    runCatching {
+        val launch = context.packageManager.getLaunchIntentForPackage(pkg)
+        val intent = launch ?: Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:$pkg")
+        )
+        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+}
+
+/** 进程内重启界面 + 让 Dhizuku 连接缓存失效（与 MainActivity 里那套一致）。 */
+private fun restartApp(context: Context) {
+    runCatching {
+        com.focusguard.app.enhance.DhizukuEnhancer.resetForRetry()
+        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            ?: return
+        context.startActivity(
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        )
     }
 }
 
