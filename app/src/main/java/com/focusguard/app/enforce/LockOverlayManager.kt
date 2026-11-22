@@ -1923,7 +1923,10 @@ object LockOverlayManager {
             // 顶部留状态栏高度：窗口铺满全屏（无缺口），内容不被刘海压住（横屏降级）
             setPadding(
                 dp(context, if (landscape) 16 else 20),
-                dp(context, if (landscape) 20 else 52),
+                // 顶部必须 >90dp：root.dispatchTouchEvent 会吞掉 rawY<90dp 的
+                // 触摸（防下拉通知栏），标题行里的「✎ 草稿纸」若落在死区里
+                // 点击永远到不了 —— 这是三次"点了没反应"的真正原因。
+                dp(context, if (landscape) 96 else 104),
                 dp(context, if (landscape) 16 else 20),
                 dp(context, 20)
             )
@@ -1963,6 +1966,7 @@ object LockOverlayManager {
         var scratchView: ScratchpadOverlayView? = null
         // 挂载锚点：用触发点击的按钮所在根视图，而不是可能已被 re-parent 的 wrapper
         var scratchAnchor: View? = null
+        var scratchViaA11y = false
         val openScratchpad: () -> Unit = {
             val view = scratchView ?: ScratchpadOverlayView(
                 context = context,
@@ -1971,16 +1975,14 @@ object LockOverlayManager {
                 onClose = {
                     val v = scratchView
                     if (v != null) {
-                        val removed = runCatching {
+                        // 两条通道都试一遍：只走一条时另一种挂载方式下 ✕ 会失效
+                        runCatching {
                             com.focusguard.app.access.GuardAccessibilityService.instance
                                 ?.removeExtraOverlay(v)
-                            true
-                        }.getOrDefault(false)
-                        if (!removed) {
-                            runCatching {
-                                context.getSystemService(android.view.WindowManager::class.java)
-                                    ?.removeViewImmediate(v)
-                            }.onFailure { v.visibility = View.GONE }
+                        }
+                        runCatching {
+                            context.getSystemService(android.view.WindowManager::class.java)
+                                ?.removeViewImmediate(v)
                         }
                         scratchView = null
                     }
@@ -2011,11 +2013,13 @@ object LockOverlayManager {
                 }
                 // 锁机主体可能已在 31 层：此时 12 层的窗口会被压在下面（看不见）
                 val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
-                var added = a11y?.attachExtraOverlay(it, lp) == true
+                val viaA11y = a11y?.attachExtraOverlay(it, lp) == true
+                var added = viaA11y
                 if (!added) {
                     added = runCatching { wm?.addView(it, lp); true }.getOrDefault(false)
                 }
-                Log.d(TAG, "草稿纸窗口挂载：$added（31 层=${a11y != null && added}）")
+                scratchViaA11y = viaA11y
+                Log.d(TAG, "草稿纸窗口挂载：$added（通道=${if (viaA11y) "31层无障碍" else "12层应用悬浮窗"}）")
                 if (!added) {
                     // 兜底：退回加进当前根视图
                     val host = (scratchAnchor?.rootView as? android.view.ViewGroup) ?: wrapper
