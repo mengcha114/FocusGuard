@@ -124,6 +124,15 @@ fun SettingsScreen(
     var builtinPrivacyHints by remember { mutableStateOf(settings.builtinPrivacyHints) }
     var sensitiveApps by remember { mutableStateOf(settings.sensitiveApps) }
 
+    // 权限设置改为**内联渲染**，不再另开 Activity。
+    // 之前点开就退出（疑似 Activity 启动/生命周期问题，且拿不到堆栈），
+    // 内联在设置页里渲染可以完全绕开这条路径，同时天然继承当前主题。
+    var showPermissions by remember { mutableStateOf(false) }
+    if (showPermissions) {
+        com.focusguard.app.ui.screens.PermissionsScreen(onBack = { showPermissions = false })
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -137,18 +146,9 @@ fun SettingsScreen(
         ) {
             Text("设置", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
             Spacer(Modifier.weight(1f))
-            TextButton(
-                onClick = {
-                    runCatching {
-                        context.startActivity(
-                            android.content.Intent(
-                                context,
-                                com.focusguard.app.ui.screens.PermissionsActivity::class.java
-                            )
-                        )
-                    }
-                }
-            ) { Text("权限设置", fontSize = 13.sp) }
+            TextButton(onClick = { showPermissions = true }) {
+                Text("权限设置", fontSize = 13.sp)
+            }
         }
         // 版本号就放在标题下：排查"改了但没效果"时第一眼就能确认装的是哪一版
         Text(
