@@ -1961,6 +1961,8 @@ object LockOverlayManager {
         // 退回原生草稿纸实现：在悬浮窗里塞 ComposeView 会崩（实测点开就闪退），
         // 之前用 ScratchpadOverlayView 是能正常用的。
         var scratchView: ScratchpadOverlayView? = null
+        // 挂载锚点：用触发点击的按钮所在根视图，而不是可能已被 re-parent 的 wrapper
+        var scratchAnchor: View? = null
         val openScratchpad: () -> Unit = {
             val view = scratchView ?: ScratchpadOverlayView(
                 context = context,
@@ -1969,13 +1971,15 @@ object LockOverlayManager {
                 onClose = { scratchView?.visibility = View.GONE }
             ).also {
                 scratchView = it
-                wrapper.addView(
+                val host = (scratchAnchor?.rootView as? android.view.ViewGroup) ?: wrapper
+                host.addView(
                     it,
                     FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.MATCH_PARENT
                     )
                 )
+                Log.d(TAG, "草稿纸已挂载到 ${host.javaClass.simpleName}")
             }
             view.refreshQuestionBanner()
             // 重新打开时复位缩放，否则会停在上次的放大倍数
@@ -2010,7 +2014,11 @@ object LockOverlayManager {
                             setStroke(dp(context, 1), Color.parseColor(tint(p.accent, 0x8C)))
                         }
                         setPadding(dp(context, 10), dp(context, 5), dp(context, 10), dp(context, 5))
-                        setOnClickListener { openScratchpad() }
+                        scratchAnchor = this
+                        setOnClickListener {
+                            Log.d(TAG, "点击草稿纸按钮")
+                            openScratchpad()
+                        }
                     },
                     LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
