@@ -300,14 +300,17 @@ class LockScreenActivity : ComponentActivity() {
                     appCtx.startActivity(intent)
                     return
                 }
-                // 统一走 Activity 答题（Compose 版）。
-                // 悬浮窗内那套自绘 View 答题界面观感差、草稿纸也不好用；
-                // 为了不让悬浮窗(31 层)盖住 Activity，先撤下悬浮窗并压制重显。
+                // 回到悬浮窗内答题：撤悬浮窗再拉 Activity 会有明显空档，
+                // 且两次窗口切换就是用户反馈的"答题和锁机切换卡顿严重"。
+                // 悬浮窗内答题零切换、零露桌，草稿纸已按 Compose 版重做。
                 val required = if (lockState.unlockStrength == 2) 5 else 1
-                LockOverlayManager.beginActivityChallenge()
-                LockOverlayManager.hideNow()
-                UnlockChallengeActivity.markLaunchPending()
-                UnlockChallengeActivity.show(appCtx, required)
+                LockOverlayManager.enterChallengeMode(
+                    context = appCtx,
+                    lockState = lockState,
+                    requiredCorrect = required,
+                    forPause = false,
+                    onPassed = { forPause -> handleOverlayChallengePassed(appCtx, forPause) }
+                )
             } catch (e: Exception) {
                 // 强度 3 的 Activity 未能拉起时收回让位标志，守护立即接管，
                 // 防止 flag 悬挂导致守护永久放行。

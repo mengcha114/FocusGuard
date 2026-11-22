@@ -1,5 +1,9 @@
 package com.focusguard.app.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -93,6 +97,10 @@ fun OverlayWhitelistDialog(
                     Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(modifier = Modifier.size(22.dp))
                     }
+                } else if (filtered.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                        Text("没有匹配的应用", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 } else {
                     LazyColumn(Modifier.heightIn(max = 380.dp)) {
                         items(filtered, key = { it.pkg }) { app ->
@@ -100,14 +108,39 @@ fun OverlayWhitelistDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                        else androidx.compose.ui.graphics.Color.Transparent
+                                    )
                                     .clickable {
                                         picked = if (checked) picked - app.pkg else picked + app.pkg
                                     }
-                                    .padding(vertical = 6.dp),
+                                    .padding(horizontal = 10.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Checkbox(checked = checked, onCheckedChange = null)
-                                Spacer(Modifier.width(8.dp))
+                                // 自绘勾选圈：系统 Checkbox 观感和整体不一致
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (checked) MaterialTheme.colorScheme.primary
+                                            else androidx.compose.ui.graphics.Color.Transparent
+                                        )
+                                        .border(
+                                            1.5.dp,
+                                            if (checked) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                            CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (checked) {
+                                        Text("✓", fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimary)
+                                    }
+                                }
+                                Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(app.label, fontSize = 14.sp)
                                     Text(
@@ -123,12 +156,21 @@ fun OverlayWhitelistDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(picked) }) { Text("保存") }
+            androidx.compose.foundation.layout.Row {
+                TextButton(onClick = { picked = emptySet() }) { Text("清空", fontSize = 13.sp) }
+                Spacer(Modifier.width(4.dp))
+                Button(
+                    onClick = { onConfirm(picked) },
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("保存", fontSize = 14.sp) }
+            }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
         },
-        containerColor = dialogGlassColor(MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp)
+        // 与 App 的卡片语言一致：卡片底色 + 22dp 圆角，不用系统默认对话框外观
+        containerColor = com.focusguard.app.ui.theme.cardContainer(),
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 0.dp
     )
 }
