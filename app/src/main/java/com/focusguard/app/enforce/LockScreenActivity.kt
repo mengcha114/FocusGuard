@@ -653,10 +653,10 @@ class LockScreenActivity : ComponentActivity() {
             .shouldPreferActivity(applicationContext) ||
             com.focusguard.app.enhance.DhizukuEnhancer
                 .isReadinessUnknown(applicationContext)
-        if (!preferActivity &&
-            !com.focusguard.app.enhance.LockTaskEnhancer.lockTaskActive &&
-            LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing
-        ) {
+        // 悬浮窗优先：Activity 页面挡不住下拉通知栏、也挡不住侧滑返回
+        // （用户实测「普通锁机页面防破解没有，可以随意看通知和侧滑」）。
+        // 悬浮窗是 31 层、可获焦、带 FLAG_WATCH_OUTSIDE_TOUCH，才能真正吞掉这些手势。
+        if (LockOverlayManager.canShow(this) && !LockOverlayManager.isShowing) {
             try {
                 LockOverlayManager.show(
                     context = this,
@@ -674,6 +674,7 @@ class LockScreenActivity : ComponentActivity() {
             }
         }
 
+        if (false) preferActivity // 保留变量避免未使用告警（逻辑已改为悬浮窗优先）
         Thread {
             // 后台完成 Dhizuku 连接与 DPM 策略配置。手机刚重启时 Dhizuku
             // Provider 可能晚几秒启动；历史上成功使用过 Dhizuku 的设备在此

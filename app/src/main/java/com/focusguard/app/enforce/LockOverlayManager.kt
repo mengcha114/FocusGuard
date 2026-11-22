@@ -1385,6 +1385,49 @@ object LockOverlayManager {
             ).apply { topMargin = dp(context, 14) }
         )
 
+        // ── 草稿纸入口（锁机页也能直接用；之前只有答题页有） ──────
+        var lockScratch: View? = null
+        stack.addView(
+            TextView(context).apply {
+                text = "✎ 草稿纸"
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(Color.parseColor(tint(p.accent, 0xF0)))
+                setPadding(0, dp(context, 8), 0, dp(context, 8))
+                setOnClickListener {
+                    val v = lockScratch ?: overlayComposeView(context) {
+                        com.focusguard.app.ui.theme.FocusGuardTheme(
+                            themeMode = com.focusguard.app.ui.theme.ThemeState.mode,
+                            accentOverride = com.focusguard.app.ui.theme.ThemeState.accent
+                        ) {
+                            com.focusguard.app.ui.components.ScratchpadOverlay(
+                                visible = true,
+                                state = com.focusguard.app.ui.components.rememberScratchpadState(),
+                                questionText = "",
+                                onClose = { lockScratch?.visibility = View.GONE },
+                                palette = p
+                            )
+                        }
+                    }.also {
+                        lockScratch = it
+                        root.addView(
+                            it,
+                            FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT
+                            )
+                        )
+                    }
+                    v.visibility = View.VISIBLE
+                    v.bringToFront()
+                }
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
         // ── 底部操作区：全宽按钮（贴近拇指区域，视觉更稳） ──────
         if (lockState.unlockStrength < 4) {
             stack.addView(
