@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,7 +37,10 @@ class PermissionsActivity : ComponentActivity() {
         // 下次能直接从日志看到原因，而不是只看到"闪退了"。
         runCatching {
             setContent {
-                com.focusguard.app.ui.theme.FocusGuardTheme {
+                com.focusguard.app.ui.theme.FocusGuardTheme(
+                    themeMode = com.focusguard.app.ui.theme.ThemeState.mode,
+                    accentOverride = com.focusguard.app.ui.theme.ThemeState.accent
+                ) {
                     PermissionsScreen(onBack = { finish() })
                 }
             }
@@ -79,24 +83,29 @@ fun PermissionsScreen(onBack: () -> Unit) {
         shizukuReady = com.focusguard.app.enhance.ShizukuEnhancer.isReady()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("权限设置", fontSize = 17.sp, fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    TextButton(onClick = onBack) { Text("返回", fontSize = 13.sp) }
-                }
-            )
-        }
-    ) { pad ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(pad)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // 标题区与设置页一致：大标题 + 返回文字按钮，不用系统 TopAppBar
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            Text(
+                "权限设置",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onBack) { Text("返回", fontSize = 13.sp) }
+        }
+        run {
             Text(
                 "锁机与检测依赖下面这些授权。系统或管理器可能在清理、更新后自动收回，建议定期回来检查。",
                 fontSize = 12.sp,
@@ -141,8 +150,9 @@ fun PermissionsScreen(onBack: () -> Unit) {
 @Composable
 private fun PermissionCard(row: PermRow) {
     Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        shape = RoundedCornerShape(16.dp),
+        color = com.focusguard.app.ui.theme.cardContainer(),
+        tonalElevation = 0.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(14.dp)) {

@@ -690,8 +690,10 @@ fun SettingsScreen(
             com.focusguard.app.ui.components.LockHardeningCard()
         }
 
-        // ── 高级增强：Shizuku / Dhizuku（未授权时整块隐藏） ──────────
-        if (shellEnhanced) {
+        // ── 高级增强：Shizuku / Dhizuku ──────────────────────────
+        // 以前未授权时整块隐藏，结果用户根本找不到"去哪里授权"。
+        // 现在无条件显示，卡片里给出授权/修复入口。
+        run {
             SettingsSection(
                 title = "Shizuku / Dhizuku 增强",
                 icon = Icons.Default.Security,
@@ -699,6 +701,42 @@ fun SettingsScreen(
                 summary = "状态 / 一键修复"
             ) {
                 com.focusguard.app.ui.components.ShizukuStatusCard()
+                if (!shizukuReady) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                // 拉起 Shizuku 授权弹窗；Shizuku 未运行时需先手动打开它
+                                runCatching {
+                                    com.focusguard.app.enhance.ShizukuEnhancer.requestPermission()
+                                }
+                                enhCheckKey++
+                            },
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("授权 Shizuku", fontSize = 13.sp) }
+                        OutlinedButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        context.packageManager
+                                            .getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                                            ?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            ?: android.content.Intent(
+                                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                android.net.Uri.parse("package:moe.shizuku.privileged.api")
+                                            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("打开 Shizuku", fontSize = 13.sp) }
+                    }
+                    Text(
+                        "Shizuku 需要先在它自己的应用里启动（无线调试或 adb），之后回到这里点授权。Dhizuku 则在 Dhizuku 应用内授予设备所有者。",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             // ── 系统级锁机（Dhizuku Lock Task）状态 ──────────────
