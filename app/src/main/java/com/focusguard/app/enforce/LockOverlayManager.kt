@@ -1410,7 +1410,9 @@ object LockOverlayManager {
                         }
                     }.also {
                         lockScratch = it
-                        root.addView(
+                        // 挂到悬浮窗的真正根布局上（overlayRoot），
+                        // 不能加到 container：它是竖向 LinearLayout，塞满屏子视图会打乱布局
+                        overlayRoot?.addView(
                             it,
                             FrameLayout.LayoutParams(
                                 FrameLayout.LayoutParams.MATCH_PARENT,
