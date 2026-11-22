@@ -1984,10 +1984,7 @@ object LockOverlayManager {
             // 顶部留状态栏高度：窗口铺满全屏（无缺口），内容不被刘海压住（横屏降级）
             setPadding(
                 dp(context, if (landscape) 16 else 20),
-                // 顶部必须 >90dp：root.dispatchTouchEvent 会吞掉 rawY<90dp 的
-                // 触摸（防下拉通知栏），标题行里的「✎ 草稿纸」若落在死区里
-                // 点击永远到不了 —— 这是三次"点了没反应"的真正原因。
-                dp(context, if (landscape) 96 else 104),
+                dp(context, if (landscape) 20 else 52),
                 dp(context, if (landscape) 16 else 20),
                 dp(context, 20)
             )
@@ -2104,29 +2101,6 @@ object LockOverlayManager {
                         typeface = Typeface.DEFAULT_BOLD
                     },
                     LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                )
-                addView(
-                    TextView(context).apply {
-                        text = "✎ 草稿纸"
-                        textSize = 12f
-                        typeface = Typeface.DEFAULT_BOLD
-                        setTextColor(Color.parseColor(com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
-                        background = GradientDrawable().apply {
-                            cornerRadius = dp(context, 10).toFloat()
-                            setColor(Color.parseColor(tint(p.accent, 0x26)))
-                            setStroke(dp(context, 1), Color.parseColor(tint(p.accent, 0x8C)))
-                        }
-                        setPadding(dp(context, 10), dp(context, 5), dp(context, 10), dp(context, 5))
-                        scratchAnchor = this
-                        setOnClickListener {
-                            Log.d(TAG, "点击草稿纸按钮")
-                            openScratchpad()
-                        }
-                    },
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { marginEnd = dp(context, 10) }
                 )
                 addView(
                     TextView(context).apply {
@@ -2827,10 +2801,34 @@ object LockOverlayManager {
             matchWrap()
         )
 
-        // 提交 + 换一题
+        // 提交 + 换一题 + 草稿纸
+        // 草稿纸放在底部操作区：这里是拇指区、也远离顶部 90dp 触摸死区
+        // （root.dispatchTouchEvent 会吞掉 rawY<90dp 的触摸，防止下拉通知栏）。
         box.addView(
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
+                addView(
+                    Button(context).apply {
+                        text = "✎"
+                        textSize = 16f
+                        isAllCaps = false
+                        setTextColor(android.graphics.Color.parseColor(
+                            com.focusguard.app.ui.theme.FocusColors.hex(p.accent)))
+                        background = GradientDrawable().apply {
+                            cornerRadius = dp(context, 10).toFloat()
+                            setColor(android.graphics.Color.parseColor(tint(p.accent, 0x26)))
+                            setStroke(dp(context, 1), android.graphics.Color.parseColor(tint(p.accent, 0x8C)))
+                        }
+                        setOnClickListener {
+                            Log.d(TAG, "点击草稿纸按钮")
+                            openScratchpad()
+                        }
+                    },
+                    LinearLayout.LayoutParams(dp(context, 52), dp(context, 50)).apply {
+                        marginStart = dp(context, 3)
+                        topMargin = dp(context, 8)
+                    }
+                )
                 addView(
                     Button(context).apply {
                         text = "提交答案"

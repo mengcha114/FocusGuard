@@ -83,7 +83,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
             onAction = {
                 // 只负责把用户送到 Shizuku 里启动服务；授权弹窗由 Shizuku 应用自己给，
                 // 这里直接调 requestPermission 在某些状态下会崩（实测闪退）。
-                openPkg(context, "moe.shizuku.privileged.api")
+                openShizukuClient(context)
                 refresh++
             },
             extraHint = runCatching {
@@ -91,7 +91,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
                 else "未检测到 Shizuku 服务。若你用的是第三方客户端（如 Shevery），需要它先在自己的应用里启动服务。"
             }.getOrNull(),
             secondaryText = "打开 Shizuku",
-            onSecondary = { openPkg(context, "moe.shizuku.privileged.api") }
+            onSecondary = { openShizukuClient(context) }
         )
         EnhanceCard(
             title = "Dhizuku（设备所有者）",
@@ -239,6 +239,58 @@ private fun EnhanceCard(
             }
         }
     }
+}
+
+/**
+ * 找出本机的 Shizuku 客户端（官方或第三方实现）。
+ *
+ * 之前写死 `moe.shizuku.privileged.api`，用户用第三方客户端（如 Shevery）时
+ * 既打不开也发现不了。这里按「声明了 shizuku 相关权限或 provider」识别。
+ */
+private fun findShizukuClients(context: Context): List<String> {
+    val out = ArrayList<String>(2)
+    runCatching {
+        val pm = context.packageManager
+        @Suppress("DEPRECATION")
+        val apps = pm.getInstalledApplications(0)
+        for (app in apps) {
+            val pn = app.packageName ?: continue
+            if (pn == context.packageName) continue
+            val perms = runCatching {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(pn, android.content.pm.PackageManager.GET_PERMISSIONS)
+                    .requestedPermissions
+            }.getOrNull()
+            val declaresApi = perms?.any { it.contains("shizuku", true) } == true
+            val hasProvider = runCatching {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(pn, android.content.pm.PackageManager.GET_PROVIDERS)
+                    .providers?.any { it.authority?.contains("shizuku", true) == true } == true
+            }.getOrDefault(false)
+            if (declaresApi || hasProvider) out.add(pn)
+        }
+    }
+    // 官方优先
+    out.sortBy { if (it == "moe.shizuku.privileged.api") 0 else 1 }
+    return out
+}
+
+/** 打开 Shizuku 客户端（官方或第三方）；都没有就给提示。 */
+private fun openShizukuClient(context: Context) {
+    val clients = findShizukuClients(context)
+    val target = clients.firstOrNull()
+    if (target != null) {
+        openPkg(context, target)
+        if (target != "moe.shizuku.privileged.api") {
+            android.widget.Toast.makeText(
+                context, "已打开第三方 Shizuku 客户端：$target", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+        return
+    }
+    android.widget.Toast.makeText(
+        context, "没找到 Shizuku 客户端，请先安装 Shizuku 或其第三方实现", android.widget.Toast.LENGTH_LONG
+    ).show()
 }
 
 /** 打开指定包；没装就跳到应用详情，避免点了没反应。 */
