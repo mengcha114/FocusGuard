@@ -1971,10 +1971,17 @@ object LockOverlayManager {
                 onClose = {
                     val v = scratchView
                     if (v != null) {
-                        runCatching {
-                            context.getSystemService(android.view.WindowManager::class.java)
-                                ?.removeViewImmediate(v)
-                        }.onFailure { v.visibility = View.GONE }
+                        val removed = runCatching {
+                            com.focusguard.app.access.GuardAccessibilityService.instance
+                                ?.removeExtraOverlay(v)
+                            true
+                        }.getOrDefault(false)
+                        if (!removed) {
+                            runCatching {
+                                context.getSystemService(android.view.WindowManager::class.java)
+                                    ?.removeViewImmediate(v)
+                            }.onFailure { v.visibility = View.GONE }
+                        }
                         scratchView = null
                     }
                 }
@@ -2002,8 +2009,13 @@ object LockOverlayManager {
                     x = 0
                     y = 0
                 }
-                val added = runCatching { wm?.addView(it, lp); true }.getOrDefault(false)
-                Log.d(TAG, "草稿纸独立窗口挂载：$added")
+                // 锁机主体可能已在 31 层：此时 12 层的窗口会被压在下面（看不见）
+                val a11y = com.focusguard.app.access.GuardAccessibilityService.instance
+                var added = a11y?.attachExtraOverlay(it, lp) == true
+                if (!added) {
+                    added = runCatching { wm?.addView(it, lp); true }.getOrDefault(false)
+                }
+                Log.d(TAG, "草稿纸窗口挂载：$added（31 层=${a11y != null && added}）")
                 if (!added) {
                     // 兜底：退回加进当前根视图
                     val host = (scratchAnchor?.rootView as? android.view.ViewGroup) ?: wrapper

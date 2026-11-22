@@ -1025,6 +1025,38 @@ class GuardAccessibilityService : AccessibilityService() {
      *
      * 失败（服务被中断、系统拒绝）时返回 false，调用方自动回退普通悬浮窗。
      */
+    /** 额外覆盖窗口（草稿纸这类需要盖在锁机页之上的内容），与锁机主体互不影响。 */
+    private val extraOverlays =
+        java.util.Collections.synchronizedMap(java.util.HashMap<android.view.View, Boolean>())
+
+    /**
+     * 以 TYPE_ACCESSIBILITY_OVERLAY(31 层) 挂一个额外窗口。
+     *
+     * 锁机主体在 31 层时，用 TYPE_APPLICATION_OVERLAY(12 层) 开的窗口会**在它下面**，
+     * 表现为"点了没反应"。所以草稿纸必须走同一条高层通道。
+     */
+    fun attachExtraOverlay(
+        view: android.view.View,
+        params: android.view.WindowManager.LayoutParams
+    ): Boolean = try {
+        val overlayParams = android.view.WindowManager.LayoutParams().apply { copyFrom(params) }
+        overlayParams.type = android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+        getSystemService(android.view.WindowManager::class.java).addView(view, overlayParams)
+        extraOverlays[view] = true
+        Log.d(TAG, "额外覆盖层已挂载（31 层）")
+        true
+    } catch (e: Throwable) {
+        Log.w(TAG, "额外覆盖层挂载失败：${e.javaClass.simpleName}: ${e.message}")
+        false
+    }
+
+    fun removeExtraOverlay(view: android.view.View) {
+        runCatching {
+            getSystemService(android.view.WindowManager::class.java).removeViewImmediate(view)
+        }
+        extraOverlays.remove(view)
+    }
+
     fun attachTopOverlay(
         view: android.view.View,
         params: android.view.WindowManager.LayoutParams
