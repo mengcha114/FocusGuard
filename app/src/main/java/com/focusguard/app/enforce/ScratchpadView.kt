@@ -17,6 +17,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.focusguard.app.ui.theme.FocusColors
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -139,6 +140,12 @@ class ScratchpadOverlayView(
     private val toolButtons = LinkedHashMap<Tool, TextView>()
     private val colorDots = ArrayList<View>()
     private val widthDots = ArrayList<TextView>()
+    /** 橡皮尺寸三档（半径 dp）：小/中/大 */
+    private val eraserSizesDp = floatArrayOf(12f, 24f, 40f)
+    private var eraserSizeIdx = 1
+    private fun eraserRadiusPx(): Float = dpf(eraserSizesDp[eraserSizeIdx.coerceIn(0, 2)])
+    /** 重新打开草稿纸时把视口复位，否则会停在上次的 6x 上。 */
+    fun resetViewport() = canvasView.resetViewport()
     private val hideToastRunnable = Runnable { toastView.visibility = View.GONE }
 
     private fun dp(v: Float): Int = (v * resources.displayMetrics.density).toInt()
@@ -307,7 +314,7 @@ class ScratchpadOverlayView(
                 textSize = 11f
                 gravity = Gravity.CENTER
                 setOnClickListener {
-                    widthIdx = i
+                    if (tool == Tool.ERASER) eraserSizeIdx = i else widthIdx = i
                     refreshUi()
                 }
             }
@@ -438,11 +445,20 @@ class ScratchpadOverlayView(
             }
         }
         widthDots.forEachIndexed { idx, tv ->
-            val sel = idx == widthIdx
-            tv.text = when (idx) {
-                0 -> "细"
-                1 -> "中"
-                else -> "粗"
+            val isEraser = tool == Tool.ERASER
+            val sel = if (isEraser) idx == eraserSizeIdx else idx == widthIdx
+            tv.text = if (isEraser) {
+                when (idx) {
+                    0 -> "小"
+                    1 -> "中"
+                    else -> "大"
+                }
+            } else {
+                when (idx) {
+                    0 -> "细"
+                    1 -> "中"
+                    else -> "粗"
+                }
             }
             tv.setTextColor(if (sel) cAccent else cHaze)
             tv.background = if (sel) {
@@ -534,8 +550,57 @@ class ScratchpadOverlayView(
         private var twoFingerStartY = 0f
         private val rectTmp = RectF()
         private val minStep = dpf(2.2f)
-        private val eraserRadius = dpf(18f)
         private val swipeThreshold = dpf(56f)
+
+        // ── 视口变换（世界坐标 = 图元自身坐标，加变换后自动生效）──
+        private var zoom = 1f
+        private var panX = 0f
+        private var panY = 0f
+        private var zoomMode = false
+        private var rebasePending = false
+        private var startZoom = 1f
+        private var startPanX = 0f
+        private var startPanY = 0f
+        private var startSpan = 0f
+        private var lastSpan = 0f
+        private var lastCx = 0f
+        private var lastCy = 0f
+        private val pinchSlop = dpf(0.5f)
+
+        fun resetViewport() {
+            zoom = 1f
+            panX = 0f
+            panY = 0f
+            zoomMode = false
+            invalidate()
+        }
+
+        private fun spanOf(ev: MotionEvent): Float {
+            if (ev.pointerCount < 2) return 0f
+            return hypot(ev.getX(1) - ev.getX(0), ev.getY(1) - ev.getY(0))
+        }
+
+        private fun centroidXOf(ev: MotionEvent): Float {
+            var s = 0f
+            for (i in 0 until ev.pointerCount) s += ev.getX(i)
+            return s / max(1, ev.pointerCount)
+        }
+
+        private fun centroidYOf(ev: MotionEvent): Float {
+            var s = 0f
+            for (i in 0 until ev.pointerCount) s += ev.getY(i)
+            return s / max(1, ev.pointerCount)
+        }
+
+        /** 把我方视口变换的逆矩阵作用到事件上，让原有单指逻辑继续用屏幕坐标写代码。 */
+        private fun mappedSingle(ev0: MotionEvent): MotionEvent {
+            if (ev0.pointerCount != 1) return ev0
+            if (zoom == 1f && panX == 0f && panY == 0f) return ev0
+            val m = android.graphics.Matrix()
+            m.setScale(1f / zoom, 1f / zoom, width / 2f, height / 2f)
+            m.postTranslate(-panX / zoom, -panY / zoom)
+            return MotionEvent.obtain(ev0).apply { transform(m) }
+        }
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
@@ -552,16 +617,28 @@ class ScratchpadOverlayView(
             } else {
                 argb(focus(palette.line), 56)
             }
+            // 网格与图元都进同一个变换：网格按「可见世界范围」铺，缩放/平移时不露边
+            canvas.save()
+            canvas.translate(panX, panY)
+            canvas.scale(zoom, zoom, width / 2f, height / 2f)
+
             val step = dpf(28f)
-            var x = step
-            while (x < width) {
-                canvas.drawLine(x, 0f, x, height.toFloat(), gridPaint)
-                x += step
+            val cx = width / 2f
+            val cy = height / 2f
+            val left = cx - (cx + panX) / zoom
+            val top = cy - (cy + panY) / zoom
+            val right = left + width / zoom
+            val bottom = top + height / zoom
+            gridPaint.strokeWidth = (1f / zoom).coerceAtLeast(0.6f)
+            var gx = floor(left / step) * step
+            while (gx <= right) {
+                canvas.drawLine(gx, top, gx, bottom, gridPaint)
+                gx += step
             }
-            var y = step
-            while (y < height) {
-                canvas.drawLine(0f, y, width.toFloat(), y, gridPaint)
-                y += step
+            var gy = floor(top / step) * step
+            while (gy <= bottom) {
+                canvas.drawLine(left, gy, right, gy, gridPaint)
+                gy += step
             }
 
             for (item in currentPage().items) drawItem(canvas, item)
@@ -583,12 +660,18 @@ class ScratchpadOverlayView(
                 val accent = focus(palette.accent)
                 eraserFillPaint.color = argb(accent, 40)
                 eraserRingPaint.color = argb(accent, 190)
-                canvas.drawCircle(erX, erY, eraserRadius, eraserFillPaint)
-                canvas.drawCircle(erX, erY, eraserRadius, eraserRingPaint)
+                // 光标在世界坐标下画，半径/描边都除以 zoom，屏幕上看起来恒定
+                val r = eraserRadiusPx() / zoom
+                eraserRingPaint.strokeWidth = dpf(1.5f) / zoom
+                canvas.drawCircle(erX, erY, r, eraserFillPaint)
+                canvas.drawCircle(erX, erY, r, eraserRingPaint)
             }
+            canvas.restore()
         }
 
-        override fun onTouchEvent(ev: MotionEvent): Boolean {
+        override fun onTouchEvent(ev0: MotionEvent): Boolean {
+            // 单指事件先过一遍视口逆变换，原有绘制/擦除代码不用改坐标
+            val ev = mappedSingle(ev0)
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     multiTouch = false
@@ -622,9 +705,24 @@ class ScratchpadOverlayView(
                     if (ev.pointerCount >= 2 && !multiTouch) {
                         multiTouch = true
                         clearLive()
+                        zoomMode = false
+                        rebasePending = false
+                        // 用原始事件算 span/质心（屏幕坐标）
+                        startSpan = spanOf(ev0)
+                        lastSpan = startSpan
+                        startZoom = zoom
+                        startPanX = panX
+                        startPanY = panY
+                        lastCx = centroidXOf(ev0)
+                        lastCy = centroidYOf(ev0)
                         twoFingerStartY = avgY(ev)
                         invalidate()
                     }
+                    return true
+                }
+                MotionEvent.ACTION_POINTER_UP -> {
+                    // 三指→两指时质心会跳，标记下一帧重新取基准
+                    rebasePending = true
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -632,9 +730,51 @@ class ScratchpadOverlayView(
                         if (!multiTouch) {
                             multiTouch = true
                             clearLive()
+                            startSpan = spanOf(ev0)
+                            lastSpan = startSpan
+                            startZoom = zoom
+                            startPanX = panX
+                            startPanY = panY
+                            lastCx = centroidXOf(ev0)
+                            lastCy = centroidYOf(ev0)
                             twoFingerStartY = avgY(ev)
                         }
-                        if (ev.pointerCount >= 2 && !swipeFired) {
+                        if (rebasePending) {
+                            rebasePending = false
+                            startSpan = spanOf(ev0)
+                            lastSpan = startSpan
+                            startZoom = zoom
+                            startPanX = panX
+                            startPanY = panY
+                            lastCx = centroidXOf(ev0)
+                            lastCy = centroidYOf(ev0)
+                        }
+                        val span = spanOf(ev0)
+                        val cx = centroidXOf(ev0)
+                        val cy = centroidYOf(ev0)
+                        // 径向距离一有变化就进入缩放（无死区）
+                        if (!zoomMode && startSpan > 1f && abs(span - startSpan) > pinchSlop) {
+                            zoomMode = true
+                        }
+                        if (zoomMode) {
+                            val base = if (lastSpan > 1f) lastSpan else startSpan
+                            val ratio = if (base > 1f) span / base else 1f
+                            val newZoom = (zoom * ratio).coerceIn(0.8f, 6f)
+                            if (zoom > 0.01f) {
+                                // 锚点：手势中心处的世界点保持不动
+                                panX = cx - width / 2f -
+                                    (cx - width / 2f - panX) * (newZoom / zoom)
+                                panY = cy - height / 2f -
+                                    (cy - height / 2f - panY) * (newZoom / zoom)
+                            }
+                            panX += cx - lastCx
+                            panY += cy - lastCy
+                            zoom = newZoom
+                            lastSpan = span
+                            lastCx = cx
+                            lastCy = cy
+                            eraserActive = false
+                        } else if (!swipeFired && startZoom <= 1.05f) {
                             val dy = avgY(ev) - twoFingerStartY
                             if (abs(dy) >= swipeThreshold) {
                                 swipeFired = true
@@ -750,7 +890,7 @@ class ScratchpadOverlayView(
         private fun eraseAt(x: Float, y: Float) {
             val page = currentPage()
             val remaining = page.items.filterNot {
-                hitTest(it, x, y, eraserRadius + it.widthPx * 0.5f)
+                hitTest(it, x, y, (eraserRadiusPx() + it.widthPx * 0.5f) / zoom)
             }
             if (remaining.size != page.items.size) page.commitReplace(remaining)
         }

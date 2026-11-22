@@ -1978,6 +1978,8 @@ object LockOverlayManager {
                 )
             }
             view.refreshQuestionBanner()
+            // 重新打开时复位缩放，否则会停在上次的放大倍数
+            runCatching { view.resetViewport() }
             view.visibility = View.VISIBLE
             view.bringToFront()
         }
